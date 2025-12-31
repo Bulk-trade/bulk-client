@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 
@@ -11,19 +13,35 @@ def is_dollar_equiv(instrument: str) -> bool:
     return instrument.startswith("USD")
 
 
+@dataclass
 class Position:
     """
     Representation of a position
     """
-    __slots__ = ('instrument', 'amount', 'vwap', 'pnl', 'mm', 'liqprice')
+    instrument: str
+    quantity: float
+    vwap: float
+
+    fair_price: float
+    realized_pnl: float
+    unrealized_pnl: float
+    margin: float
+    mm: float
+    mmr: float
+    liquidation_price: float
+
 
     def __init__(self, instrument: str, amount: float, vwap: float):
         self.instrument = instrument
-        self.amount = amount
+        self.quantity = amount
         self.vwap = vwap
-        self.pnl = 0.0
+        self.fair_price = 0.0
+        self.realized_pnl = 0.0
+        self.unrealized_pnl = 0.0
+        self.margin = 0.0
         self.mm = 0.0
-        self.liqprice = 0.0
+        self.mmr = 0.0
+        self.liquidation_price = 0.0
 
     @property
     def side(self):
@@ -40,8 +58,8 @@ class Position:
             self.pnl = self.amount
         else:
             price = prices[instrument] if not isinstance(prices,float) else prices
-            self.pnl = self.amount * (price - self.vwap)
-        return self.pnl
+            self.unrealized_pnl = self.amount * (price - self.vwap)
+        return self.unrealized_pnl
 
     def to_dict(self):
         return { 'id': self.instrument, 'amount': self.amount, 'price': self.vwap, 'pv': self.pnl }

@@ -159,7 +159,7 @@ async def test_market_order():
         if snapshot.positions:
             print(f"\n   Current Positions:")
             for pos in snapshot.positions:
-                print(f"     - {pos.symbol}: {pos.size:.4f} @ ${pos.entry_price:,.2f}")
+                print(f"     - {pos.symbol}: {pos.size:.4f} @ ${pos.price:,.2f}")
 
     def on_fill(fill):
         """Handle trade fill"""
@@ -224,19 +224,9 @@ async def test_market_order():
             return
 
         print("✅ Connected to WebSocket")
-
-        # Subscribe to account updates
-        print(f"\n📡 Subscribing to account updates for {public_key}...")
-        await ws_client.subscribe_account(public_key)
-
-        # Wait for account snapshot
-        print("⏳ Waiting for account snapshot...")
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
 
         # ========== Step 6: Get Current Market Price ==========
-        info = http_client.get_exchange_info()
-        print(f"exchange info: {info}")
-
         if False:
             ticker = http_client.get_ticker(SYMBOL)
             current_price = ticker.get('lastPrice', 0)
@@ -259,7 +249,7 @@ async def test_market_order():
         print("   (Waiting up to 10 seconds...)")
 
         start_time = time.time()
-        timeout = 10  # seconds
+        timeout = 20  # seconds
 
         while time.time() - start_time < timeout:
             await asyncio.sleep(0.5)

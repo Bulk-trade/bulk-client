@@ -880,28 +880,6 @@ class BulkHttpClient:
 
 
 # ===================================================================
-# CONVENIENCE FUNCTIONS
-# ===================================================================
-
-def create_client(
-    private_key: Optional[str] = None,
-    testnet: bool = False
-) -> BulkHttpClient:
-    """
-    Create a Bulk Labs HTTP client
-
-    Args:
-        private_key: Base58 encoded private key (optional for read-only access)
-        testnet: Use testnet endpoints (not currently used, reserved for future)
-
-    Returns:
-        BulkHttpClient instance
-    """
-    base_url = "https://exchange-api2.bulk.trade/api/v1"
-    return BulkHttpClient(base_url=base_url, private_key=private_key)
-
-
-# ===================================================================
 # EXAMPLE USAGE
 # ===================================================================
 
@@ -910,7 +888,8 @@ if __name__ == "__main__":
 
     # Example 1: Read-only market data access (no private key needed)
     print("=== Read-only Market Data ===")
-    client = create_client()
+    base_url = "https://exchange-api2.bulk.trade/api/v1"
+    client = BulkHttpClient(base_url=base_url, private_key=private_key)
 
     # Get exchange info
     exchange_info = client.get_exchange_info()
