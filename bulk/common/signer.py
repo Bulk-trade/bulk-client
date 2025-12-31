@@ -20,6 +20,7 @@ class TransactionSigner:
         private_key_bytes = base58.b58decode(private_key_b58)
         self.signing_key = SigningKey(private_key_bytes[:32])
         self.public_key = base58.b58encode(bytes(self.signing_key.verify_key)).decode()
+        self.private_key = private_key_b58
         self.nonce = 0
 
     def get_next_nonce(self) -> int:
@@ -76,11 +77,7 @@ class TransactionSigner:
         private_key_b58 = base58.b58encode(private_key_bytes).decode()
         public_key_b58 = base58.b58encode(public_key_bytes).decode()
 
-        # Create Solana-compatible keypair format (64 bytes: private + public)
-        keypair_bytes = private_key_bytes + public_key_bytes
-        keypair_array = list(keypair_bytes)
-
-        return private_key_b58, public_key_b58, keypair_array
+        return private_key_b58, public_key_b58
 
     @staticmethod
     def _write_u64(value: int) -> bytes:

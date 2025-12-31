@@ -867,13 +867,12 @@ class BulkHttpClient:
         }
 
         # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
+        tx = self.signer.sign_transaction(transaction)
 
         # Send request
         response = requests.post(
             f"{self.base_url}/private/faucet",
-            json=transaction,
+            json=tx,
             timeout=self.timeout
         )
         response.raise_for_status()

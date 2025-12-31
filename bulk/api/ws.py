@@ -75,6 +75,7 @@ class BulkWebSocketClient:
         self.url = url
         self.signer = signer
         self.inventory = inventory or Inventory()
+        self.positions = {}
         self.logger = logger or logging.getLogger(__name__)
 
         # Connection management
