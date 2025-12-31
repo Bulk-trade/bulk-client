@@ -43,7 +43,6 @@ class SubscriptionRequest:
         return sub
 
 
-
 class BulkWebSocketClient:
     """
     WebSocket client for Bulk Labs exchange
@@ -75,7 +74,6 @@ class BulkWebSocketClient:
         self.url = url
         self.signer = signer
         self.inventory = inventory or Inventory()
-        self.positions = {}
         self.logger = logger or logging.getLogger(__name__)
 
         # Connection management
@@ -140,6 +138,10 @@ class BulkWebSocketClient:
             # Start receive loop
             self.receive_task = asyncio.create_task(self._receive_loop())
 
+            # we want to get account updates
+            if self.signer is not None:
+                self.subscribe_account(self.signer.public_key)
+
             # Resubscribe to previous subscriptions
             if self.subscriptions:
                 await self._resubscribe()
@@ -162,7 +164,7 @@ class BulkWebSocketClient:
             except asyncio.CancelledError:
                 pass
 
-        if self.ws and not self.ws.closed:
+        if self.ws:
             await self.ws.close()
 
         self.state = ConnectionState.DISCONNECTED
@@ -700,7 +702,15 @@ class BulkWebSocketClient:
 
         # Update positions
         for pos in snapshot.positions:
-            self.positions[pos.symbol] = pos
+            position = self.inventory.position_for(pos.symbol)
+            position.quantity = pos.size
+            position.vwap = pos.price
+            position.fair_price = pos.fair_price
+            position.realized_pnl = pos.realized_pnl
+            position.unrealized_pnl = pos.unrealized_pnl
+            position.mm = pos.maintenance_margin
+            position.mmr = pos.lambda_
+            position.margin = pos.risk_allocation
 
         # Update open orders
         for order in snapshot.open_orders:
@@ -745,16 +755,20 @@ class BulkWebSocketClient:
         Emits: PositionUpdate object
         """
         # Parse using PositionUpdate.from_api
-        position = PositionUpdate.from_api(data)
+        pos = PositionUpdate.from_api(data)
 
-        if position.size == 0:
-            # Position closed
-            self.positions.pop(position.symbol, None)
-        else:
-            self.positions[position.symbol] = position
+        position = self.inventory.position_for(pos.symbol)
+        position.quantity = pos.size
+        position.vwap = pos.price
+        position.fair_price = pos.fair_price
+        position.realized_pnl = pos.realized_pnl
+        position.unrealized_pnl = pos.unrealized_pnl
+        position.mm = pos.maintenance_margin
+        position.mmr = pos.lambda_
+        position.margin = pos.risk_allocation
 
         # Emit typed event
-        await self._emit_event("position_update", position)
+        await self._emit_event("position_update", pos)
 
     async def _handle_order_update(self, data: Dict):
         """
