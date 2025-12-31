@@ -19,6 +19,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Tuple
 
 from bulk.common import TransactionSigner, Side
 from bulk.api import BulkHttpClient
@@ -47,23 +48,22 @@ def load_or_generate_keys():
         print(f"📂 Loading existing keys from {KEYS_FILE}")
         with open(keys_path, 'r') as f:
             keys = json.load(f)
-        return keys['private_key'], keys['public_key'], keys['keypair']
+        return keys['private_key'], keys['public_key']
 
     print("🔑 Generating new Ed25519 keypair...")
-    private_key, public_key, keypair = TransactionSigner.generate_account()
+    private_key, public_key = TransactionSigner.generate_account()
 
     # Save to file
     keys_data = {
         'private_key': private_key,
         'public_key': public_key,
-        'keypair': keypair
     }
 
     with open(keys_path, 'w') as f:
         json.dump(keys_data, f, indent=2)
 
     print(f"💾 Saved keys to {KEYS_FILE}")
-    return private_key, public_key, keypair
+    return private_key, public_key
 
 async def request_faucet_funds(private_key: str, public_key: str):
     """
@@ -102,15 +102,15 @@ async def request_faucet_funds(private_key: str, public_key: str):
         print("   (This may fail if you've already requested funds recently)")
         return False
 
-async def get_funded_account():
+async def get_funded_account() -> Tuple[str,str]:
     """
     Get funded account, creating and funding if not present
     """
     keys_path = Path(KEYS_FILE)
     if not keys_path.exists():
-        private_key, public_key, keypair = load_or_generate_keys()
+        private_key, public_key = load_or_generate_keys()
         await request_faucet_funds(private_key, public_key)
-        return (private_key, public_key, keypair)
+        return private_key, public_key
     else:
         return load_or_generate_keys()
 
@@ -130,7 +130,7 @@ async def test_market_order():
     print("=" * 70)
 
     # ========== Step 1 + 2: Load keys + Funding ==========
-    private_key, public_key, keypair = await get_funded_account()
+    private_key, public_key = await get_funded_account()
     print(f"🔑 Public Key: {public_key}")
 
     # ========== Step 3: Initialize Clients ==========

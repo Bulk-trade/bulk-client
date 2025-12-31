@@ -21,7 +21,6 @@ class LimitOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            #'type': 'limit',
             'c': self.symbol,
             'b': self.is_buy,
             'px': self.price,
@@ -38,7 +37,7 @@ class LimitOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [{"order": self.to_api()}]
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -57,7 +56,6 @@ class MarketOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            #'type': 'market',
             'c': self.symbol,
             'b': self.is_buy,
             'sz': self.size,
@@ -77,7 +75,7 @@ class MarketOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [{"order": self.to_api()}]
             },
             "account": signer.public_key,
             "signer": signer.public_key,
