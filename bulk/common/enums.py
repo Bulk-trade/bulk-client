@@ -31,11 +31,11 @@ class TimeInForce(Enum):
 ## Order status
 class OrderStatus(Enum):
     NONE = 0
-    PLACED = 1
+    RESTING = 1
     FILLED = 2
     PARTIALLY_FILLED = 3
     CANCELLED = 4
-    REJECTED = 5
+    ERROR = 5
 
     def __str__(self):
         """Convert to string for API"""
