@@ -32,7 +32,7 @@ TESTNET_WS_URL = "wss://exchange-wss.bulk.trade"
 TESTNET_HTTP_URL = "https://exchange-api2.bulk.trade/api/v1"
 
 SYMBOL = "BTC-USD"
-ORDER_SIZE = 0.01
+ORDER_SIZE = 0.002
 
 
 def load_or_generate_keys():
@@ -125,28 +125,9 @@ async def test_market_order():
     )
     logger = logging.getLogger(__name__)
 
-    print("=" * 70)
-    print("🚀 Bulk Labs Market Order Test")
-    print("=" * 70)
-
-    # ========== Step 1 + 2: Load keys + Funding ==========
-    private_key, public_key = await get_funded_account()
-    print(f"🔑 Public Key: {public_key}")
-
-    # ========== Step 3: Initialize Clients ==========
-    print("\n🔌 Connecting to Bulk Exchange WebSocket...")
-
-    signer = TransactionSigner(private_key)
-    ws_client = BulkWebSocketClient(
-        url=TESTNET_WS_URL,
-        signer=signer
-    )
-
     # Track fills and order status
     fills_received = []
     order_status_updates = []
-
-    # ========== Step 4: Register Event Handlers ==========
 
     def on_account_snapshot(snapshot):
         """Handle initial account snapshot"""
@@ -206,117 +187,114 @@ async def test_market_order():
         print(f"   Available: ${margin.available_balance:,.2f}")
         print(f"   Used: ${margin.used_balance:,.2f}")
 
-    # Register all handlers
-    ws_client.on("account_snapshot", on_account_snapshot)
-    ws_client.on("fill", on_fill)
-    ws_client.on("order_placed", on_order_placed)
-    ws_client.on("order_cancelled", on_order_cancelled)
-    ws_client.on("position_update", on_position_update)
-    ws_client.on("margin_update", on_margin_update)
 
-    http_client = BulkHttpClient(base_url=TESTNET_HTTP_URL)
-    try:
-        # ========== Step 5: Connect and Subscribe ==========
-        connected = await ws_client.connect()
+    # ========== Step 1 + 2: Load keys + Funding ==========
+    private_key, public_key = await get_funded_account()
+    print(f"🔑 Public Key: {public_key}")
 
-        if not connected:
-            logger.error("Failed to connect to WebSocket")
-            return
+    # ========== Step 3: Initialize Clients ==========
+    print("\n🔌 Connecting to Bulk Exchange WebSocket...")
 
-        print("✅ Connected to WebSocket")
-        await asyncio.sleep(2)
+    signer = TransactionSigner(private_key)
+    ws_client = BulkWebSocketClient(
+        url=TESTNET_WS_URL,
+        signer=signer,
+        handlers={
+            "account_snapshot": on_account_snapshot,
+            "fill": on_fill,
+            "order_placed": on_order_placed,
+            "order_cancelled": on_order_cancelled,
+            "position_update": on_position_update,
+            "margin_update": on_margin_update,
+        },
+        debug=True,
+    )
 
-        # ========== Step 6: Get Current Market Price ==========
-        if False:
-            ticker = http_client.get_ticker(SYMBOL)
-            current_price = ticker.get('lastPrice', 0)
+    # ========== Step 4: Connect and Subscribe ==========
+    connected = await ws_client.connect()
 
-            print(f"\n📈 Current {SYMBOL} Price: ${current_price:,.2f}")
+    if not connected:
+        logger.error("Failed to connect to WebSocket")
+        return
 
-        # ========== Step 7: Place Market Order ==========
-        print(f"\n📤 Placing MARKET ORDER:")
-        print(f"   Symbol: {SYMBOL}")
-        print(f"   Side: BUY")
-        print(f"   Size: {ORDER_SIZE}")
+    print("✅ Connected to WebSocket")
+    await asyncio.sleep(2)
 
-        # Create market order
-        request_id = await ws_client.place_market_order(SYMBOL, Side.BUY, ORDER_SIZE)
+    # ========== Step 7: Place Market Order ==========
+    print(f"\n📤 Placing MARKET ORDER:")
+    print(f"   Symbol: {SYMBOL}")
+    print(f"   Side: BUY")
+    print(f"   Size: {ORDER_SIZE}")
 
-        print(f"✅ Market order sent (Request ID: {request_id})")
+    # Create market order
+    request_id = await ws_client.place_market_order(SYMBOL, Side.BUY, ORDER_SIZE)
+    print(f"✅ Market order sent (Request ID: {request_id})")
 
-        # ========== Step 8: Monitor for Fills ==========
-        print("\n⏳ Monitoring for fills and order updates...")
-        print("   (Waiting up to 10 seconds...)")
+    # ========== Step 8: Monitor for Fills ==========
+    print("\n⏳ Monitoring for fills and order updates...")
+    print("   (Waiting up to 10 seconds...)")
 
-        start_time = time.time()
-        timeout = 20  # seconds
+    start_time = time.time()
+    timeout = 20  # seconds
 
-        while time.time() - start_time < timeout:
-            await asyncio.sleep(0.5)
+    while time.time() - start_time < timeout:
+        await asyncio.sleep(0.5)
 
-            # Check if we received fills
-            if fills_received:
-                print(f"\n✅ Received {len(fills_received)} fill(s)")
-                break
-
-        # ========== Step 9: Summary ==========
-        print("\n" + "=" * 70)
-        print("📊 TEST SUMMARY")
-        print("=" * 70)
-
-        print(f"\n🔑 Account: {public_key}")
-
+        # Check if we received fills
         if fills_received:
-            print(f"\n✅ Fills Received: {len(fills_received)}")
-            for i, fill in enumerate(fills_received, 1):
-                print(f"\n   Fill #{i}:")
-                print(f"   - Symbol: {fill.symbol}")
-                print(f"   - Side: {fill.side.name}")
-                print(f"   - Price: ${fill.price:,.2f}")
-                print(f"   - Size: {fill.size:.4f}")
-                print(f"   - Value: ${fill.price * fill.size:,.2f}")
-                print(f"   - Maker: {fill.is_maker}")
-        else:
-            print(f"\n⚠️  No fills received (order may be resting or cancelled)")
+            print(f"\n✅ Received {len(fills_received)} fill(s)")
+            break
 
-        if order_status_updates:
-            print(f"\n📋 Order Status Updates: {len(order_status_updates)}")
-            for status, data in order_status_updates:
-                if status == 'placed':
-                    print(f"   - Order Placed: {data.order_id}")
-                elif status == 'cancelled':
-                    print(f"   - Order Cancelled: {data}")
+    # ========== Step 9: Summary ==========
+    print("\n" + "=" * 70)
+    print("📊 TEST SUMMARY")
+    print("=" * 70)
 
-        # Final account state
-        if ws_client.margin:
-            print(f"\n💰 Final Account State:")
-            print(f"   Balance: ${ws_client.margin.total_balance:,.2f}")
-            print(f"   Available: ${ws_client.margin.available_balance:,.2f}")
+    print(f"\n🔑 Account: {public_key}")
 
-        if ws_client.inventory:
-            print(f"\n📍 Open Positions: {ws_client.inventory.summary()}")
+    if fills_received:
+        print(f"\n✅ Fills Received: {len(fills_received)}")
+        for i, fill in enumerate(fills_received, 1):
+            print(f"\n   Fill #{i}:")
+            print(f"   - Symbol: {fill.symbol}")
+            print(f"   - Side: {fill.side.name}")
+            print(f"   - Price: ${fill.price:,.2f}")
+            print(f"   - Size: {fill.size:.4f}")
+            print(f"   - Value: ${fill.price * fill.size:,.2f}")
+            print(f"   - Maker: {fill.is_maker}")
+    else:
+        print(f"\n⚠️  No fills received (order may be resting or cancelled)")
 
-        if ws_client.open_orders:
-            print(f"\n📋 Open Orders: {len(ws_client.open_orders)}")
-            for order_id, order in ws_client.open_orders.items():
-                print(f"   - {order.symbol}: {order.size:.4f} @ ${order.price:,.2f}")
+    if order_status_updates:
+        print(f"\n📋 Order Status Updates: {len(order_status_updates)}")
+        for status, data in order_status_updates:
+            if status == 'placed':
+                print(f"   - Order Placed: {data.order_id}")
+            elif status == 'cancelled':
+                print(f"   - Order Cancelled: {data}")
 
-        print("\n" + "=" * 70)
-        print("✅ Test completed successfully!")
-        print("=" * 70)
+    # Final account state
+    if ws_client.margin:
+        print(f"\n💰 Final Account State:")
+        print(f"   Balance: ${ws_client.margin.total_balance:,.2f}")
+        print(f"   Available: ${ws_client.margin.available_balance:,.2f}")
 
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Test interrupted by user")
+    if ws_client.inventory:
+        print(f"\n📍 Open Positions: {ws_client.inventory.summary()}")
 
-    except Exception as e:
-        logger.error(f"Test error: {e}", exc_info=True)
+    if ws_client.open_orders:
+        print(f"\n📋 Open Orders: {len(ws_client.open_orders)}")
+        for order_id, order in ws_client.open_orders.items():
+            print(f"   - {order.symbol}: {order.size:.4f} @ ${order.price:,.2f}")
 
-    finally:
-        # ========== Cleanup ==========
-        print("\n🔌 Disconnecting from WebSocket...")
-        await ws_client.disconnect()
-        print("✅ Disconnected")
+    print("\n" + "=" * 70)
+    print("✅ Test completed successfully!")
+    print("=" * 70)
 
+    # ========== Cleanup ==========
+    print("\n🔌 Disconnecting from WebSocket...")
+    await ws_client.disconnect()
+    exit(0)
 
 if __name__ == "__main__":
     print("\n" + "=" * 70)

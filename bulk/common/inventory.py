@@ -45,7 +45,7 @@ class Position:
 
     @property
     def side(self):
-        return np.sign(self.amount)
+        return np.sign(self.quantity)
 
     def is_dollar_equivalent(self):
         """For speed we assume stables we use start with USD"""
@@ -55,14 +55,14 @@ class Position:
         instrument = self.instrument
 
         if self.is_dollar_equivalent():
-            self.pnl = self.amount
+            self.pnl = self.quantity
         else:
             price = prices[instrument] if not isinstance(prices,float) else prices
-            self.unrealized_pnl = self.amount * (price - self.vwap)
+            self.unrealized_pnl = self.quantity * (price - self.vwap)
         return self.unrealized_pnl
 
     def to_dict(self):
-        return { 'id': self.instrument, 'amount': self.amount, 'price': self.vwap, 'pv': self.pnl }
+        return { 'id': self.instrument, 'amount': self.quantity, 'price': self.vwap, 'pv': self.unrealized_pnl }
 
 
 class Pnl:
@@ -111,7 +111,7 @@ class Inventory:
         Add a cash
         """
         cash = self.position_for(symbol)
-        cash.amount += amount
+        cash.quantity += amount
 
     def update_account(self, info):
         """
@@ -126,27 +126,27 @@ class Inventory:
         Add trade to inventory
         """
         position = self.position_for(instrument)
-        pamount = position.amount
+        pamount = position.quantity
 
         if isZero(pamount):
             # new position
-            position.amount = side * amount
+            position.quantity = side * amount
             position.vwap = price
 
         elif (side * pamount) < 0:
             # check whether is a position reduction
             liquidated = min(np.abs(pamount), amount)
             cash = self.position_for(self.stable)
-            cash.amount += position.side * liquidated * (price - position.vwap)
+            cash.quantity += position.side * liquidated * (price - position.vwap)
 
             if GT (amount, liquidated):
-                position.amount = side * (amount - liquidated)
+                position.quantity = side * (amount - liquidated)
                 position.vwap = price
             else:
-                position.amount += side * amount
+                position.quantity += side * amount
         else:
             nvwap = (np.abs(pamount) * position.vwap + amount * price) / (np.abs(pamount) + amount)
-            position.amount += side * amount
+            position.quantity += side * amount
             position.vwap = nvwap
 
 
@@ -159,7 +159,7 @@ class Inventory:
 
         for id, position in self.positions.items():
             if is_dollar_equiv(id):
-                realized += position.amount
+                realized += position.quantity
             else:
                 unrealized += position.pv (prices)
 
