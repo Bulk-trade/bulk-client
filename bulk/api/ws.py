@@ -14,9 +14,10 @@ from enum import Enum
 import websockets
 from websockets.legacy.client import WebSocketClientProtocol
 
-from bulk.common import Side, TimeInForce
+from bulk.common import Side, TimeInForce, LoggingWebSocket
 from bulk.common.inventory import Inventory, Pnl
 from bulk.common.signer import TransactionSigner
+from bulk.messages import SubscriptionRequest
 from bulk.messages.account import OpenOrder, AccountSnapshot, Margin, LeverageSetting, MarginUpdate, PositionUpdate
 from bulk.messages.md import OrderBook, Ticker, Trade, L2Snapshot, L2Delta, Candle
 from bulk.messages.trade import Fill, CancelOrder, LimitOrder
@@ -28,19 +29,6 @@ class ConnectionState(Enum):
     CONNECTING = 1
     CONNECTED = 2
     RECONNECTING = 3
-
-
-@dataclass
-class SubscriptionRequest:
-    """Represents a subscription request"""
-    type: str
-    params: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict:
-        """Convert to subscription request format"""
-        sub = {"type": self.type}
-        sub.update(self.params)
-        return sub
 
 
 class BulkWebSocketClient:
@@ -60,7 +48,9 @@ class BulkWebSocketClient:
         url: str = "wss://exchange-wss.bulk.trade",
         signer: Optional[TransactionSigner] = None,
         inventory: Optional[Inventory] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        handlers: Optional[Dict[str,Callable]] = None,
+        debug: bool = False,
     ):
         """
         Initialize WebSocket client
@@ -77,6 +67,7 @@ class BulkWebSocketClient:
         self.logger = logger or logging.getLogger(__name__)
 
         # Connection management
+        self.debug = debug
         self.ws: Optional[WebSocketClientProtocol] = None
         self.state = ConnectionState.DISCONNECTED
         self.reconnect_delay = 1.0
@@ -111,6 +102,10 @@ class BulkWebSocketClient:
         # Tasks
         self.receive_task: Optional[asyncio.Task] = None
 
+        # Install handlers
+        for etype, handler in self.handlers.items() if handlers is not None else {}:
+            self.handlers[etype] = [handler]
+
     # ==================== CONNECTION MANAGEMENT ====================
 
     async def connect(self) -> bool:
@@ -129,6 +124,8 @@ class BulkWebSocketClient:
                 ping_interval=20,
                 ping_timeout=10
             )
+            if self.debug:
+                self.ws = LoggingWebSocket(self.ws, logger=self.logger)
 
             self.state = ConnectionState.CONNECTED
             self.reconnect_delay = 1.0
@@ -138,13 +135,14 @@ class BulkWebSocketClient:
             # Start receive loop
             self.receive_task = asyncio.create_task(self._receive_loop())
 
-            # we want to get account updates
-            if self.signer is not None:
-                self.subscribe_account(self.signer.public_key)
-
             # Resubscribe to previous subscriptions
             if self.subscriptions:
-                await self._resubscribe()
+                self.logger.info(f"Resubscribing to {len(self.subscriptions)} topics")
+                await self.subscribe(self.subscriptions.copy())
+
+            # we want to get account updates
+            elif self.signer is not None:
+                await self.subscribe_account(self.signer.public_key)
 
             return True
 
@@ -212,11 +210,6 @@ class BulkWebSocketClient:
         self.active_topics.discard(topic)
         self.logger.info(f"Unsubscribed from {topic}")
 
-    async def _resubscribe(self):
-        """Resubscribe to all previous subscriptions after reconnection"""
-        if self.subscriptions:
-            self.logger.info(f"Resubscribing to {len(self.subscriptions)} topics")
-            await self.subscribe(self.subscriptions.copy())
 
     # ==================== MARKET DATA SUBSCRIPTIONS ====================
 
@@ -433,9 +426,7 @@ class BulkWebSocketClient:
         - "order_cancelled": str (order_id)
         - "fill": Fill
         - "leverage_update": List[LeverageSetting]
-        - "order_resting": str (order_id)
-        - "order_filled_immediately": Dict
-        - "order_partially_filled": Dict
+        - "order_state": str (order_id)
         - "order_error": str
 
         Args:
@@ -506,6 +497,7 @@ class BulkWebSocketClient:
             async for message in self.ws:
                 try:
                     data = json.loads(message)
+                    print(f"Received message: {data}")
                     await self._handle_message(data)
                 except json.JSONDecodeError as e:
                     self.logger.error(f"JSON decode error: {e}")
@@ -525,9 +517,6 @@ class BulkWebSocketClient:
     async def _handle_message(self, data: Dict):
         """Route incoming messages to appropriate handlers"""
         msg_type = data.get("type")
-
-        print(f"Received message: {data}")
-
         if msg_type == "subscriptionResponse":
             self._handle_subscription_response(data)
         elif msg_type == "ticker":
@@ -857,43 +846,20 @@ class BulkWebSocketClient:
         status = payload.get("status")
         request_id = data.get("id")
 
-        if status == "ok":
-            response = payload.get("response", {})
-            response_type = response.get("type")
-
-            if response_type == "order":
-                order_data = response.get("data", {})
-                statuses = order_data.get("statuses", [])
-
-                for order_status in statuses:
-                    if "resting" in order_status:
-                        oid = order_status["resting"]["oid"]
-                        self.logger.info(f"Order resting: {oid}")
-                        await self._emit_event("order_resting", oid)
-
-                    elif "filled" in order_status:
-                        info = order_status["filled"]
-                        self.logger.info(
-                            f"Order filled immediately: {info['oid']} "
-                            f"size={info['totalSz']} avg_price={info['avgPx']}"
-                        )
-                        await self._emit_event("order_filled_immediately", info)
-
-                    elif "partiallyfilled" in order_status:
-                        info = order_status["partiallyfilled"]
-                        self.logger.info(
-                            f"Order partially filled: {info['oid']} "
-                            f"size={info['totalSz']} avg_price={info['avgPx']}"
-                        )
-                        await self._emit_event("order_partially_filled", info)
-
-                    elif "error" in order_status:
-                        message = order_status["error"]["message"]
-                        self.logger.error(f"Order error: {message}")
-                        await self._emit_event("order_error", message)
-        else:
+        if status != "ok":
             self.logger.error(f"Order request failed: {response_data}")
             await self._emit_event("order_request_failed", response_data)
+            return
+
+        response = payload.get("response", {})
+        response_type = response.get("type")
+
+        if response_type == "order":
+            order_data = response.get("data", {})
+            statuses = order_data.get("statuses", [])
+
+            for order_status in statuses:
+                await self._emit_event("order_state", order_status)
 
 
     async def _emit_event(self, event_type: str, event_data: Any):
