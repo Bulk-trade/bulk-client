@@ -96,8 +96,8 @@ async def test_market_data():
         logger.info(f"✓ Subscribed to trades")
 
         # Subscribe to order book snapshot (initial state)
-        await client.subscribe_orderbook_snapshot(symbol, nlevels=1000)
-        logger.info(f"✓ Subscribed to order book snapshots")
+        #await client.subscribe_orderbook_snapshot(symbol, nlevels=1000)
+        #logger.info(f"✓ Subscribed to order book snapshots")
 
         # Subscribe to order book deltas (real-time updates)
         await client.subscribe_orderbook_delta(symbol)

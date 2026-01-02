@@ -7,20 +7,21 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, List, Optional, Callable, Any, Set
-from dataclasses import dataclass, field
+from argparse import Action
+from typing import Dict, List, Optional, Callable, Any, Set, Union
 from enum import Enum
 
 import websockets
-from websockets.legacy.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 from bulk.common import Side, TimeInForce, LoggingWebSocket
 from bulk.common.inventory import Inventory, Pnl
 from bulk.common.signer import TransactionSigner
 from bulk.messages import SubscriptionRequest
-from bulk.messages.account import OpenOrder, AccountSnapshot, Margin, LeverageSetting, MarginUpdate, PositionUpdate
+from bulk.messages.account import AccountSnapshot, Margin, \
+    LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk.messages.md import OrderBook, Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk.messages.trade import Fill, CancelOrder, LimitOrder
+from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder
 
 
 class ConnectionState(Enum):
@@ -29,6 +30,36 @@ class ConnectionState(Enum):
     CONNECTING = 1
     CONNECTED = 2
     RECONNECTING = 3
+
+class Topic(Enum):
+    """
+    WebSocket topics
+
+    Event types and their emitted objects:
+    - "ticker": Ticker
+    - "trades": List[Trade]
+    - "l2_snapshot": L2Snapshot
+    - "l2_delta": L2Delta
+    - "candle": Candle
+    - "account_snapshot": AccountSnapshot
+    - "margin_update": MarginUpdate
+    - "position_update": PositionUpdate
+    - "fill": Fill
+    - "leverage_update": List[LeverageSetting]
+    - "order_state": OrderState
+    """
+    TICKER = "ticker"
+    TRADES = "trades"
+    L2SNAPSHOT = "l2_snapshot"
+    L2DELTA = "l2_delta"
+    CANDLE = "candle"
+    ACCOUNT = "account_snapshot"
+    MARGIN = "margin_update"
+    POSITION = "position_update"
+    FILL = "fill"
+    LEVERAGE = "leverage_update"
+    ORDER = "order_state"
+
 
 
 class BulkWebSocketClient:
@@ -49,7 +80,7 @@ class BulkWebSocketClient:
         signer: Optional[TransactionSigner] = None,
         inventory: Optional[Inventory] = None,
         logger: Optional[logging.Logger] = None,
-        handlers: Optional[Dict[str,Callable]] = None,
+        handlers: Optional[Dict[Topic,Callable]] = None,
         debug: bool = False,
     ):
         """
@@ -68,7 +99,7 @@ class BulkWebSocketClient:
 
         # Connection management
         self.debug = debug
-        self.ws: Optional[WebSocketClientProtocol] = None
+        self.ws: Optional[ClientConnection] = None
         self.state = ConnectionState.DISCONNECTED
         self.reconnect_delay = 1.0
         self.max_reconnect_delay = 30.0
@@ -89,7 +120,7 @@ class BulkWebSocketClient:
         self.tickers: Dict[str, Ticker] = {}
 
         # Open orders tracking
-        self.open_orders: Dict[str, OpenOrder] = {}
+        self.open_orders: Dict[str, OrderState] = {}
 
         # Account state - uses your typed classes
         self.account_snapshot: Optional[AccountSnapshot] = None
@@ -99,11 +130,14 @@ class BulkWebSocketClient:
         # Request ID for post requests
         self.request_id = 0
 
+        self.pending_requests: Dict[int, asyncio.Future] = {}
+        self.default_timeout = 10.0  # seconds
+
         # Tasks
         self.receive_task: Optional[asyncio.Task] = None
 
         # Install handlers
-        for etype, handler in self.handlers.items() if handlers is not None else {}:
+        for etype, handler in handlers.items() if handlers is not None else {}:
             self.handlers[etype] = [handler]
 
     # ==================== CONNECTION MANAGEMENT ====================
@@ -119,13 +153,16 @@ class BulkWebSocketClient:
             self.state = ConnectionState.CONNECTING
             self.logger.info(f"Connecting to {self.url}")
 
-            self.ws = await websockets.connect(
+            ws = await ws_connect(
                 self.url,
                 ping_interval=20,
-                ping_timeout=10
+                ping_timeout=10,
+                close_timeout=10,
             )
             if self.debug:
-                self.ws = LoggingWebSocket(self.ws, logger=self.logger)
+                self.ws = LoggingWebSocket(ws, logger=self.logger)
+            else:
+                self.ws = ws
 
             self.state = ConnectionState.CONNECTED
             self.reconnect_delay = 1.0
@@ -167,6 +204,39 @@ class BulkWebSocketClient:
 
         self.state = ConnectionState.DISCONNECTED
         self.ws = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if WebSocket is connected"""
+        return (
+                self.state == ConnectionState.CONNECTED and
+                self.ws and
+                not self.ws.closed
+        )
+
+    # ==================== ACCESS METHODS ====================
+
+    def get_order_book(self, symbol: str) -> Optional[OrderBook]:
+        """Get OrderBook instance for a symbol"""
+        return self.order_books.get(symbol)
+
+    def get_ticker(self, symbol: str) -> Optional[Ticker]:
+        """Get latest Ticker for a symbol"""
+        return self.tickers.get(symbol)
+
+    def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderState]:
+        """Get open orders, optionally filtered by symbol"""
+        if symbol:
+            return [
+                order for order in self.open_orders.values()
+                if order.symbol == symbol
+            ]
+        else:
+            return list(self.open_orders.values())
+
+    def get_pnl(self, prices: Dict[str, float]) -> Pnl:
+        """Calculate P&L using Inventory class"""
+        return self.inventory.pv(prices)
 
     # ==================== SUBSCRIPTION MANAGEMENT ====================
 
@@ -253,38 +323,104 @@ class BulkWebSocketClient:
 
     # ==================== ORDER PLACEMENT ====================
 
+    async def place_multi(
+        self,
+        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder]],
+        timeout: Optional[float] = None,
+    ) -> List[OrderResponse]:
+        """
+        Place multiple orders and/or cancels
+        """
+        if not self.signer:
+            raise RuntimeError("Signer not configured")
+        if not self.is_connected:
+            raise RuntimeError("Not connected to WebSocket")
+
+        self.request_id += 1
+        request_id = self.request_id
+        timeout = timeout if timeout is not None else self.default_timeout
+
+        # Build transaction using LimitOrder.to_tx
+        orders = []
+        for action in actions:
+            orders.append(action.to_api(self.signer))
+
+        # Bundle
+        tx = tx = {
+            "action": {
+                "type": "order",
+                "orders": orders
+            },
+            "account": self.signer.public_key,
+            "signer": self.signer.public_key,
+        }
+        tx = self.signer.sign_transaction(tx)
+
+        # Build WebSocket request
+        request = {
+            "method": "post",
+            "request": {
+                "type": "action",
+                "payload": tx
+            },
+            "id": self.request_id
+        }
+
+        # Create future for this request
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+
+        try:
+            await self.ws.send(json.dumps(request))
+
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response
+        except asyncio.TimeoutError:
+            self.logger.error(f"Order request {request_id} timed out")
+            self.pending_requests.pop(request_id, None)
+            raise
+        except Exception as e:
+            self.logger.error(f"Order placement error: {e}")
+            self.pending_requests.pop(request_id, None)
+            raise
+
     async def place_limit_order(
         self,
         symbol: str,
-        is_buy: bool,
+        side: Side,
         price: float,
         size: float,
         reduce_only: bool = False,
-        time_in_force: TimeInForce = TimeInForce.GTC
-    ) -> int:
+        time_in_force: TimeInForce = TimeInForce.GTC,
+        timeout: Optional[float] = None,
+    ) -> OrderResponse:
         """
         Place a limit order
 
         Args:
             symbol: Market symbol
-            is_buy: True for buy, False for sell
+            side: Buy or Sell
             price: Limit price
             size: Order size
             reduce_only: Reduce-only flag
             time_in_force: Time in force
+            timeout: response timeout
 
         Returns:
-            Request ID
+            Order response
         """
         if not self.signer:
             raise RuntimeError("Signer not configured")
 
         self.request_id += 1
+        request_id = self.request_id
+        timeout = timeout if timeout is not None else self.default_timeout
 
         # Create LimitOrder using your class
         limit_order = LimitOrder(
             symbol=symbol,
-            is_buy=is_buy,
+            side=side,
             price=price,
             size=size,
             reduce_only=reduce_only,
@@ -303,23 +439,37 @@ class BulkWebSocketClient:
             },
             "id": self.request_id
         }
-
-        await self.ws.send(json.dumps(request))
-
         self.logger.info(
-            f"Placed limit order: {symbol} "
+            f"Place limit order: {symbol} "
             f"{'BUY' if is_buy else 'SELL'} {size} @ {price}"
         )
 
-        return self.request_id
+        # Create future for this request
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+        try:
+            await self.ws.send(json.dumps(request))
+
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response[0]
+        except asyncio.TimeoutError:
+            self.logger.error(f"Order request {request_id} timed out")
+            self.pending_requests.pop(request_id, None)
+            raise
+        except Exception as e:
+            self.logger.error(f"Order placement error: {e}")
+            self.pending_requests.pop(request_id, None)
+            raise
 
     async def place_market_order(
         self,
         symbol: str,
         side: Side,
         size: float,
-        reduce_only: bool = False
-    ) -> int:
+        reduce_only: bool = False,
+        timeout: Optional[float] = None,
+    ) -> OrderResponse:
         """
         Place a market order
 
@@ -330,12 +480,14 @@ class BulkWebSocketClient:
             reduce_only: Reduce-only flag
 
         Returns:
-            Request ID
+            Order response
         """
         if not self.signer:
             raise RuntimeError("Signer not configured")
 
         self.request_id += 1
+        request_id = self.request_id
+        timeout = timeout if timeout is not None else self.default_timeout
 
         # Import MarketOrder here to avoid circular imports
         from bulk.messages.trade import MarketOrder
@@ -343,7 +495,7 @@ class BulkWebSocketClient:
         # Create MarketOrder using your class
         market_order = MarketOrder(
             symbol=symbol,
-            is_buy=side == Side.BUY,
+            side=side,
             size=size,
             reduce_only=reduce_only
         )
@@ -360,34 +512,54 @@ class BulkWebSocketClient:
             },
             "id": self.request_id
         }
-
-        print(f"Placed market order: {json.dumps(request)} ")
-        await self.ws.send(json.dumps(request))
-
         self.logger.info(
-            f"Placed market order: {symbol} {side} @ MARKET"
+            f"Place market order: {symbol} {side} @ MARKET"
         )
-        return self.request_id
 
-    async def cancel_order(self, symbol: str, order_id: str) -> int:
+        # Create future for this request
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+        try:
+            await self.ws.send(json.dumps(request))
+
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response[0]
+        except asyncio.TimeoutError:
+            self.logger.error(f"Order request {request_id} timed out")
+            self.pending_requests.pop(request_id, None)
+            raise
+        except Exception as e:
+            self.logger.error(f"Order placement error: {e}")
+            self.pending_requests.pop(request_id, None)
+            raise
+
+    async def cancel_order(
+        self,
+        symbol: str,
+        order_id: str,
+        timeout: Optional[float] = None,
+    ) -> OrderResponse:
         """
         Cancel an order
 
         Args:
             symbol: Market symbol
             order_id: Order ID to cancel
+            timeout: response timeout
 
         Returns:
-            Request ID
+            Cancel response
         """
         if not self.signer:
             raise RuntimeError("Signer not configured")
 
         self.request_id += 1
+        request_id = self.request_id
+        timeout = timeout if timeout is not None else self.default_timeout
 
         # Create CancelOrder using your class
         cancel_order = CancelOrder(symbol=symbol, oid=order_id)
-
         # Build transaction using CancelOrder.to_tx
         transaction = cancel_order.to_tx(self.signer)
 
@@ -401,15 +573,83 @@ class BulkWebSocketClient:
             "id": self.request_id
         }
 
-        await self.ws.send(json.dumps(request))
+        # Create future for this request
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+        try:
+            await self.ws.send(json.dumps(request))
 
-        self.logger.info(f"Cancelled order: {order_id}")
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response[0]
+        except asyncio.TimeoutError:
+            self.logger.error(f"Order request {request_id} timed out")
+            self.pending_requests.pop(request_id, None)
+            raise
+        except Exception as e:
+            self.logger.error(f"Order placement error: {e}")
+            self.pending_requests.pop(request_id, None)
+            raise
 
-        return self.request_id
+    async def cancel_all(
+        self,
+        symbols: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+    ) -> int:
+        """
+        Cancel an order
+
+        Args:
+            symbol: Market symbol
+            order_id: Order ID to cancel
+            timeout: response timeout
+
+        Returns:
+            Cancel response
+        """
+        if not self.signer:
+            raise RuntimeError("Signer not configured")
+
+        self.request_id += 1
+        request_id = self.request_id
+        timeout = timeout if timeout is not None else self.default_timeout
+
+        # Create CancelOrder using your class
+        cancel_order = CancelAll(symbols=symbols)
+        # Build transaction using CancelOrder.to_tx
+        transaction = cancel_order.to_tx(self.signer)
+
+        # Build WebSocket request
+        request = {
+            "method": "post",
+            "request": {
+                "type": "action",
+                "payload": transaction
+            },
+            "id": self.request_id
+        }
+
+        # Create future for this request
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+        try:
+            await self.ws.send(json.dumps(request))
+
+            # Wait for response with timeout
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response[0]
+        except asyncio.TimeoutError:
+            self.logger.error(f"Order request {request_id} timed out")
+            self.pending_requests.pop(request_id, None)
+            raise
+        except Exception as e:
+            self.logger.error(f"Order placement error: {e}")
+            self.pending_requests.pop(request_id, None)
+            raise
 
     # ==================== EVENT HANDLERS ====================
 
-    def on(self, event_type: str, handler: Callable):
+    def on(self, event_type: Topic, handler: Callable):
         """
         Register an event handler
 
@@ -423,11 +663,9 @@ class BulkWebSocketClient:
         - "margin_update": MarginUpdate
         - "position_update": PositionUpdate
         - "order_placed": OpenOrder
-        - "order_cancelled": str (order_id)
         - "fill": Fill
         - "leverage_update": List[LeverageSetting]
-        - "order_state": str (order_id)
-        - "order_error": str
+        - "order_state": OrderState
 
         Args:
             event_type: Event type to handle
@@ -437,42 +675,11 @@ class BulkWebSocketClient:
             self.handlers[event_type] = []
         self.handlers[event_type].append(handler)
 
-    def off(self, event_type: str, handler: Callable):
+    def off(self, event_type: Topic, handler: Callable):
         """Remove an event handler"""
         if event_type in self.handlers and handler in self.handlers[event_type]:
             self.handlers[event_type].remove(handler)
 
-    # ==================== UTILITY METHODS ====================
-
-    def get_order_book(self, symbol: str) -> Optional[OrderBook]:
-        """Get OrderBook instance for a symbol"""
-        return self.order_books.get(symbol)
-
-    def get_ticker(self, symbol: str) -> Optional[Ticker]:
-        """Get latest Ticker for a symbol"""
-        return self.tickers.get(symbol)
-
-    def get_open_orders(self, symbol: Optional[str] = None) -> List[OpenOrder]:
-        """Get open orders, optionally filtered by symbol"""
-        if symbol:
-            return [
-                order for order in self.open_orders.values()
-                if order.symbol == symbol
-            ]
-        return list(self.open_orders.values())
-
-    def get_pnl(self, prices: Dict[str, float]) -> Pnl:
-        """Calculate P&L using Inventory class"""
-        return self.inventory.pv(prices)
-
-    @property
-    def is_connected(self) -> bool:
-        """Check if WebSocket is connected"""
-        return (
-                self.state == ConnectionState.CONNECTED and
-                self.ws and
-                not self.ws.closed
-        )
 
     # ==================== CONNECTION HANDLING ====================
 
@@ -488,7 +695,6 @@ class BulkWebSocketClient:
 
         self.logger.info(f"Reconnecting in {delay:.1f}s (attempt {self.reconnect_attempts})")
         await asyncio.sleep(delay)
-
         await self.connect()
 
     async def _receive_loop(self):
@@ -497,7 +703,6 @@ class BulkWebSocketClient:
             async for message in self.ws:
                 try:
                     data = json.loads(message)
-                    print(f"Received message: {data}")
                     await self._handle_message(data)
                 except json.JSONDecodeError as e:
                     self.logger.error(f"JSON decode error: {e}")
@@ -556,7 +761,7 @@ class BulkWebSocketClient:
         self.tickers[ticker.symbol] = ticker
 
         # Emit typed event
-        await self._emit_event("ticker", ticker)
+        await self._emit_event(Topic.TICKER, ticker)
 
         self.logger.debug(
             f"Ticker: {ticker.symbol} "
@@ -588,7 +793,7 @@ class BulkWebSocketClient:
                 )
 
         # Emit typed events
-        await self._emit_event("trades", trades)
+        await self._emit_event(Topic.TRADES, trades)
 
         self.logger.debug(f"Trades: {len(trades)} trades for {trades[0].symbol if trades else 'unknown'}")
 
@@ -610,7 +815,7 @@ class BulkWebSocketClient:
             self.order_books[snapshot.symbol] = book
 
         # Emit typed event
-        await self._emit_event("l2_snapshot", snapshot)
+        await self._emit_event(Topic.L2SNAPSHOT, snapshot)
 
         book = self.order_books[snapshot.symbol]
         self.logger.debug(
@@ -634,7 +839,7 @@ class BulkWebSocketClient:
             self.logger.warning(f"Received delta for uninitialized book: {delta.symbol}")
 
         # Emit typed event
-        await self._emit_event("l2_delta", delta)
+        await self._emit_event(Topic.L2DELTA, delta)
 
         self.logger.info(
             f"Book Delta: {delta.symbol} "
@@ -655,7 +860,7 @@ class BulkWebSocketClient:
         candle = Candle.from_api(symbol, interval, candle_data)
 
         # Emit typed event
-        await self._emit_event("candle", candle)
+        await self._emit_event(Topic.CANDLE, candle)
 
         self.logger.debug(f"Candle: {candle.symbol} {candle.interval} Close={candle.close}")
 
@@ -710,7 +915,7 @@ class BulkWebSocketClient:
             self.leverage_settings[lev.symbol] = lev
 
         # Emit typed event
-        await self._emit_event("account_snapshot", snapshot)
+        await self._emit_event(Topic.ACCOUNT, snapshot)
 
         self.logger.info(
             f"Account Snapshot: "
@@ -731,7 +936,7 @@ class BulkWebSocketClient:
         self.margin = Margin.from_api(data)
 
         # Emit typed event
-        await self._emit_event("margin_update", margin_update)
+        await self._emit_event(Topic.MARGIN, margin_update)
 
         self.logger.debug(
             f"Margin: Balance={margin_update.total_balance:.2f} "
@@ -757,7 +962,7 @@ class BulkWebSocketClient:
         position.margin = pos.risk_allocation
 
         # Emit typed event
-        await self._emit_event("position_update", pos)
+        await self._emit_event(Topic.POSITION, pos)
 
     async def _handle_order_update(self, data: Dict):
         """
@@ -766,15 +971,11 @@ class BulkWebSocketClient:
         """
         order_id = data.get("orderId")
         status = data.get("status")
+        order = OrderState.from_api(data)
 
         if status == "placed":
             # Parse as OpenOrder
-            order = OpenOrder.from_api(data)
             self.open_orders[order_id] = order
-
-            # Emit typed event
-            await self._emit_event("order_placed", order)
-
             self.logger.info(
                 f"Order Placed: {order.symbol} "
                 f"{'BUY' if order.is_buy else 'SELL'} "
@@ -784,11 +985,10 @@ class BulkWebSocketClient:
         elif status == "cancelled":
             # Remove from tracking
             order = self.open_orders.pop(order_id, None)
-
-            # Emit cancellation event with order_id
-            await self._emit_event("order_cancelled", order_id)
-
             self.logger.info(f"Order Cancelled: {order_id}")
+
+        await self._emit_event(Topic.ORDER, order)
+
 
     async def _handle_fill(self, data: Dict):
         """
@@ -812,7 +1012,7 @@ class BulkWebSocketClient:
                 del self.open_orders[fill.order_id]
 
         # Emit typed event
-        await self._emit_event("fill", fill)
+        await self._emit_event(Topic.FILL, fill)
 
         self.logger.info(
             f"Fill: {fill.symbol} "
@@ -835,34 +1035,36 @@ class BulkWebSocketClient:
             self.leverage_settings[lev.symbol] = lev
 
         # Emit typed event
-        await self._emit_event("leverage_update", leverage_settings)
-
+        await self._emit_event(Topic.LEVERAGE, leverage_settings)
         self.logger.debug(f"Leverage updated for {len(leverage_settings)} symbols")
 
     async def _handle_post_response(self, data: Dict):
         """Handle response to order placement/cancellation"""
+        request_id = data.get("id")
         response_data = data.get("data", {})
         payload = response_data.get("payload", {})
         status = payload.get("status")
-        request_id = data.get("id")
+
+        # Check if this is a pending request
+        future = self.pending_requests.pop(request_id, None)
 
         if status != "ok":
             self.logger.error(f"Order request failed: {response_data}")
+            if future and not future.done():
+                # Set exception on future
+                future.set_exception(RuntimeError(f"Order request failed: {response_data}"))
             await self._emit_event("order_request_failed", response_data)
             return
 
-        response = payload.get("response", {})
-        response_type = response.get("type")
+        # Parse order responses
+        order_responses = OrderResponse.from_api(data)
 
-        if response_type == "order":
-            order_data = response.get("data", {})
-            statuses = order_data.get("statuses", [])
-
-            for order_status in statuses:
-                await self._emit_event("order_state", order_status)
+        # Resolve the future if it exists
+        if future and not future.done():
+            future.set_result(order_responses)
 
 
-    async def _emit_event(self, event_type: str, event_data: Any):
+    async def _emit_event(self, event_type: Topic, event_data: Any):
         """Emit an event to registered handlers"""
         if event_type in self.handlers:
             for handler in self.handlers[event_type]:

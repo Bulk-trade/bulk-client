@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 from typing import Tuple
 
+from bulk.api.ws import Topic
 from bulk.common import TransactionSigner, Side
 from bulk.api import BulkHttpClient
 from bulk.api import BulkWebSocketClient
@@ -32,7 +33,7 @@ TESTNET_WS_URL = "wss://exchange-wss.bulk.trade"
 TESTNET_HTTP_URL = "https://exchange-api2.bulk.trade/api/v1"
 
 SYMBOL = "BTC-USD"
-ORDER_SIZE = 0.002
+ORDER_SIZE = 0.00175
 
 
 def load_or_generate_keys():
@@ -147,45 +148,16 @@ async def test_market_order():
         fills_received.append(fill)
         side_emoji = "🟢" if fill.side == Side.BUY else "🔴"
         maker_badge = "M" if fill.is_maker else "T"
+        print(f"\n{side_emoji} FILL RECEIVED [{maker_badge}]: {fill}")
 
-        print(f"\n{side_emoji} FILL RECEIVED [{maker_badge}]:")
-        print(f"   Symbol: {fill.symbol}")
-        print(f"   Side: {fill.side.name}")
-        print(f"   Price: ${fill.price:,.2f}")
-        print(f"   Size: {fill.size:.4f}")
-        print(f"   Order ID: {fill.order_id}")
-        print(f"   Timestamp: {fill.timestamp}")
-
-    def on_order_placed(order):
-        """Handle order placement confirmation"""
-        order_status_updates.append(('placed', order))
-        print(f"\n✅ ORDER PLACED:")
-        print(f"   Order ID: {order.order_id}")
-        print(f"   Symbol: {order.symbol}")
-        print(f"   Side: {'BUY' if order.is_buy else 'SELL'}")
-        print(f"   Price: ${order.price:,.2f}")
-        print(f"   Size: {order.size:.4f}")
-
-    def on_order_cancelled(order_id):
-        """Handle order cancellation"""
-        order_status_updates.append(('cancelled', order_id))
-        print(f"\n❌ ORDER CANCELLED: {order_id}")
-
-    def on_position_update(position):
-        """Handle position update"""
-        print(f"\n📍 POSITION UPDATE:")
-        print(f"   Symbol: {position.symbol}")
-        print(f"   Size: {position.size:.4f}")
-        print(f"   Entry Price: ${position.entry_price:,.2f}")
-        print(f"   Mark Price: ${position.mark_price:,.2f}")
-        print(f"   Unrealized PnL: ${position.unrealized_pnl:,.2f}")
+    def on_order(info):
+        """Handle order state change"""
+        order_status_updates.append(info)
+        print(f"\n✅ ORDER state: {info}")
 
     def on_margin_update(margin):
         """Handle margin update"""
-        print(f"\n💰 MARGIN UPDATE:")
-        print(f"   Total Balance: ${margin.total_balance:,.2f}")
-        print(f"   Available: ${margin.available_balance:,.2f}")
-        print(f"   Used: ${margin.used_balance:,.2f}")
+        print(f"\n💰 MARGIN UPDATE: {margin}")
 
 
     # ========== Step 1 + 2: Load keys + Funding ==========
@@ -200,12 +172,10 @@ async def test_market_order():
         url=TESTNET_WS_URL,
         signer=signer,
         handlers={
-            "account_snapshot": on_account_snapshot,
-            "fill": on_fill,
-            "order_placed": on_order_placed,
-            "order_cancelled": on_order_cancelled,
-            "position_update": on_position_update,
-            "margin_update": on_margin_update,
+            Topic.ACCOUNT: on_account_snapshot,
+            Topic.FILL: on_fill,
+            Topic.ORDER: on_order,
+            Topic.MARGIN: on_margin_update,
         },
         debug=True,
     )
@@ -227,8 +197,8 @@ async def test_market_order():
     print(f"   Size: {ORDER_SIZE}")
 
     # Create market order
-    request_id = await ws_client.place_market_order(SYMBOL, Side.BUY, ORDER_SIZE)
-    print(f"✅ Market order sent (Request ID: {request_id})")
+    response = await ws_client.place_market_order(SYMBOL, Side.BUY, ORDER_SIZE)
+    print(f"✅ Market order response: {response}")
 
     # ========== Step 8: Monitor for Fills ==========
     print("\n⏳ Monitoring for fills and order updates...")
