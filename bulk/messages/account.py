@@ -78,26 +78,28 @@ class Position:
 
 
 @dataclass
-class OpenOrder:
+class OrderState:
     """Resting order information"""
+    timestamp: int  # Nanoseconds
     symbol: str
     order_id: str  # Base58 encoded
     price: float
-    size: float  # Current remaining size
+    size: float
     filled_size: float
-    is_buy: bool
-    timestamp: int  # Nanoseconds
+    side: Side
+    status: str
 
     @classmethod
-    def from_api(cls, data: Dict) -> 'OpenOrder':
+    def from_api(cls, data: Dict) -> 'OrderState':
         return cls(
+            timestamp=data.get('timestamp', 0),
             symbol=data.get('symbol', ''),
             order_id=data.get('orderId', ''),
             price=data.get('price', 0.0),
             size=data.get('size', 0.0),
             filled_size=data.get('filledSize', 0.0),
-            is_buy=data.get('isBuy', True),
-            timestamp=data.get('timestamp', 0)
+            side= Side.BUY if data.get('isBuy', True) else Side.SELL,
+            status=data.get("status", None)
         )
 
     def get_side(self) -> Side:
@@ -124,7 +126,7 @@ class AccountSnapshot:
     """Complete account state snapshot"""
     margin: Margin
     positions: List[Position]
-    open_orders: List[OpenOrder]
+    open_orders: List[OrderState]
     leverage_settings: List[LeverageSetting]
     timestamp: int = field(default_factory=lambda: int(time.time() * 1000))
 
@@ -133,7 +135,7 @@ class AccountSnapshot:
         return cls(
             margin=Margin.from_api(data.get('margin', {})),
             positions=[Position.from_api(pos) for pos in data.get('positions', [])],
-            open_orders=[OpenOrder.from_api(order) for order in data.get('openOrders', [])],
+            open_orders=[OrderState.from_api(order) for order in data.get('openOrders', [])],
             leverage_settings=[LeverageSetting.from_api(lev) for lev in data.get('leverageSettings', [])]
         )
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
@@ -12,7 +12,7 @@ from bulk.common.signer import TransactionSigner
 class LimitOrder:
     """Limit order"""
     symbol: str
-    is_buy: bool
+    side: Side
     price: float
     size: float
     reduce_only: bool = False
@@ -21,13 +21,15 @@ class LimitOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            'c': self.symbol,
-            'b': self.is_buy,
-            'px': self.price,
-            'sz': self.size,
-            'r': self.reduce_only,
-            't': {
-                'limit': {'tif': self.time_in_force.value}
+            "order": {
+                'c': self.symbol,
+                'b': self.side == Side.BUY,
+                'px': self.price,
+                'sz': self.size,
+                'r': self.reduce_only,
+                't': {
+                    'limit': {'tif': self.time_in_force.value}
+                }
             }
         }
         return order
@@ -37,7 +39,7 @@ class LimitOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [{"order": self.to_api()}]
+                "orders": [self.to_api()]
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -49,22 +51,24 @@ class LimitOrder:
 class MarketOrder:
     """Market Order"""
     symbol: str
-    is_buy: bool
+    side: Side
     size: float
     reduce_only: bool = False
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            'c': self.symbol,
-            'b': self.is_buy,
-            'sz': self.size,
-            'px': 0.0,
-            'r': self.reduce_only,
-            't': {
-                "trigger": {
-                    "is_market": True,
-                    "triggerPx": 0.0
+            "order": {
+                'c': self.symbol,
+                'b': self.side == Side.BUY,
+                'sz': self.size,
+                'px': 0.0,
+                'r': self.reduce_only,
+                't': {
+                    "trigger": {
+                        "is_market": True,
+                        "triggerPx": 0.0
+                    }
                 }
             }
         }
@@ -75,7 +79,7 @@ class MarketOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [{"order": self.to_api()}]
+                "orders": [self.to_api()]
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -96,17 +100,18 @@ class CancelOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         return {
-            #'type': 'cancel',
-            'c': self.symbol,
-            'oid': self.oid
+            "cancel": {
+                'c': self.symbol,
+                'oid': self.oid
+            }
         }
 
     def to_tx(self, signer: TransactionSigner) -> Dict:
         """Create TX for this cancel order"""
         tx = {
             "action": {
-                "type": "cancel",
-                "cancels": [self.to_api()]
+                "type": "order",
+                "orders": [self.to_api()]
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -119,16 +124,28 @@ class CancelOrder:
 class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     account: str
-    symbol: Optional[str]
+    symbols: List[str]
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
-        raise NotImplementedError("Cancel All Not Implemented")
+        return {
+            "cancelAll": {
+                'c': self.symbols,
+            }
+        }
 
     def to_tx(self, signer: TransactionSigner) -> Dict:
         """Create TX for this cancel order"""
-        raise NotImplementedError("Cancel All Not Implemented")
-
+        tx = {
+            "action": {
+                "type": "order",
+                "orders": [self.to_api()]
+            },
+            "account": signer.public_key,
+            "signer": signer.public_key,
+        }
+        tx = signer.sign_transaction(tx)
+        return tx
 
 # ----------------------------------------------------------
 # Order Responses
@@ -160,7 +177,7 @@ class Fill:
         )
 
 @dataclass
-class OrderStatus:
+class OrderState:
     """Represents an order status update"""
     timestamp: int
     symbol: str
@@ -175,7 +192,7 @@ class OrderStatus:
     is_maker: bool
 
     @classmethod
-    def from_api(cls, data: Dict) -> 'OrderStatus':
+    def from_api(cls, data: Dict) -> 'OrderState':
         return cls(
             timestamp=data.get('timestamp'),
             symbol=data.get('symbol'),
@@ -189,4 +206,34 @@ class OrderStatus:
             size_orig=data.get('size_orig', data.get('size')),
             is_maker=data.get('maker', False)
         )
+
+@dataclass
+class OrderResponse:
+    """Represents an order post response"""
+    order_id: Optional[str]
+    status: OrderStatus
+    message: Optional[str]
+
+    @classmethod
+    def from_api(cls, data: Dict) -> List['OrderResponse']:
+        rlist = data.get("data",{}).get("payload",{}).get("response",{}).get("data",{}).get("statuses", [])
+        responses = []
+        for response in rlist:
+            match response:
+                case {"resting": body}:
+                    # Handle resting order
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.RESTING, message=None))
+                case {"filled": body}:
+                    # Handle filled case
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.FILLED, message=None))
+                case {"partiallyfilled": body}:
+                    # Handle partial fill
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.PARTIALLY_FILLED, message=None))
+                case {"error": body}:
+                    # Handle error
+                    responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None)))
+                case {"cancelled": body}:
+                    # Order cancelled
+                   responses.append(cls(order_id=body.get("oid"), status=OrderStatus.CANCELLED, message=None))
+        return responses
 
