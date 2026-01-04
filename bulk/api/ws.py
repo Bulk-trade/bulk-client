@@ -59,7 +59,7 @@ class Topic(Enum):
     FILL = "fill"
     LEVERAGE = "leverage_update"
     ORDER = "order_state"
-
+    ERROR = "error"
 
 
 class BulkWebSocketClient:
@@ -72,11 +72,15 @@ class BulkWebSocketClient:
     - Maintains OrderBook instances using your OrderBook class
     - Uses Inventory class for position tracking
     - All messages parsed with proper from_api methods
+
+    Notes:
+    - the following streams are auto-subscribed: ticker, account
     """
 
     def __init__(
         self,
         url: str = "wss://exchange-wss.bulk.trade",
+        symbols: List[str] = ["BTC-USD", "ETH-USD", "SOL-USD"],
         signer: Optional[TransactionSigner] = None,
         inventory: Optional[Inventory] = None,
         logger: Optional[logging.Logger] = None,
@@ -88,11 +92,13 @@ class BulkWebSocketClient:
 
         Args:
             url: WebSocket endpoint URL
+            symbols: List of symbols to subscribe to
             signer: TransactionSigner for signing orders
             inventory: Inventory instance for position tracking
             logger: Logger instance
         """
         self.url = url
+        self.symbols = symbols
         self.signer = signer
         self.inventory = inventory or Inventory()
         self.logger = logger or logging.getLogger(__name__)
@@ -106,7 +112,7 @@ class BulkWebSocketClient:
         self.reconnect_attempts = 0
 
         # Subscription tracking
-        self.subscriptions: List[SubscriptionRequest] = []
+        self.subscribed: List[SubscriptionRequest] = []
         self.active_topics: Set[str] = set()
 
         # Event handlers - keyed by event type
@@ -118,6 +124,7 @@ class BulkWebSocketClient:
 
         # Latest ticker for each symbol
         self.tickers: Dict[str, Ticker] = {}
+        self.prices: Dict[str, float] = {}
 
         # Open orders tracking
         self.open_orders: Dict[str, OrderState] = {}
@@ -175,11 +182,15 @@ class BulkWebSocketClient:
             # Resubscribe to previous subscriptions
             if self.subscriptions:
                 self.logger.info(f"Resubscribing to {len(self.subscriptions)} topics")
-                await self.subscribe(self.subscriptions.copy())
+                await self._subscribe(self.subscriptions.copy())
 
-            # we want to get account updates
-            elif self.signer is not None:
-                await self.subscribe_account(self.signer.public_key)
+            # subscribe to account and tickers
+            else:
+                if self.signer is not None:
+                    await self.subscribe_account(self.signer.public_key)
+
+                for symbol in self.symbols:
+                    await self.subscribe_ticker(symbol)
 
             return True
 
@@ -216,7 +227,7 @@ class BulkWebSocketClient:
 
     # ==================== ACCESS METHODS ====================
 
-    def get_order_book(self, symbol: str) -> Optional[OrderBook]:
+    def get_book(self, symbol: str) -> Optional[OrderBook]:
         """Get OrderBook instance for a symbol"""
         return self.order_books.get(symbol)
 
@@ -224,7 +235,7 @@ class BulkWebSocketClient:
         """Get latest Ticker for a symbol"""
         return self.tickers.get(symbol)
 
-    def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderState]:
+    def get_orders(self, symbol: Optional[str] = None) -> List[OrderState]:
         """Get open orders, optionally filtered by symbol"""
         if symbol:
             return [
@@ -234,64 +245,21 @@ class BulkWebSocketClient:
         else:
             return list(self.open_orders.values())
 
-    def get_pnl(self, prices: Dict[str, float]) -> Pnl:
+    def get_pnl(self) -> Pnl:
         """Calculate P&L using Inventory class"""
-        return self.inventory.pv(prices)
+        return self.inventory.pv(self.prices)
 
-    # ==================== SUBSCRIPTION MANAGEMENT ====================
-
-    async def subscribe(self, subscriptions: List[SubscriptionRequest]) -> List[str]:
-        """
-        Subscribe to one or more topics
-
-        Args:
-            subscriptions: List of subscription requests
-
-        Returns:
-            List of active topic strings
-        """
-        if not self.ws or self.state != ConnectionState.CONNECTED:
-            raise RuntimeError("Not connected to WebSocket")
-
-        request = {
-            "method": "subscribe",
-            "subscription": [sub.to_dict() for sub in subscriptions]
-        }
-
-        await self.ws.send(json.dumps(request))
-
-        # Store subscriptions for reconnection
-        self.subscriptions.extend(subscriptions)
-
-        self.logger.info(f"Subscribed to {len(subscriptions)} topics")
-        return list(self.active_topics)
-
-    async def unsubscribe(self, topic: str):
-        """Unsubscribe from a specific topic"""
-        if not self.ws or self.state != ConnectionState.CONNECTED:
-            raise RuntimeError("Not connected to WebSocket")
-
-        request = {
-            "method": "unsubscribe",
-            "topic": topic
-        }
-
-        await self.ws.send(json.dumps(request))
-        self.active_topics.discard(topic)
-        self.logger.info(f"Unsubscribed from {topic}")
-
-
-    # ==================== MARKET DATA SUBSCRIPTIONS ====================
+    # ==================== SUBSCRIPTIONS ====================
 
     async def subscribe_ticker(self, symbol: str):
         """Subscribe to ticker updates"""
         sub = SubscriptionRequest("ticker", {"symbol": symbol})
-        await self.subscribe([sub])
+        await self._subscribe([sub])
 
     async def subscribe_trades(self, symbols: List[str]):
         """Subscribe to trades for symbols"""
         subs = [SubscriptionRequest("trades", {"symbol": sym}) for sym in symbols]
-        await self.subscribe(subs)
+        await self._subscribe(subs)
 
     async def subscribe_orderbook_snapshot(self, symbol: str, nlevels: Optional[int] = None):
         """Subscribe to orderbook snapshots and initialize OrderBook"""
@@ -300,7 +268,7 @@ class BulkWebSocketClient:
             params["nlevels"] = nlevels
 
         sub = SubscriptionRequest("l2Snapshot", params)
-        await self.subscribe([sub])
+        await self._subscribe([sub])
 
         # Initialize order book using your OrderBook class
         if symbol not in self.order_books:
@@ -309,19 +277,19 @@ class BulkWebSocketClient:
     async def subscribe_orderbook_delta(self, symbol: str):
         """Subscribe to orderbook delta updates"""
         sub = SubscriptionRequest("l2Delta", {"symbol": symbol})
-        await self.subscribe([sub])
+        await self._subscribe([sub])
 
     async def subscribe_account(self, user_pubkey: str):
         """Subscribe to account updates"""
         sub = SubscriptionRequest("account", {"user": user_pubkey})
-        await self.subscribe([sub])
+        await self._subscribe([sub])
 
     async def subscribe_candles(self, symbol: str, interval: str):
         """Subscribe to candle updates"""
         sub = SubscriptionRequest("candle", {"symbol": symbol, "interval": interval})
-        await self.subscribe([sub])
+        await self._subscribe([sub])
 
-    # ==================== ORDER PLACEMENT ====================
+    # ==================== ORDERS ====================
 
     async def place_multi(
         self,
@@ -374,7 +342,16 @@ class BulkWebSocketClient:
             await self.ws.send(json.dumps(request))
 
             # Wait for response with timeout
-            response = await asyncio.wait_for(future, timeout=timeout)
+            responses = await asyncio.wait_for(future, timeout=timeout)
+
+            # Emit order state events
+            for i in range(len(actions)):
+                req = actions[i]
+                response = responses[i]
+                state = OrderState.from_post(req, response)
+                if state is not None:
+                    self._emit_event(Topic.ORDER, state)
+
             return response
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
@@ -441,7 +418,7 @@ class BulkWebSocketClient:
         }
         self.logger.info(
             f"Place limit order: {symbol} "
-            f"{'BUY' if is_buy else 'SELL'} {size} @ {price}"
+            f"{side} {size} @ {price}"
         )
 
         # Create future for this request
@@ -451,8 +428,14 @@ class BulkWebSocketClient:
             await self.ws.send(json.dumps(request))
 
             # Wait for response with timeout
-            response = await asyncio.wait_for(future, timeout=timeout)
-            return response[0]
+            responses = await asyncio.wait_for(future, timeout=timeout)
+
+            req = limit_order
+            response = responses[0]
+            state = OrderState.from_post(req, response)
+            self._emit_event(Topic.ORDER, state)
+
+            return response
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -523,8 +506,14 @@ class BulkWebSocketClient:
             await self.ws.send(json.dumps(request))
 
             # Wait for response with timeout
-            response = await asyncio.wait_for(future, timeout=timeout)
-            return response[0]
+            responses = await asyncio.wait_for(future, timeout=timeout)
+
+            req = market_order
+            response = responses[0]
+            state = OrderState.from_post(req, response)
+            await self._emit_event(Topic.ORDER, state)
+
+            return response
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -576,12 +565,19 @@ class BulkWebSocketClient:
         # Create future for this request
         future = asyncio.Future()
         self.pending_requests[request_id] = future
+        req = self.open_orders.get(order_id, None)
         try:
             await self.ws.send(json.dumps(request))
 
             # Wait for response with timeout
-            response = await asyncio.wait_for(future, timeout=timeout)
-            return response[0]
+            responses = await asyncio.wait_for(future, timeout=timeout)
+
+            response = responses[0]
+            if req is not None:
+                state = OrderState.from_post(req, response)
+                await self._emit_event(Topic.ORDER, state)
+
+            return response
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -662,10 +658,9 @@ class BulkWebSocketClient:
         - "account_snapshot": AccountSnapshot
         - "margin_update": MarginUpdate
         - "position_update": PositionUpdate
-        - "order_placed": OpenOrder
+        - "order": OrderState
         - "fill": Fill
         - "leverage_update": List[LeverageSetting]
-        - "order_state": OrderState
 
         Args:
             event_type: Event type to handle
@@ -716,6 +711,48 @@ class BulkWebSocketClient:
             self.logger.error(f"Receive loop error: {e}", exc_info=True)
             await self._reconnect()
 
+    # ==================== SUBSCRIPTION MANAGEMENT ====================
+
+    async def _subscribe(self, subscriptions: List[SubscriptionRequest]) -> List[str]:
+        """
+        Subscribe to one or more topics
+
+        Args:
+            subscriptions: List of subscription requests
+
+        Returns:
+            List of active topic strings
+        """
+        if not self.ws or self.state != ConnectionState.CONNECTED:
+            raise RuntimeError("Not connected to WebSocket")
+
+
+        request = {
+            "method": "subscribe",
+            "subscription": [sub.to_dict() for sub in subscriptions]
+        }
+
+        await self.ws.send(json.dumps(request))
+
+        # Store subscriptions for reconnection
+        self.subscriptions.extend(subscriptions)
+
+        self.logger.info(f"Subscribed to {len(subscriptions)} topics")
+        return list(self.active_topics)
+
+    async def _unsubscribe(self, topic: str):
+        """Unsubscribe from a specific topic"""
+        if not self.ws or self.state != ConnectionState.CONNECTED:
+            raise RuntimeError("Not connected to WebSocket")
+
+        request = {
+            "method": "unsubscribe",
+            "topic": topic
+        }
+
+        await self.ws.send(json.dumps(request))
+        self.active_topics.discard(topic)
+        self.logger.info(f"Unsubscribed from {topic}")
 
     # ==================== MESSAGE HANDLING ====================
 
@@ -759,6 +796,7 @@ class BulkWebSocketClient:
 
         # Store latest ticker
         self.tickers[ticker.symbol] = ticker
+        self.prices[ticker.symbol] = ticker.mark_price
 
         # Emit typed event
         await self._emit_event(Topic.TICKER, ticker)
@@ -868,19 +906,19 @@ class BulkWebSocketClient:
         """Handle account updates - emits typed objects"""
         account_data = data.get("data", {})
         update_type = account_data.get("type")
-
-        if update_type == "accountSnapshot":
-            await self._handle_account_snapshot(account_data)
-        elif update_type == "marginUpdate":
-            await self._handle_margin_update(account_data)
-        elif update_type == "positionUpdate":
-            await self._handle_position_update(account_data)
-        elif update_type == "order":
-            await self._handle_order_update(account_data)
-        elif update_type == "fill":
-            await self._handle_fill(account_data)
-        elif update_type == "leverageUpdate":
-            await self._handle_leverage_update(account_data)
+        match update_type:
+            case "accountSnapshot":
+                await self._handle_account_snapshot(account_data)
+            case "marginUpdate":
+                await self._handle_margin_update(account_data)
+            case "positionUpdate":
+                await self._handle_position_update(account_data)
+            case "order":
+                await self._handle_order_update(account_data)
+            case "fill":
+                await self._handle_fill(account_data)
+            case "leverageUpdate":
+                await self._handle_leverage_update(account_data)
 
     async def _handle_account_snapshot(self, data: Dict):
         """
@@ -1053,16 +1091,14 @@ class BulkWebSocketClient:
             if future and not future.done():
                 # Set exception on future
                 future.set_exception(RuntimeError(f"Order request failed: {response_data}"))
-            await self._emit_event("order_request_failed", response_data)
-            return
+            await self._emit_event(Topic.ERROR, response_data)
+        else:
+            # Parse order responses
+            order_responses = OrderResponse.from_api(data)
 
-        # Parse order responses
-        order_responses = OrderResponse.from_api(data)
-
-        # Resolve the future if it exists
-        if future and not future.done():
-            future.set_result(order_responses)
-
+            # Resolve the future if it exists
+            if future and not future.done():
+                future.set_result(order_responses)
 
     async def _emit_event(self, event_type: Topic, event_data: Any):
         """Emit an event to registered handlers"""

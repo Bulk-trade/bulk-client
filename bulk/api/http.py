@@ -9,6 +9,8 @@ Provides complete HTTP REST API access to the Bulk Labs exchange:
 """
 
 import json
+import time
+
 import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
@@ -830,7 +832,7 @@ class BulkHttpClient:
     # PRIVATE ENDPOINTS (SIGNED)
     # ===================================================================
 
-    def request_faucet(self, user: Optional[str] = None) -> Dict:
+    def request_faucet(self, user: Optional[str] = None, nonce: int = time.time_ns()) -> Dict:
         """
         Request testnet faucet funds (100,000 USDC)
 
@@ -838,6 +840,7 @@ class BulkHttpClient:
 
         Args:
             user: Optional user public key (defaults to signer's public key)
+            nonce: Optional nonce (defaults to current time ns)
 
         Returns:
             API response with success status or error
@@ -860,7 +863,8 @@ class BulkHttpClient:
                 "type": "faucet",
                 "faucet": {
                     "u": target_user
-                }
+                },
+                "nonce": nonce
             },
             "account": target_user,
             "signer": self.signer.public_key

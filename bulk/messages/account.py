@@ -2,7 +2,123 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from bulk.common import Side
+from bulk.common import Side, OrderStatus
+
+
+@dataclass
+class OrderState:
+    """Represents an order status update"""
+    timestamp: int
+    symbol: str
+    order_id: str
+    status: OrderStatus
+    side: Side
+    price: float
+    size: float
+    size_done: float
+    size_orig: float
+    is_maker: bool
+    error: Optional[str] = None
+
+    def get_side(self) -> Side:
+        """Get the order side"""
+        return Side.BUY if self.is_buy else Side.SELL
+
+    @classmethod
+    def from_api(cls, data: Dict) -> 'OrderState':
+        return cls(
+            timestamp=data.get('timestamp'),
+            symbol=data.get('symbol'),
+            order_id=data.get('orderId'),
+            status=OrderStatus.from_string(data.get('status')),
+            side=Side.BUY if data.get('isBuy') else Side.SELL,
+            price=data.get('price'),
+            size=data.get('size'),
+            size_done=data.get('filledSize', 0.0),
+            size_orig=data.get('size_orig', data.get('size')),
+            is_maker=data.get('maker', False)
+        )
+
+    @classmethod
+    def from_post(cls, req, response) -> 'OrderState':
+        timestamp = time.time_ns()
+        match response.status:
+            case OrderStatus.RESTING:
+                oid = response.order_id
+                symbol = req.symbol
+                side = req.side
+                price = req.price
+                size = req.size
+                return cls(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    order_id=oid,
+                    status=OrderStatus.RESTING,
+                    side=side,
+                    price=price,
+                    size=size,
+                    size_done=0.0,
+                    size_orig=size,
+                    is_maker=True
+                )
+            case OrderStatus.FILLED:
+                oid = response.order_id
+                done = response.meta.get("totalSz", req.size)
+                vwap = response.meta.get("avgPx", 0.0)
+                symbol = req.symbol
+                side = req.side
+                size = req.size
+                return cls(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    order_id=oid,
+                    status=OrderStatus.FILLED,
+                    side=side,
+                    price=vwap,
+                    size=size,
+                    size_done=done,
+                    size_orig=size,
+                    is_maker=False
+                )
+            case OrderStatus.PARTIALLY_FILLED:
+                oid = response.order_id
+                done = response.meta.get("totalSz", req.size)
+                vwap = response.meta.get("avgPx", 0.0)
+                symbol = req.symbol
+                side = req.side
+                size = req.size
+                return cls(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    order_id=oid,
+                    status=OrderStatus.PARTIALLY_FILLED,
+                    side=side,
+                    price=vwap,
+                    size=size,
+                    size_done=done,
+                    size_orig=size,
+                    is_maker=False
+                )
+            case OrderStatus.ERROR:
+                error = response.meta.get("message", "")
+                symbol = req.symbol
+                side = req.side
+                size = req.size
+                return cls(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    order_id=None,
+                    status=OrderStatus.ERROR,
+                    side=side,
+                    price=0.0,
+                    size=size,
+                    size_done=0.0,
+                    size_orig=size,
+                    is_maker=False,
+                    error=error
+                )
+            case _:
+                raise Exception("Unknown order status: {response.status}")
 
 
 @dataclass
@@ -75,36 +191,6 @@ class Position:
     def is_short(self) -> bool:
         """Check if position is short"""
         return self.size < 0
-
-
-@dataclass
-class OrderState:
-    """Resting order information"""
-    timestamp: int  # Nanoseconds
-    symbol: str
-    order_id: str  # Base58 encoded
-    price: float
-    size: float
-    filled_size: float
-    side: Side
-    status: str
-
-    @classmethod
-    def from_api(cls, data: Dict) -> 'OrderState':
-        return cls(
-            timestamp=data.get('timestamp', 0),
-            symbol=data.get('symbol', ''),
-            order_id=data.get('orderId', ''),
-            price=data.get('price', 0.0),
-            size=data.get('size', 0.0),
-            filled_size=data.get('filledSize', 0.0),
-            side= Side.BUY if data.get('isBuy', True) else Side.SELL,
-            status=data.get("status", None)
-        )
-
-    def get_side(self) -> Side:
-        """Get the order side"""
-        return Side.BUY if self.is_buy else Side.SELL
 
 
 @dataclass

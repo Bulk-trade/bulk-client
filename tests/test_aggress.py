@@ -235,14 +235,6 @@ async def test_market_order():
     else:
         print(f"\n⚠️  No fills received (order may be resting or cancelled)")
 
-    if order_status_updates:
-        print(f"\n📋 Order Status Updates: {len(order_status_updates)}")
-        for status, data in order_status_updates:
-            if status == 'placed':
-                print(f"   - Order Placed: {data.order_id}")
-            elif status == 'cancelled':
-                print(f"   - Order Cancelled: {data}")
-
     # Final account state
     if ws_client.margin:
         print(f"\n💰 Final Account State:")
