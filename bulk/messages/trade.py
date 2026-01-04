@@ -1,5 +1,7 @@
+import time
 from dataclasses import dataclass
 from typing import Dict, Optional, List
+from unittest import case
 
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
@@ -15,6 +17,7 @@ class LimitOrder:
     side: Side
     price: float
     size: float
+    nonce: int = time.time_ns()
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
 
@@ -39,7 +42,8 @@ class LimitOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [self.to_api()],
+                "nonce": self.nonce
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -53,6 +57,7 @@ class MarketOrder:
     symbol: str
     side: Side
     size: float
+    nonce: int = time.time_ns()
     reduce_only: bool = False
 
     def to_api(self) -> Dict:
@@ -79,7 +84,8 @@ class MarketOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [self.to_api()],
+                "nonce": self.nonce
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -96,6 +102,7 @@ class CancelOrder:
     """Cancel order"""
     symbol: str
     oid: str
+    nonce: int = time.time_ns()
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -111,7 +118,8 @@ class CancelOrder:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [self.to_api()],
+                "nonce": self.nonce
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -125,6 +133,7 @@ class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     account: str
     symbols: List[str]
+    nonce: int = time.time_ns()
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -139,7 +148,8 @@ class CancelAll:
         tx = {
             "action": {
                 "type": "order",
-                "orders": [self.to_api()]
+                "orders": [self.to_api()],
+                "nonce": self.nonce
             },
             "account": signer.public_key,
             "signer": signer.public_key,
@@ -176,36 +186,6 @@ class Fill:
             is_maker=data.get('maker', False)
         )
 
-@dataclass
-class OrderState:
-    """Represents an order status update"""
-    timestamp: int
-    symbol: str
-    order_id: str
-    client_id: Optional[str]
-    status: OrderStatus
-    is_buy: bool
-    price: float
-    size: float
-    size_done: float
-    size_orig: float
-    is_maker: bool
-
-    @classmethod
-    def from_api(cls, data: Dict) -> 'OrderState':
-        return cls(
-            timestamp=data.get('timestamp'),
-            symbol=data.get('symbol'),
-            order_id=data.get('orderId'),
-            client_id=data.get('clientId', None),
-            status=OrderStatus.from_string(data.get('status')),
-            is_buy=data.get('isBuy'),
-            price=data.get('price'),
-            size=data.get('size'),
-            size_done=data.get('size_done', 0.0),
-            size_orig=data.get('size_orig', data.get('size')),
-            is_maker=data.get('maker', False)
-        )
 
 @dataclass
 class OrderResponse:
@@ -213,6 +193,7 @@ class OrderResponse:
     order_id: Optional[str]
     status: OrderStatus
     message: Optional[str]
+    meta: Dict
 
     @classmethod
     def from_api(cls, data: Dict) -> List['OrderResponse']:
@@ -222,18 +203,18 @@ class OrderResponse:
             match response:
                 case {"resting": body}:
                     # Handle resting order
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.RESTING, message=None))
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.RESTING, message=None, meta=body))
                 case {"filled": body}:
                     # Handle filled case
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.FILLED, message=None))
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.FILLED, message=None, meta=body))
                 case {"partiallyfilled": body}:
                     # Handle partial fill
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.PARTIALLY_FILLED, message=None))
+                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.PARTIALLY_FILLED, message=None, meta=body))
                 case {"error": body}:
                     # Handle error
-                    responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None)))
+                    responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None, meta=body)))
                 case {"cancelled": body}:
                     # Order cancelled
-                   responses.append(cls(order_id=body.get("oid"), status=OrderStatus.CANCELLED, message=None))
+                   responses.append(cls(order_id=body.get("oid"), status=OrderStatus.CANCELLED, message=None, meta=body))
         return responses
 

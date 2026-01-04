@@ -1,5 +1,6 @@
 import json
 import struct
+import time
 from typing import Dict, Tuple, List
 
 from nacl.signing import SigningKey
@@ -140,13 +141,17 @@ class TransactionSigner:
         elif action_type == "faucet":
             parts.extend(TransactionSigner._serialize_faucet(action.get("faucet", {})))
 
-        # 3. Account (32 bytes from base58)
+        # 3. Nonce
+        nonce_bytes = TransactionSigner._write_u64(action.get("nonce", time.time_ns()))
+        parts.append(nonce_bytes)
+
+        # 4. Account (32 bytes from base58)
         account_bytes = base58.b58decode(account)
         if len(account_bytes) != 32:
             raise ValueError(f"Account must be 32 bytes, got {len(account_bytes)}")
         parts.append(account_bytes)
 
-        # 4. Signer (32 bytes from base58)
+        # 5. Signer (32 bytes from base58)
         signer_bytes = base58.b58decode(signer)
         if len(signer_bytes) != 32:
             raise ValueError(f"Signer must be 32 bytes, got {len(signer_bytes)}")

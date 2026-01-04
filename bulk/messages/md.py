@@ -168,6 +168,27 @@ class L2Snapshot:
             asks=asks,
             timestamp=book_data.get('timestamp', 0))
 
+    def sweep_px(self, side: Side, size: float) -> float:
+        """
+        Determine price to sweep given size
+        """
+        book = self.bids if side == Side.BUY else self.asks
+        cumsize = 0.0
+        for level in book:
+            cumsize += level.size
+            if cumsize >= size:
+                return level.price
+
+        return book[-1].price
+
+    def liquidity_adj_mid(self, size: float) -> float:
+        """
+        Determine liquidity adjusted mid price
+        """
+        bid = self.sweep_px(Side.BUY, size)
+        ask = self.sweep_px(Side.SELL, size)
+        return (bid + ask) / 2.0
+
 
 @dataclass
 class L2Delta:
