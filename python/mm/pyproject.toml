@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mm"
+version = "0.1.0"
+description = "Replicating Market Mmaker for bulk exchange API"
+requires-python = ">=3.10"
+dependencies = [
+    "bulk @ file:///${PROJECT_ROOT}/../bulk",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["bmm"]
