@@ -139,6 +139,18 @@ class OrderBookLevel:
         """Hash based on price for dict/set usage"""
         return hash(self.price)
 
+    def __repr__(self) -> str:
+        return f"OrderBookLevel(price={self.price}, size={self.size}, num_orders={self.num_orders})"
+
+    def __str__(self) -> str:
+        """Format as 'size @ price'"""
+        return f"{self.size} @ {self.price}"
+
+    def format_with_side(self, side: Side) -> str:
+        """Format with Buy/Sell prefix"""
+        side_str = "Buy" if side == Side.BUY else "Sell"
+        return f"{side_str} {self.size} @ {self.price}"
+
 
 @dataclass
 class L2Snapshot:
@@ -372,4 +384,41 @@ class OrderBook:
             return self._asks.get(iprice)
         return None
 
+    def __repr__(self) -> str:
+        return f"OrderBook(symbol={self.symbol}, bids={len(self.bids)}, asks={len(self.asks)})"
 
+    def __str__(self) -> str:
+        """Format order book with sells first, then buys"""
+        return self.format_book(depth=10)
+
+    def format_book(self, depth: int = 10) -> str:
+        """
+        Format order book for display
+        """
+        lines = [f"{self.symbol} Order Book:"]
+
+        # Get sorted levels
+        asks = sorted(self.get_asks(), key=lambda x: x.price, reverse=True)[:depth]
+        bids = sorted(self.get_bids(), key=lambda x: x.price, reverse=True)[:depth]
+
+        # Sells (asks) - highest to lowest (furthest from mid to closest)
+        if asks:
+            lines.append("\nSells:")
+            for ask in asks:
+                lines.append(f"  Sell {ask.size:>10.4f} @ {ask.price:.{self.decimals}f}")
+
+        # Spread indicator
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+        if best_bid and best_ask:
+            spread = best_ask.price - best_bid.price
+            mid = (best_bid.price + best_ask.price) / 2
+            lines.append(f"\n  {'---':>10} Spread: {spread:.{self.decimals}f} Mid: {mid:.{self.decimals}f}")
+
+        # Buys (bids) - highest to lowest (closest to mid to furthest)
+        if bids:
+            lines.append("\nBuys:")
+            for bid in bids:
+                lines.append(f"  Buy  {bid.size:>10.4f} @ {bid.price:.{self.decimals}f}")
+
+        return "\n".join(lines)

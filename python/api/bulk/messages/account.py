@@ -14,6 +14,7 @@ class OrderState:
     status: OrderStatus
     side: Side
     price: float
+    vwap: float
     size: float
     size_done: float
     size_orig: float
@@ -33,93 +34,13 @@ class OrderState:
             status=OrderStatus.from_string(data.get('status')),
             side=Side.BUY if data.get('isBuy') else Side.SELL,
             price=data.get('price'),
+            vwap=data.get('vwap'),
             size=data.get('size'),
             size_done=data.get('filledSize', 0.0),
-            size_orig=data.get('size_orig', data.get('size')),
-            is_maker=data.get('maker', False)
+            size_orig=data.get('originalSize', data.get('size')),
+            is_maker=data.get('maker', False),
+            error = data.get('reason')
         )
-
-    @classmethod
-    def from_post(cls, req, response) -> 'OrderState':
-        timestamp = time.time_ns()
-        match response.status:
-            case OrderStatus.RESTING:
-                oid = response.order_id
-                symbol = req.symbol
-                side = req.side
-                price = req.price
-                size = req.size
-                return cls(
-                    timestamp=timestamp,
-                    symbol=symbol,
-                    order_id=oid,
-                    status=OrderStatus.RESTING,
-                    side=side,
-                    price=price,
-                    size=size,
-                    size_done=0.0,
-                    size_orig=size,
-                    is_maker=True
-                )
-            case OrderStatus.FILLED:
-                oid = response.order_id
-                done = response.meta.get("totalSz", req.size)
-                vwap = response.meta.get("avgPx", 0.0)
-                symbol = req.symbol
-                side = req.side
-                size = req.size
-                return cls(
-                    timestamp=timestamp,
-                    symbol=symbol,
-                    order_id=oid,
-                    status=OrderStatus.FILLED,
-                    side=side,
-                    price=vwap,
-                    size=size,
-                    size_done=done,
-                    size_orig=size,
-                    is_maker=False
-                )
-            case OrderStatus.PARTIALLY_FILLED:
-                oid = response.order_id
-                done = response.meta.get("totalSz", req.size)
-                vwap = response.meta.get("avgPx", 0.0)
-                symbol = req.symbol
-                side = req.side
-                size = req.size
-                return cls(
-                    timestamp=timestamp,
-                    symbol=symbol,
-                    order_id=oid,
-                    status=OrderStatus.PARTIALLY_FILLED,
-                    side=side,
-                    price=vwap,
-                    size=size,
-                    size_done=done,
-                    size_orig=size,
-                    is_maker=False
-                )
-            case OrderStatus.ERROR:
-                error = response.meta.get("message", "")
-                symbol = req.symbol
-                side = req.side
-                size = req.size
-                return cls(
-                    timestamp=timestamp,
-                    symbol=symbol,
-                    order_id=None,
-                    status=OrderStatus.ERROR,
-                    side=side,
-                    price=0.0,
-                    size=size,
-                    size_done=0.0,
-                    size_orig=size,
-                    is_maker=False,
-                    error=error
-                )
-            case _:
-                raise Exception("Unknown order status: {response.status}")
-
 
 @dataclass
 class Margin:

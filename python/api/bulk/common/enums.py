@@ -32,10 +32,22 @@ class TimeInForce(Enum):
 class OrderStatus(Enum):
     NONE = 0
     RESTING = 1
-    FILLED = 2
-    PARTIALLY_FILLED = 3
-    CANCELLED = 4
-    ERROR = 5
+    WORKING = 2
+    FILLED = 3
+    PARTIALLY_FILLED = 4
+    CANCELLED = 5
+    CANCELLED_RISKLIMIT = 6
+    CANCELLED_SELFCROSSING = 7
+    CANCELLED_IOC = 8
+    CANCELLED_REDUCE_ONLY = 9
+    REJECTED_CROSSING = 10
+    REJECTED_DUPLICATE = 11
+    REJECTED_RISKLIMIT = 12
+    REJECTED_INVALID = 13
+
+    def __str__(self):
+        """Convert to string for API"""
+        return self.name
 
     def __str__(self):
         """Convert to string for API"""
@@ -43,10 +55,38 @@ class OrderStatus(Enum):
 
     def is_terminal(self) -> bool:
         """Determine if the order is terminal or not"""
-        return self.value > OrderStatus.PLACED.value
+        return self.value > OrderStatus.WORKING.value
 
     @classmethod
     def from_string(cls, s: str) -> 'OrderStatus':
         """Construct an OrderStatus enum from a string"""
-        return OrderStatus[s.upper()]
+        match s:
+            case "placed":
+                return OrderStatus.PLACED
+            case "working":
+                return OrderStatus.WORKING
+            case "filled":
+                return OrderStatus.FILLED
+            case "partiallyFilled":
+                return OrderStatus.PARTIALLY_FILLED
+            case "cancelled":
+                return OrderStatus.CANCELLED
+            case "cancelledRiskLimit":
+                return OrderStatus.CANCELLED_RISKLIMIT
+            case "cancelledSelfCrossing":
+                return OrderStatus.CANCELLED_SELFCROSSING
+            case "cancelledReduceOnly":
+                return OrderStatus.CANCELLED_REDUCEONLY
+            case "cancelledIOC":
+                return OrderStatus.CANCELLED_IOC
+            case "rejectedCrossing":
+                return OrderStatus.REJECTED_CROSSING
+            case "rejectedDuplicate":
+                return OrderStatus.REJECTED_DUPLICATE
+            case "rejectedRiskLimit":
+                return OrderStatus.REJECTED_RISKLIMIT
+            case "rejectedInvalid":
+                return OrderStatus.REJECTED_INVALID
+            case _:
+                raise ValueError(f"Unknown order status {s}")
 
