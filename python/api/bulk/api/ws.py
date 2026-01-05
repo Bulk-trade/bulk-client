@@ -112,7 +112,7 @@ class BulkWebSocketClient:
         self.reconnect_attempts = 0
 
         # Subscription tracking
-        self.subscribed: List[SubscriptionRequest] = []
+        self.subscriptions: List[SubscriptionRequest] = []
         self.active_topics: Set[str] = set()
 
         # Event handlers - keyed by event type
@@ -343,16 +343,7 @@ class BulkWebSocketClient:
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
-
-            # Emit order state events
-            for i in range(len(actions)):
-                req = actions[i]
-                response = responses[i]
-                state = OrderState.from_post(req, response)
-                if state is not None:
-                    self._emit_event(Topic.ORDER, state)
-
-            return response
+            return responses
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -429,13 +420,7 @@ class BulkWebSocketClient:
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
-
-            req = limit_order
-            response = responses[0]
-            state = OrderState.from_post(req, response)
-            self._emit_event(Topic.ORDER, state)
-
-            return response
+            return responses[0]
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -507,13 +492,7 @@ class BulkWebSocketClient:
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
-
-            req = market_order
-            response = responses[0]
-            state = OrderState.from_post(req, response)
-            await self._emit_event(Topic.ORDER, state)
-
-            return response
+            return responses[0]
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
             self.pending_requests.pop(request_id, None)
@@ -909,12 +888,12 @@ class BulkWebSocketClient:
         match update_type:
             case "accountSnapshot":
                 await self._handle_account_snapshot(account_data)
+            case "orderUpdate":
+                await self._handle_order_update(account_data)
             case "marginUpdate":
                 await self._handle_margin_update(account_data)
             case "positionUpdate":
                 await self._handle_position_update(account_data)
-            case "order":
-                await self._handle_order_update(account_data)
             case "fill":
                 await self._handle_fill(account_data)
             case "leverageUpdate":
@@ -1007,25 +986,8 @@ class BulkWebSocketClient:
         Handle order status update
         Emits: OpenOrder object for placed, order_id for cancelled
         """
-        order_id = data.get("orderId")
-        status = data.get("status")
-        order = OrderState.from_api(data)
-
-        if status == "placed":
-            # Parse as OpenOrder
-            self.open_orders[order_id] = order
-            self.logger.info(
-                f"Order Placed: {order.symbol} "
-                f"{'BUY' if order.is_buy else 'SELL'} "
-                f"{order.size} @ {order.price}"
-            )
-
-        elif status == "cancelled":
-            # Remove from tracking
-            order = self.open_orders.pop(order_id, None)
-            self.logger.info(f"Order Cancelled: {order_id}")
-
-        await self._emit_event(Topic.ORDER, order)
+        state = OrderState.from_api(data)
+        await self._emit_event(Topic.ORDER, state)
 
 
     async def _handle_fill(self, data: Dict):
