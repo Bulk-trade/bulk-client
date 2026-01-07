@@ -126,20 +126,19 @@ class TransactionSigner:
         parts.append(TransactionSigner._write_string(action_type))
 
         # 2. Serialize based on action type
-        if action_type == "order":
-            parts.extend(TransactionSigner._serialize_orders(action.get("orders", [])))
-
-        elif action_type == "cancel":
-            parts.extend(TransactionSigner._serialize_cancels(action.get("cancels", [])))
-
-        elif action_type == "cancelall":
-            parts.extend(TransactionSigner._serialize_cancelall(action.get("cancels", [])))
-
-        elif action_type == "updateusersettings":
-            parts.extend(TransactionSigner._serialize_user_settings(action.get("settings", {})))
-
-        elif action_type == "faucet":
-            parts.extend(TransactionSigner._serialize_faucet(action.get("faucet", {})))
+        match action_type:
+            case "order":
+                parts.extend(TransactionSigner._serialize_orders(action.get("orders", [])))
+            case "cancel":
+                parts.extend(TransactionSigner._serialize_cancels(action.get("cancels", [])))
+            case "cancelall":
+                parts.extend(TransactionSigner._serialize_cancelall(action.get("cancels", [])))
+            case "updateusersettings":
+                parts.extend(TransactionSigner._serialize_user_settings(action.get("settings", {})))
+            case "faucet":
+                parts.extend(TransactionSigner._serialize_faucet(action.get("faucet", {})))
+            #case "testnetAdmin":
+            #    parts.extend(TransactionSigner._serialize_admin(action.get("actions", {})))
 
         # 3. Nonce
         nonce_bytes = TransactionSigner._write_u64(action.get("nonce", time.time_ns()))
@@ -159,6 +158,10 @@ class TransactionSigner:
 
         # Concatenate all parts
         return b''.join(parts)
+
+    @staticmethod
+    def _serialize_admin(actions: List[Dict]) -> List[bytes]:
+        pass
 
     @staticmethod
     def _serialize_orders(orders: List[Dict]) -> List[bytes]:

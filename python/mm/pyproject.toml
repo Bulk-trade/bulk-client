@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "bulk @ file:///${PROJECT_ROOT}/../bulk",
     "pandas>=2.3.0",
-    "numpy>=2.4.0",
+    "numpy>=2.2.0",
     "websockets>=14.0",
     "pynacl>=1.2.0",
     "base58>=2.1.0",

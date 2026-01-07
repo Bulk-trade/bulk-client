@@ -15,7 +15,8 @@ import websockets
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 from bulk.common import Side
-from bulk.messages.md import OrderBook, L2Snapshot, L2Delta, OrderBookLevel
+from bulk.messages.md import L2Snapshot, L2Delta, OrderBookLevel, BBO
+from data.orderbook_jit import FastOrderBook
 
 
 class ConnectionState(Enum):
@@ -85,8 +86,8 @@ class BinanceFuturesWebSocketClient:
         self.reconnect_attempts = 0
 
         # Order book management (all use 9 decimals)
-        self.order_books: Dict[str, OrderBook] = {
-            symbol: OrderBook(symbol, decimals=9) for symbol in self.symbols
+        self.order_books: Dict[str, FastOrderBook] = {
+            symbol: FastOrderBook(symbol) for symbol in self.symbols
         }
 
         # Sequence tracking per symbol
@@ -106,7 +107,7 @@ class BinanceFuturesWebSocketClient:
 
     # ==================== ACCESS METHODS ====================
 
-    def get_book(self, symbol: str) -> Optional[OrderBook]:
+    def get_book(self, symbol: str) -> Optional[FastOrderBook]:
         """Get OrderBook instance for a symbol"""
         return self.order_books.get(symbol.upper())
 
@@ -424,10 +425,6 @@ class BinanceFuturesWebSocketClient:
         """
         symbol = data.get("s", "").upper()
 
-        # Validate sequence
-        if not self._validate_sequence(symbol, data):
-            return False
-
         try:
             # Convert to delta and apply
             delta = self._convert_delta(symbol, data)
@@ -453,17 +450,20 @@ class BinanceFuturesWebSocketClient:
             bid_size = float(data.get("B", 0))
             ask_size = float(data.get("A", 0))
 
-            bbo_data = {
-                "symbol": symbol,
-                "best_bid": best_bid,
-                "best_ask": best_ask,
-                "bid_size": bid_size,
-                "ask_size": ask_size,
-                "timestamp": data.get("E", int(time.time() * 1000))
-            }
+            best_bid = OrderBookLevel(price=best_bid, size=bid_size)
+            best_ask = OrderBookLevel(price=best_ask, size=ask_size)
+
+            bbo = BBO(
+                timestamp=data.get("E", time.time_ns()),
+                symbol=symbol,
+                bid=best_bid,
+                ask=best_ask,
+            )
+
+            self.order_books[symbol].apply_bbo(bbo)
 
             # Emit BBO event
-            self._emit_event(Topic.BBO, bbo_data)
+            self._emit_event(Topic.BBO, bbo)
         except Exception as e:
             self.logger.error(f"Error processing BBO update: {e}")
 
@@ -484,59 +484,6 @@ class BinanceFuturesWebSocketClient:
         await self.connect()
 
     # ==================== PARSING, ETC ====================
-
-    def _validate_sequence(self, symbol: str, update: Dict) -> bool:
-        """
-        Validate update sequence numbers for Binance Futures
-
-        Futures sequence logic:
-        - U: First update ID in event
-        - u: Final update ID in event
-        - pu: Previous final update ID
-
-        Validation:
-        1. First update after snapshot: pu should be <= snapshot's lastUpdateId AND u should be >= lastUpdateId
-        2. Subsequent updates: U should be pu + 1 (from previous message)
-
-        Returns:
-            True if update should be processed, False if dropped
-        """
-        U = update.get("U")  # First update ID
-        u = update.get("u")  # Final update ID
-        pu = update.get("pu")  # Previous final update ID
-
-        # First update after snapshot
-        if symbol not in self.last_update_id:
-            snapshot_id = self.snapshot_last_update_id.get(symbol)
-            if snapshot_id is not None:
-                # Check if this update bridges the snapshot
-                if pu <= snapshot_id < u:
-                    self.last_update_id[symbol] = u
-                    self.prev_final_update_id[symbol] = u
-                    return True
-                elif u <= snapshot_id:
-                    # This update is before our snapshot, drop it
-                    return False
-                else:
-                    self.logger.error(
-                        f"[{symbol}] Sequence gap on first update. "
-                        f"Snapshot lastUpdateId={snapshot_id}, pu={pu}, u={u}"
-                    )
-                    return False
-        else:
-            # Subsequent updates: U should equal previous pu + 1
-            expected_U = self.prev_final_update_id[symbol] + 1
-            if U != expected_U:
-                self.logger.error(
-                    f"[{symbol}] Sequence gap: expected U={expected_U}, got U={U}"
-                )
-                return False
-
-            self.last_update_id[symbol] = u
-            self.prev_final_update_id[symbol] = u
-            return True
-
-        return False
 
     def _convert_snapshot(self, symbol: str, data: Dict) -> L2Snapshot:
         """Convert Binance snapshot format to L2Snapshot"""
@@ -605,13 +552,8 @@ async def main():
     )
 
     # BBO handler
-    async def handle_bbo(bbo_data: Dict):
-        spread = bbo_data['best_ask'] - bbo_data['best_bid']
-        print(
-            f"[{bbo_data['symbol']}] "
-            f"{bbo_data['best_bid']:.2f} / {bbo_data['best_ask']:.2f} "
-            f"(spread: {spread:.2f})"
-        )
+    async def handle_bbo(bbo: BBO):
+        print(bbo)
 
     # Delta handler
     async def handle_delta(delta: L2Delta):
@@ -626,7 +568,7 @@ async def main():
     client = BinanceFuturesWebSocketClient(
         symbols=["SOLUSDT"],
         snapshot_limit=1000,
-        enable_bbo=True,
+        enable_bbo=False,
         handlers={
             Topic.BBO: handle_bbo,
             Topic.L2_DELTA: handle_delta,
@@ -638,7 +580,8 @@ async def main():
 
     # Monitor order books
     try:
-        while len(symbols_seen) < 1:
+        while len(symbols_seen) < 2:
+            await asyncio.sleep(5)
             await asyncio.sleep(5)
 
         for symbol in client.symbols:
