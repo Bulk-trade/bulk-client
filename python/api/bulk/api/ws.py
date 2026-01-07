@@ -20,8 +20,9 @@ from bulk.common.signer import TransactionSigner
 from bulk.messages import SubscriptionRequest
 from bulk.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
-from bulk.messages.md import OrderBook, Ticker, Trade, L2Snapshot, L2Delta, Candle
+from bulk.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
 from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder
+from bulk.data import OrderBook
 
 
 class ConnectionState(Enum):

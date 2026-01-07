@@ -832,7 +832,76 @@ class BulkHttpClient:
     # PRIVATE ENDPOINTS (SIGNED)
     # ===================================================================
 
-    def request_faucet(self, user: Optional[str] = None, nonce: int = time.time_ns()) -> Dict:
+    def whitelist_faucet(
+        self,
+        target_account: str,
+        whitelist: bool = True,
+        nonce: Optional[int] = None
+    ) -> Dict:
+        """
+        Whitelist or unwhitelist an account for testnet faucet access
+
+        TESTNET ADMIN ONLY - This endpoint requires admin privileges
+
+        Args:
+            target_account: Target user's public key (base58) to whitelist/unwhitelist
+            whitelist: True to whitelist, False to unwhitelist
+            nonce: Optional nonce (defaults to current time in milliseconds)
+
+        Returns:
+            API response with operation status
+
+        Example:
+            # Whitelist an account
+            response = client.whitelist_faucet(
+                target_account="5Am6JkEHAjYG1itNWRMGpQrxvY8AaqkXCo1TZvenqVux",
+                whitelist=True
+            )
+
+            # Unwhitelist an account
+            response = client.whitelist_faucet(
+                target_account="5Am6JkEHAjYG1itNWRMGpQrxvY8AaqkXCo1TZvenqVux",
+                whitelist=False
+            )
+        """
+        if not self.signer:
+            raise ValueError("Private key required for admin operations")
+
+        # Use current time in milliseconds if nonce not provided
+        if nonce is None:
+            nonce = time.time_ns()
+
+        # Build transaction
+        transaction = {
+            "action": {
+                "type": "testnetAdmin",
+                "actions": [
+                    {
+                        "whitelistFaucet": {
+                            "account": target_account,
+                            "whitelist": whitelist
+                        }
+                    }
+                ],
+                "nonce": nonce
+            },
+            "account": self.signer.public_key,
+            "signer": self.signer.public_key
+        }
+
+        # Sign transaction
+        signed_tx = self.signer.sign_transaction(transaction)
+
+        # Send request
+        response = requests.post(
+            f"{self.base_url}/private/testnet-admin",
+            json=signed_tx,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def request_faucet(self, user: Optional[str] = None, amount = None, nonce: int = time.time_ns()) -> Dict:
         """
         Request testnet faucet funds (100,000 USDC)
 
@@ -840,6 +909,7 @@ class BulkHttpClient:
 
         Args:
             user: Optional user public key (defaults to signer's public key)
+            amount: Optional amount of funds to request (only for whitelisted accounts)
             nonce: Optional nonce (defaults to current time ns)
 
         Returns:
@@ -858,17 +928,31 @@ class BulkHttpClient:
         target_user = user or self.signer.public_key
 
         # Build transaction
-        transaction = {
-            "action": {
-                "type": "faucet",
-                "faucet": {
-                    "u": target_user
+        if amount is None:
+            transaction = {
+                "action": {
+                    "type": "faucet",
+                    "faucet": {
+                        "u": target_user
+                    },
+                    "nonce": nonce
                 },
-                "nonce": nonce
-            },
-            "account": target_user,
-            "signer": self.signer.public_key
-        }
+                "account": target_user,
+                "signer": self.signer.public_key
+            }
+        else:
+            transaction = {
+                "action": {
+                    "type": "faucet",
+                    "faucet": {
+                        "u": target_user,
+                        "amount": amount
+                    },
+                    "nonce": nonce
+                },
+                "account": target_user,
+                "signer": self.signer.public_key
+            }
 
         # Sign transaction
         tx = self.signer.sign_transaction(transaction)
