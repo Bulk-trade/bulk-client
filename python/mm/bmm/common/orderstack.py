@@ -222,6 +222,18 @@ class OrderStack:
             if level.num_active_orders > 0
         ])
 
+    def get_sorted_prices(self) -> np.ndarray:
+        """
+        Get sorted list of prices
+        """
+        iprices = list(self.levels.keys())
+        if self.side == Side.BUY:
+            iprices.sort(reverse=True)
+            return np.array(iprices) / self.decimal_scale
+        else:
+            iprices.sort(reverse=False)
+            return np.array(iprices) / self.decimal_scale
+
     def get_level_summary(self) -> Dict[float, Tuple[float, int]]:
         """
         Get summary of all levels
@@ -298,11 +310,11 @@ class OrderStack:
         tolerance: float = 0.1
     ) -> Tuple[List[Tuple[float, float]], List[str]]:
         """
-        Plan order changes needed to sync with Binance (without execution)
+        Plan order changes needed to sync with new sizes (without execution)
 
         Use this when you want to see what would happen before executing,
         or when implementing custom execution logic. For normal usage,
-        just call sync() instead.
+        just call execute() instead.
 
         Args:
             new_prices: Array of price levels from Binance (sorted)
@@ -714,6 +726,9 @@ async def example_usage():
         print(f"  {price:.2f}: {diff:+.4f}")
 
     print(f"\nTotal absolute discrepancy: {bid_side.get_total_discrepancy(binance_prices[:5], binance_sizes[:5]):.4f}")
+
+    prices = bid_side.get_sorted_prices()
+    print(f"\nPrices: {prices}")
 
     # Get stats
     stats = bid_side.get_stats()
