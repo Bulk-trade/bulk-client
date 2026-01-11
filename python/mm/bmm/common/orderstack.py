@@ -7,7 +7,9 @@ Manages a collection of orders on one side (bid or ask) with:
 - Order state tracking
 - Discrepancy calculation
 """
+import time
 
+import base58
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
@@ -19,21 +21,11 @@ from bulk.messages.account import OrderState
 from bulk.data import FastOrderBook
 from bulk.messages import L2Snapshot, OrderBookLevel
 
+import logging
 
-@dataclass
-class OrderInfo:
-    """Information about a single order at a price level"""
-    order_id: str
-    price: float
-    size: float
-    side: Side
-    status: OrderStatus
-    timestamp: int = 0
+from messages import LimitOrder, CancelOrder
 
-    @property
-    def is_active(self) -> bool:
-        """Check if order is still active (not terminal)"""
-        return not self.status.is_terminal()
+logger = logging.getLogger(__name__)
 
 
 class PriceLevel:
@@ -56,38 +48,17 @@ class PriceLevel:
         self.price = price
         self.side = side
         self.chunk_size = chunk_size
-        self.orders: Dict[str, OrderInfo] = {}  # order_id -> OrderInfo
+        self.orders: Dict[str, OrderState] = {}  # order_id -> OrderInfo
 
     @property
     def total_size(self) -> float:
         """Total size resting at this level (active orders only)"""
-        return sum(
-            order.size for order in self.orders.values()
-            if order.is_active
-        )
+        return sum(order.amount_remaining() for order in self.orders.values())
 
     @property
     def num_active_orders(self) -> int:
         """Number of active orders at this level"""
-        return sum(1 for order in self.orders.values() if order.is_active)
-
-    def add_order(self, order_id: str, size: float, timestamp: int = 0):
-        """
-        Add a new order to this level
-
-        Args:
-            order_id: Order ID
-            size: Order size
-            timestamp: Order timestamp
-        """
-        self.orders[order_id] = OrderInfo(
-            order_id=order_id,
-            price=self.price,
-            size=size,
-            side=self.side,
-            status=OrderStatus.NONE,  # Will be updated when order is placed
-            timestamp=timestamp
-        )
+        return len(self.orders)
 
     def update_order(self, order_state: OrderState):
         """
@@ -97,11 +68,10 @@ class PriceLevel:
             order_state: OrderState update from exchange
         """
         order_id = order_state.order_id
-        if order_id in self.orders:
-            order = self.orders[order_id]
-            order.status = order_state.status
-            order.size = order_state.size  # Update remaining size
-            order.timestamp = order_state.timestamp
+        if order_state.status.is_terminal() :
+            self.orders.pop(order_id, None)
+        else:
+            self.orders[order_id] = order_state
 
     def get_orders_to_cancel(self, target_size: float) -> List[str]:
         """
@@ -123,10 +93,7 @@ class PriceLevel:
         size_to_reduce = current_size - target_size
 
         # Get active orders sorted by size (largest first)
-        active_orders = [
-            order for order in self.orders.values()
-            if order.is_active
-        ]
+        active_orders = list(self.orders.values())
         active_orders.sort(key=lambda x: x.size, reverse=True)
 
         # Select orders to cancel
@@ -153,15 +120,6 @@ class PriceLevel:
         current_size = self.total_size
         return max(0.0, target_size - current_size)
 
-    def cleanup_terminal_orders(self):
-        """Remove terminal orders (filled/cancelled) to free memory"""
-        terminal_oids = [
-            oid for oid, order in self.orders.items()
-            if order.status.is_terminal()
-        ]
-        for oid in terminal_oids:
-            del self.orders[oid]
-
     def __repr__(self) -> str:
         return (
             f"PriceLevel(price={self.price:.2f}, "
@@ -176,7 +134,7 @@ class OrderStack:
 
     Features:
     - Tracks orders at each price level
-    - Sizes orders in chunks (quarters by default)
+    - Sizes orders in chunks
     - Automatically determines which orders to add/cancel based on Binance book
     - Maintains minimum orders per level for granular control
     - Executes order placement/cancellation via WebSocket
@@ -218,6 +176,7 @@ class OrderStack:
         symbol: str,
         side: Side,
         chunk_size: float = 0.5,
+        max_orders: int = 5,
         max_price_levels: int = 1000,
         decimals: int = 8
     ):
@@ -228,18 +187,21 @@ class OrderStack:
             symbol: Trading symbol
             side: Side.BUY or Side.SELL
             chunk_size: order size
+            max_orders: maximum number of orders to be added (a guideline)
             max_price_levels: Maximum price levels to track
             decimals: Number of decimal digits when converting to int
         """
         self.symbol = symbol
         self.side = side
         self.chunk_size = chunk_size
+        self.max_orders = max_orders
         self.max_price_levels = max_price_levels
         self.decimals = decimals
         self.decimal_scale = pow(10.0, decimals)
 
         # Price level tracking
         self.levels: Dict[int, PriceLevel] = {}  # price -> PriceLevel
+        self.orders: Dict[str, OrderState] = {}
 
 
     # ==================== PUBLIC METHODS ====================
@@ -292,7 +254,7 @@ class OrderStack:
 
     async def execute(
         self,
-        ws_client: BulkWebSocketClient,
+        ws_client: Optional[BulkWebSocketClient],
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
         tolerance: float = 0.1
@@ -310,9 +272,7 @@ class OrderStack:
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
-            Tuple of:
-            - List of placed order IDs
-            - List of cancelled order IDs
+            true if placement was successful (i.e. without error)
 
         Example:
             placed, cancelled = await bid_side.sync(
@@ -325,11 +285,10 @@ class OrderStack:
         )
 
         # Execute actions
-        placed_oids, cancelled_oids = await self._place_and_cancel(
-            ws_client, orders_to_place, orders_to_cancel
-        )
-
-        return placed_oids, cancelled_oids
+        if ws_client:
+            return await self._place_and_cancel(ws_client, orders_to_place, orders_to_cancel)
+        else:
+            return self._simulate_place_and_cancel(orders_to_place, orders_to_cancel)
 
     # Planning method (determine actions without execution)
 
@@ -386,10 +345,7 @@ class OrderStack:
         for key in list(self.levels.keys()):
             if key not in seen_prices:
                 level = self.levels[key]
-                orders_to_cancel = [
-                    oid for oid, order in level.orders.items()
-                    if order.is_active
-                ]
+                orders_to_cancel = list(level.orders.keys())
                 all_orders_to_cancel.extend(orders_to_cancel)
 
         return all_orders_to_place, all_orders_to_cancel
@@ -411,14 +367,18 @@ class OrderStack:
         price = order_state.price
         key = int(round(price * self.decimal_scale))
 
-        # Update level if it exists
-        if price in self.levels:
-            level = self.levels[key]
-            level.update_order(order_state)
+        if not order_state.status.is_terminal():
+            self.orders[order_id] = order_state
+        else:
+            self.orders.pop(order_id)
 
-            # Cleanup if needed
-            if order_state.status.is_terminal():
-                level.cleanup_terminal_orders()
+        # create level if does not exist
+        if key not in self.levels:
+            self.levels[key] = PriceLevel(price, self.side, self.chunk_size)
+
+        # Update level
+        level = self.levels[key]
+        level.update_order(order_state)
 
     def get_discrepancy(
         self,
@@ -437,7 +397,7 @@ class OrderStack:
 
         for price, size in zip(prices, sizes):
             key = int(round(price * self.decimal_scale))
-            target_size = self._calculate_target_size(size)
+            target_size = size
             current_size = (
                 self.levels[key].total_size
                 if key in self.levels
@@ -490,7 +450,7 @@ class OrderStack:
         ws_client,
         orders_to_place: List[Tuple[float, float]],
         orders_to_cancel: List[str]
-    ) -> Tuple[List[str], List[str]]:
+    ) -> bool:
         """
         Execute order placement and cancellation via WebSocket (internal)
 
@@ -503,18 +463,10 @@ class OrderStack:
             orders_to_cancel: List of order IDs to cancel
 
         Returns:
-            Tuple of:
-            - List of placed order IDs (from exchange responses)
-            - List of cancelled order IDs (from cancellation requests)
+            true if all adjustments were successful
         """
-        placed_oids = []
-        cancelled_oids = []
-
-        # Build list of actions for batch execution
-        from bulk.messages.trade import LimitOrder, CancelOrder
-        actions = []
-
         # Add placement orders
+        actions = []
         for price, size in orders_to_place:
             order = LimitOrder(
                 symbol=self.symbol,
@@ -537,43 +489,78 @@ class OrderStack:
         # Execute batch if there are actions
         if actions:
             try:
+                good = True
                 responses = await ws_client.place_orders(actions)
 
                 # Process responses
                 for i, response in enumerate(responses):
-
-                    if i < len(orders_to_place):
-                        # This was a placement
-                        price, size = orders_to_place[i]
-                        if response.order_id:
-                            # Order was placed successfully
-                            self._register_pending_order(
-                                response.order_id, price, size
-                            )
-                            placed_oids.append(response.order_id)
-                    else:
-                        # This was a cancellation
-                        cancel_idx = i - len(orders_to_place)
-                        order_id = orders_to_cancel[cancel_idx]
-                        if response.status == OrderStatus.CANCELLED:
-                            # Mark as cancelled in our tracking
-                            if order_id in self.order_map:
-                                price = self.order_map[order_id]
-                                if price in self.levels:
-                                    level = self.levels[price]
-                                    if order_id in level.orders:
-                                        level.orders[order_id].status = OrderStatus.CANCELLED
-                            cancelled_oids.append(order_id)
-                            self.total_orders_cancelled += 1
-
+                    if response.is_error():
+                        good = False
+                        logger.error(f"Error executing order: {actions[i]}: {response}")
+                return good
             except Exception as e:
                 # Log error but don't crash
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Error executing orders: {e}")
+                return False
+        else:
+            return True
 
-        return placed_oids, cancelled_oids
+    def _simulate_place_and_cancel(
+        self,
+        orders_to_place: List[Tuple[float, float]],
+        orders_to_cancel: List[str]
+    ) -> bool:
+        """
+        Simulate execution of order placement and cancellation via WebSocket (internal)
 
+        Args:
+            orders_to_place: List of (price, size) tuples
+            orders_to_cancel: List of order IDs to cancel
+
+        Returns:
+            true if all adjustments were successful
+        """
+        # Add placement orders
+        tnow = time.time_ns()
+        oid = tnow
+        for price, size in orders_to_place:
+            state = OrderState(
+                timestamp = tnow,
+                symbol = self.symbol,
+                order_id = base58.b58encode_int(oid).decode('utf-8'),
+                side = self.side,
+                price = price,
+                status = OrderStatus.RESTING,
+                vwap = 0.0,
+                size = size,
+                size_done = 0.0,
+                size_orig = size,
+                is_maker = True
+            )
+            oid += 1
+            self.update_order_state(state)
+
+        # Add cancellation orders
+        for order_id in orders_to_cancel:
+            old = self.orders.get(order_id, None)
+            size = old.size if old is not None else 0.0
+            price = old.price if old is not None else 0.0
+            state = OrderState(
+                timestamp = tnow,
+                symbol = self.symbol,
+                order_id = order_id,
+                side = self.side,
+                price = price,
+                status = OrderStatus.CANCELLED,
+                vwap = 0.0,
+                size = size,
+                size_done = 0.0,
+                size_orig = size,
+                is_maker = True
+            )
+            self.update_order_state(state)
+
+        return True
 
     def _sync_level(
             self,
@@ -583,11 +570,11 @@ class OrderStack:
             tolerance: float = 0.1
     ) -> Tuple[List[Tuple[float, float]], List[str]]:
         """
-        Synchronize a single price level with Binance book
+        Synchronize a single price level with requested book
 
         Args:
             price: Price level
-            size: Size at this level on Binance
+            size: Size at this level
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -599,7 +586,7 @@ class OrderStack:
         target_size = round(size / self.chunk_size) * self.chunk_size
 
         # Get or create level
-        if price not in self.levels:
+        if key not in self.levels:
             if target_size == 0:
                 return [], []
             self.levels[key] = PriceLevel(price, self.side, self.chunk_size)
@@ -625,7 +612,11 @@ class OrderStack:
 
             # Create orders in chunks (at least 1)
             num_orders = max(1, int(np.ceil(size_to_add / chunk)))
-            order_size = size_to_add / num_orders
+            if num_orders > self.max_orders:
+                order_size = size_to_add / self.max_orders
+                num_orders = self.max_orders
+            else:
+                order_size = self.chunk_size
 
             for _ in range(num_orders):
                 orders_to_place.append((price, order_size))
@@ -656,7 +647,7 @@ class OrderStack:
     # ============================================================================
 
 
-def example_usage():
+async def example_usage():
     """Demonstrate OrderBookSide usage"""
     import time
 
@@ -683,8 +674,8 @@ def example_usage():
     # Create bid side manager
     bid_side = OrderStack(
         side=Side.BUY,
-        chunk_fraction=0.25,  # Quarter sizing
-        min_orders_per_level=4,
+        chunk_size=0.25,  # Quarter sizing
+        max_orders=5,
         symbol="BTC-USD"
     )
 
@@ -694,44 +685,11 @@ def example_usage():
     binance_prices, binance_sizes = binance_book.get_bids_array(n=10)
 
     # Initial sync
-    orders_to_place, orders_to_cancel = bid_side.plan(
-        binance_prices, binance_sizes
+    await bid_side.execute(
+        ws_client=None,
+        new_prices = binance_prices,
+        new_sizes = binance_sizes
     )
-
-    print(f"Initial sync:")
-    print(f"  Orders to place: {len(orders_to_place)}")
-    print(f"  Orders to cancel: {len(orders_to_cancel)}")
-
-    # Simulate placing orders (in real usage, execute_sync() does this automatically)
-    # Here we manually call the private method for demonstration
-    for i, (price, size) in enumerate(orders_to_place[:5]):
-        order_id = f"order_{i}"
-        bid_side._register_pending_order(order_id, price, size)  # Private method - normally done by execute_sync()
-        print(f"  Placed: {order_id} - {size:.4f} @ {price:.2f}")
-
-    print(f"\nAfter placing orders: {bid_side}")
-    print(f"Level summary: {bid_side.get_level_summary()}")
-
-    # Simulate order state updates (orders becoming resting)
-    for i in range(5):
-        order_id = f"order_{i}"
-        price = bid_side.order_map[order_id]
-        order_state = OrderState(
-            timestamp=int(time.time() * 1e9),
-            symbol="BTC-USD",
-            order_id=order_id,
-            status=OrderStatus.RESTING,
-            side=Side.BUY,
-            price=price,
-            vwap=price,
-            size=orders_to_place[i][1],
-            size_done=0.0,
-            size_orig=orders_to_place[i][1],
-            is_maker=True
-        )
-        bid_side.update_order_state(order_state)
-
-    print(f"\nAfter order updates: {bid_side}")
 
     # Check discrepancy
     discrepancy = bid_side.get_discrepancy(binance_prices[:5], binance_sizes[:5])
@@ -747,6 +705,26 @@ def example_usage():
     for key, value in stats.items():
         print(f"  {key}: {value}")
 
+    # do some reductions
+    binance_prices2 = binance_prices.copy()[1:]
+    binance_sizes2 = binance_sizes.copy()[1:] / 2.0
+    await bid_side.execute(
+        ws_client=None,
+        new_prices = binance_prices2,
+        new_sizes = binance_sizes2
+    )
+
+    # Check discrepancy
+    discrepancy = bid_side.get_discrepancy(binance_prices2[:5], binance_sizes2[:5])
+    print(f"\nDiscrepancy vs Binance 2nd update:")
+    for price, diff in list(discrepancy.items())[:5]:
+        print(f"  {price:.2f}: {diff:+.4f}")
+
+    stats = bid_side.get_stats()
+    print(f"\nStatistics:")
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
 
 if __name__ == "__main__":
-    example_usage()
+    import asyncio
+    asyncio.run(example_usage())
