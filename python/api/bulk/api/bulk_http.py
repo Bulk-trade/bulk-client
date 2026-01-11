@@ -14,7 +14,9 @@ import time
 import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
-from bulk.common.signer import TransactionSigner
+from bulk.common import TransactionSigner, Side, TimeInForce
+from bulk.messages import LimitOrder, CancelOrder, MarketOrder, CancelAll
+
 
 class BulkHttpClient:
     """HTTP REST API client for Bulk Labs exchange"""
@@ -210,7 +212,7 @@ class BulkHttpClient:
             }
         """
         params = {
-            "type": "l2Snapshot",
+            "type": "l2Book",
             "coin": symbol,
             "nlevels": nlevels
         }
@@ -394,59 +396,77 @@ class BulkHttpClient:
 
     def place_orders(
         self,
-        orders: List[Dict]
+        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll]]
     ) -> Dict:
         """
-        Place multiple orders in a single transaction
+        Place multiple order-related tx in a single transaction
+        - limit orders: either json/dict spec or LimitOrder object
+        - market orders: either json/dict spec or MarketOrder object
+        - cancel orders: either json/dict spec or CancelOrder object
+        - cancel all orders: either json/dict spec or CancelAll object
+
+        Args:
+            txns: tx to place in transaction
         """
         
         if not self.signer:
             raise ValueError("Private key required for trading operations")
         
         order_objects = []
-        for order_spec in orders:
-            if order_spec.get("type") == "order":
-                order = {
-                    "c": order_spec["symbol"],
-                    "b": order_spec["is_buy"],
-                    "px": order_spec["price"],
-                    "sz": order_spec["size"],
-                    "r": order_spec.get("reduce_only", False)
-                }
-                
-                if order_spec.get("order_type", "limit") == "market":
-                    order["t"] = {
-                        "trigger": {
-                            "is_market": True,
-                            "triggerPx": 0.0
-                        }
-                    }
-                else:
-                    order["t"] = {
-                        "limit": {
-                            "tif": order_spec.get("time_in_force", "GTC")
-                        }
-                    }
-                    
-                if "client_order_id" in order_spec:
-                    order["cloid"] = order_spec["client_order_id"]
-                    
-                order_objects.append({"order": order})
-                
-            elif order_spec.get("type") == "cancel":
-                cancel = {
-                    "c": order_spec["symbol"],
-                    "oid": order_spec["order_id"]
-                }
-                order_objects.append({"cancel": cancel})
-            elif order_spec.get("type") == "cancelAll":
-                cancelall = {
-                    "c": order_spec["symbols"]
-                }
-                order_objects.append({"cancelAll": cancelall})
-            else:
-                raise ValueError(f"Invalid order type: {order_spec.get('type')}")
+        for tx in txns:
+            match tx:
+                case LimitOrder():
+                    order_objects.append(tx.to_api())
+                case MarketOrder():
+                    order_objects.append(tx.to_api())
+                case CancelOrder():
+                    order_objects.append(tx.to_api())
+                case CancelAll():
+                    order_objects.append(tx.to_api())
+                case dict():
+                    match tx.get("type"):
+                        case "order":
+                            order = {
+                                "c": tx["symbol"],
+                                "b": tx["is_buy"],
+                                "px": tx["price"],
+                                "sz": tx["size"],
+                                "r": tx.get("reduce_only", False)
+                            }
 
+                            if tx.get("order_type", "limit") == "market":
+                                order["t"] = {
+                                    "trigger": {
+                                        "is_market": True,
+                                        "triggerPx": 0.0
+                                    }
+                                }
+                            else:
+                                order["t"] = {
+                                    "limit": {
+                                        "tif": tx.get("time_in_force", "GTC")
+                                    }
+                                }
+                            order_objects.append({"order": order})
+
+                        case "cancel":
+                            cancel = {
+                                "c": tx["symbol"],
+                                "oid": tx["order_id"]
+                            }
+                            order_objects.append({"cancel": cancel})
+
+                        case "cancelAll":
+                            cancelall = {
+                                "c": tx["symbols"]
+                            }
+                            order_objects.append({"cancelAll": cancelall})
+                        case _:
+                            raise ValueError(f"Invalid order type: {tx.get('type')}")
+                case _:
+                    raise ValueError("Invalid txn type: {}".format(tx))
+
+        # package into a transaction
         transaction = {
             "action": {
                 "type": "order",
@@ -457,6 +477,7 @@ class BulkHttpClient:
         }
         
         transaction = self.signer.sign_transaction(transaction)
+        ser = json.dumps(transaction)
         
         # Send request
         response = requests.post(
@@ -709,34 +730,109 @@ class BulkHttpClient:
 # EXAMPLE USAGE
 # ===================================================================
 
+def load_or_create_keys(key_file: str = "/tmp/bulk_keys") -> tuple[str, str]:
+    """
+    Load existing keys from file or create new ones and save them
+
+    Args:
+        key_file: Path to key storage file
+
+    Returns:
+        Tuple of (private_key, public_key)
+    """
+    if os.path.exists(key_file):
+        # Load existing keys
+        with open(key_file, 'r') as f:
+            keys = json.load(f)
+            private_key = keys['private_key']
+            public_key = keys['public_key']
+            print(f"Loaded existing keys from {key_file}")
+            print(f"Public key: {public_key}")
+            return private_key, public_key
+    else:
+        # Generate new keys and save them
+        private_key, public_key = TransactionSigner.generate_account()
+        keys = {
+            'private_key': private_key,
+            'public_key': public_key
+        }
+
+        # Request faucet (testnet only)
+        base_url = "https://exchange-api2.bulk.trade/api/v1"
+        client = BulkHttpClient(base_url=base_url, private_key=private_key)
+        try:
+            faucet_result = client.request_faucet()
+            print(f"Faucet request: {faucet_result}")
+        except Exception as e:
+            print(f"Faucet error (expected on mainnet): {e}")
+
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(key_file) if os.path.dirname(key_file) else '.', exist_ok=True)
+
+        with open(key_file, 'w') as f:
+            json.dump(keys, f, indent=2)
+        print(f"Generated new keys and saved to {key_file}")
+        print(f"Public key: {public_key}")
+
+        return private_key, public_key
+
 if __name__ == "__main__":
     import os
 
-    # Example 1: Read-only market data access (no private key needed)
-    print("=== Read-only Market Data ===")
+    private_key, pub_key = load_or_create_keys()
+
     base_url = "https://exchange-api2.bulk.trade/api/v1"
     client = BulkHttpClient(base_url=base_url, private_key=private_key)
 
+
+    # Example 1: Get orderbook
+    orderbook = client.get_orderbook("BTC-USD", nlevels=5)
+    bids = orderbook["levels"][0]
+    asks = orderbook["levels"][1]
+    print(f"Top bid: ${bids[0]}")
+    print(f"Top ask: ${asks[0]}")
+
+    # Example 2: Trading operations (requires private key)
+    print("\n=== Trading Operations (Signed) ===")
+
+    # Place a limit order (example - adjust price/size as needed)
+    order_result = client.place_orders([LimitOrder(
+        symbol="BTC-USD",
+        side=Side.BUY,
+        price=100000.0,
+        size=0.001,
+        time_in_force=TimeInForce.GTC,
+    )])
+    print(f"Order placed: {order_result}")
+
+    # Example 3: Update leverage
+    try:
+        leverage_result = client.update_leverage([
+            ("BTC-USD", 5.0),
+            ("ETH-USD", 3.0)
+        ])
+        print(f"Leverage updated: {leverage_result}")
+    except Exception as e:
+        print(f"Leverage update: {e}")
+
+
+    # Example 4: Read-only market data access (no private key needed)
+    print("=== Read-only Market Data ===")
+
     # Get exchange info
     exchange_info = client.get_exchange_info()
-    print(f"Available symbols: {exchange_info.get('symbols', [])[:5]}...")
+    print(f"Excahnge Info: {exchange_info}")
 
     # Get ticker
     ticker = client.get_ticker("BTC-USD")
     print(f"BTC-USD last price: ${ticker.get('lastPrice', 0):,.2f}")
-
-    # Get orderbook
-    orderbook = client.get_orderbook("BTC-USD", nlevels=5)
-    print(f"Top bid: ${orderbook['bids'][0][0]:,.2f}")
-    print(f"Top ask: ${orderbook['asks'][0][0]:,.2f}")
-
     # Get candles
     candles = client.get_klines("BTC-USD", "1h", limit=5)
     print(f"Latest candle close: ${candles[-1]['c']:,.2f}")
 
     # Example 2: Account queries (no private key needed)
     print("\n=== Account Queries (Unsigned) ===")
-    test_user = "9J8TUdEWrrcADK913r1Cs7DdqX63VdVU88imfDzT1ypt"
+    test_user = pub_key
 
     # Get full account
     account = client.get_full_account(test_user)
@@ -746,42 +842,3 @@ if __name__ == "__main__":
     # Get open orders
     orders = client.get_open_orders(test_user)
     print(f"Found {len(orders)} open orders")
-
-    # Example 3: Trading operations (requires private key)
-    print("\n=== Trading Operations (Signed) ===")
-    private_key = os.environ.get("BULK_PRIVATE_KEY")
-    if private_key:
-        trading_client = create_client(private_key=private_key)
-
-        # Request faucet (testnet only)
-        try:
-            faucet_result = trading_client.request_faucet()
-            print(f"Faucet request: {faucet_result}")
-        except Exception as e:
-            print(f"Faucet error (expected on mainnet): {e}")
-
-        # Place a limit order (example - adjust price/size as needed)
-        try:
-            order_result = trading_client.place_order(
-                symbol="BTC-USD",
-                is_buy=True,
-                price=50000.0,  # Far from market for safety
-                size=0.001,
-                order_type="limit",
-                time_in_force="GTC"
-            )
-            print(f"Order placed: {order_result}")
-        except Exception as e:
-            print(f"Order placement: {e}")
-
-        # Update leverage
-        try:
-            leverage_result = trading_client.update_leverage([
-                ("BTC-USD", 5.0),
-                ("ETH-USD", 3.0)
-            ])
-            print(f"Leverage updated: {leverage_result}")
-        except Exception as e:
-            print(f"Leverage update: {e}")
-    else:
-        print("Set BULK_PRIVATE_KEY environment variable for trading examples")

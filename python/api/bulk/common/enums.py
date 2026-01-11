@@ -17,11 +17,11 @@ class Side(Enum):
 ## Time in force atrribute
 class TimeInForce(Enum):
     # Good till closed
-    GTC = 0
+    GTC = "GTC"
     # Immediate or Cancel
-    IOC = 1
+    IOC = "IOC"
     # Add Liquidity Only (i.e. Post-Only)
-    ALO = 2
+    ALO = "ALO"
 
     def __str__(self):
         """Convert to string for API"""
@@ -30,6 +30,7 @@ class TimeInForce(Enum):
 
 ## Order status
 class OrderStatus(Enum):
+    ERROR = None
     NONE = 0
     RESTING = 1
     WORKING = 2
@@ -39,7 +40,7 @@ class OrderStatus(Enum):
     CANCELLED_RISKLIMIT = 6
     CANCELLED_SELFCROSSING = 7
     CANCELLED_IOC = 8
-    CANCELLED_REDUCE_ONLY = 9
+    CANCELLED_REDUCEONLY = 9
     REJECTED_CROSSING = 10
     REJECTED_DUPLICATE = 11
     REJECTED_RISKLIMIT = 12
@@ -61,8 +62,10 @@ class OrderStatus(Enum):
     def from_string(cls, s: str) -> 'OrderStatus':
         """Construct an OrderStatus enum from a string"""
         match s:
+            case "resting":
+                return OrderStatus.RESTING
             case "placed":
-                return OrderStatus.PLACED
+                return OrderStatus.RESTING
             case "working":
                 return OrderStatus.WORKING
             case "filled":

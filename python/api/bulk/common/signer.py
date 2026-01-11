@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from nacl.signing import SigningKey
 import struct
 import base58
@@ -68,6 +68,30 @@ class TransactionSigner:
         
         tx["signature"] = sig
         return tx
+
+    @staticmethod
+    def generate_account() -> Tuple[str, str]:
+        """
+        Generate a new random Ed25519 keypair compatible with Solana (this is just used for testing
+        and is not a recommended way to generate accounts).
+
+        Returns:
+            tuple: (private_key_b58, public_key_b58)
+        """
+        # Generate a new random signing key
+        signing_key = SigningKey.generate()
+
+        # Get the private key (32 bytes seed)
+        private_key_bytes = bytes(signing_key)
+
+        # Get the public key (32 bytes)
+        public_key_bytes = bytes(signing_key.verify_key)
+
+        # Encode both to base58
+        private_key_b58 = base58.b58encode(private_key_bytes).decode()
+        public_key_b58 = base58.b58encode(public_key_bytes).decode()
+
+        return private_key_b58, public_key_b58
         
     @staticmethod
     def serialize_transaction(action: Dict, account: str, signer: str) -> bytes:
@@ -84,7 +108,11 @@ class TransactionSigner:
         """
         action_type = action.get("type", "")
         parts = [TransactionSigner.serialize_action(action_type)]
-        
+
+        # get / add nonce
+        nonce = action.get("nonce", time.time_ns())
+        action["nonce"] = nonce
+
         match action_type:
             case "order":
                 parts.extend(TransactionSigner.serialize_orders(action.get("orders", [])))
@@ -97,7 +125,7 @@ class TransactionSigner:
             case "testnetAdmin":
                 parts.extend(TransactionSigner.serialize_testnet_admin(action.get("actions", [])))
         
-        nonce_bytes = TransactionSigner.write_u64(action.get("nonce", time.time_ns()))
+        nonce_bytes = TransactionSigner.write_u64(nonce)
         parts.append(nonce_bytes)
         
         parts.append(TransactionSigner.decode_and_validate_key(account))
@@ -242,7 +270,6 @@ class TransactionSigner:
 
     @staticmethod
     def serialize_order_type(order_type: str) -> bytes:
-        print(order_type)
         if order_type not in ORDER_MAP:
             raise ValueError(f"Invalid order type: {order_type}")
         return struct.pack("<I", ORDER_MAP[order_type])

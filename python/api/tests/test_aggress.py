@@ -21,11 +21,12 @@ import time
 from pathlib import Path
 from typing import Tuple
 
-from bulk.api.ws import Topic
+from bulk.api import Topic
 from bulk.common import TransactionSigner, Side
 from bulk.api import BulkHttpClient
 from bulk.api import BulkWebSocketClient
 from bulk.messages.trade import MarketOrder
+from messages import LimitOrder
 
 # Configuration
 KEYS_FILE = "/tmp/bulk_test_keys.json"
@@ -214,6 +215,20 @@ async def test_market_order():
         if fills_received:
             print(f"\n✅ Received {len(fills_received)} fill(s)")
             break
+
+    # ========== Step 7: Place Order with error ==========
+    print(f"\n📤 Placing order set, one with an error:")
+
+    responses = await ws_client.place_orders([
+        LimitOrder("BTC-USD", Side.BUY, 50000.0, 0.001),
+        LimitOrder("BTC-USD", Side.SELL, 100000.0, 0.001),
+    ])
+    print(f"✅ order set responses: {response}")
+
+    if responses[0].is_error():
+        print(f"✅ 1st order resulted in error: {responses[0]}")
+    else:
+        print(f"⚠️ 1st order did not show error: {responses[0]}")
 
     # ========== Step 9: Summary ==========
     print("\n" + "=" * 70)

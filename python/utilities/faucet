@@ -24,7 +24,49 @@ sys.path.insert(0, '../api')
 from bulk import BulkHttpClient
 
 
-def setup_faucet_account(
+def setup_whitelist(
+    auth_key: str,
+    target_key: str,
+    base_url: str = "https://exchange-api2.bulk.trade/api/v1"
+) -> dict:
+    """
+    Complete faucet setup workflow for a testnet account
+
+    Args:
+        auth_key: Base58 encoded admin private key (for whitelist/faucet operations)
+        target_key: Target account's public key to whitelist and fund
+        base_url: API base URL (default testnet)
+    """
+
+    # Initialize admin client with auth key
+    print(f"Initializing HTTP client with admin key...")
+    admin_client = BulkHttpClient(base_url=base_url, private_key=auth_key)
+
+    admin_pubkey = admin_client.signer.public_key
+    print(f"Admin public key: {admin_pubkey}")
+
+    # Step 1: Whitelist the account
+    print("=" * 70)
+    print("Whitelisting account for faucet access")
+    print("=" * 70)
+
+    try:
+        whitelist_response = admin_client.whitelist_faucet(
+            target_account=target_key,
+            whitelist=True
+        )
+        print(f"✓ Whitelist response: {whitelist_response}")
+    except Exception as e:
+        print(f"✗ Whitelist failed: {e}")
+        return {
+            "target_key": target_key,
+            "admin_key": admin_pubkey,
+            "error": f"Whitelist failed: {e}",
+            "step": "whitelist"
+        }
+
+
+def fund(
     auth_key: str,
     target_key: str,
     amount: float = 1_000_000.0,
@@ -59,31 +101,6 @@ def setup_faucet_account(
     print(f"Target public key: {target_key}")
     print()
 
-    # Step 1: Whitelist the account
-    print("=" * 70)
-    print("STEP 1: Whitelisting account for faucet access")
-    print("=" * 70)
-
-    try:
-        whitelist_response = admin_client.whitelist_faucet(
-            target_account=target_key,
-            whitelist=True
-        )
-        print(f"✓ Whitelist response: {whitelist_response}")
-    except Exception as e:
-        print(f"✗ Whitelist failed: {e}")
-        return {
-            "target_key": target_key,
-            "admin_key": admin_pubkey,
-            "error": f"Whitelist failed: {e}",
-            "step": "whitelist"
-        }
-
-    # Wait a moment for the whitelist to propagate
-    print("Waiting 2 seconds for whitelist to propagate...")
-    time.sleep(2)
-    print()
-
     # Step 2: Request faucet funds
     print("=" * 70)
     print(f"STEP 2: Requesting ${amount:,.2f} from faucet")
@@ -100,7 +117,6 @@ def setup_faucet_account(
         return {
             "target_key": target_key,
             "admin_key": admin_pubkey,
-            "whitelist_response": whitelist_response,
             "error": f"Faucet request failed: {e}",
             "step": "faucet"
         }
@@ -156,7 +172,6 @@ def setup_faucet_account(
         return {
             "target_key": target_key,
             "admin_key": admin_pubkey,
-            "whitelist_response": whitelist_response,
             "faucet_response": faucet_response,
             "account_state": account_state,
             "margin_verified": margin_verified,
@@ -170,7 +185,6 @@ def setup_faucet_account(
         return {
             "target_key": target_key,
             "admin_key": admin_pubkey,
-            "whitelist_response": whitelist_response,
             "faucet_response": faucet_response,
             "error": f"Account query failed: {e}",
             "step": "verification"
@@ -252,7 +266,7 @@ def main():
     print()
 
     # Run the setup
-    result = setup_faucet_account(
+    result = fund(
         auth_key=auth_key,
         target_key=args.key,
         amount=args.amount,

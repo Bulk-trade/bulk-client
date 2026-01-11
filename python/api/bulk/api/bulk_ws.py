@@ -292,7 +292,7 @@ class BulkWebSocketClient:
 
     # ==================== ORDERS ====================
 
-    async def place_multi(
+    async def place_orders(
         self,
         actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder]],
         timeout: Optional[float] = None,
@@ -312,7 +312,7 @@ class BulkWebSocketClient:
         # Build transaction using LimitOrder.to_tx
         orders = []
         for action in actions:
-            orders.append(action.to_api(self.signer))
+            orders.append(action.to_api())
 
         # Bundle
         tx = tx = {

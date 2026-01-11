@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
 from collections import defaultdict
 
+from bulk import BulkWebSocketClient
 from bulk.common import Side, OrderStatus, TimeInForce
 from bulk.messages.account import OrderState
 from bulk.data import FastOrderBook
@@ -213,38 +214,33 @@ class OrderStack:
     """
 
     def __init__(
-            self,
-            side: Side,
-            chunk_fraction: float = 0.25,  # 1/4 = 0.25 for quarters
-            min_orders_per_level: int = 4,
-            symbol: str = "BTC-USD",
-            max_price_levels: int = 100,
+        self,
+        symbol: str,
+        side: Side,
+        chunk_size: float = 0.5,
+        max_price_levels: int = 1000,
+        decimals: int = 8
     ):
         """
         Initialize order book side manager
 
         Args:
-            side: Side.BUY or Side.SELL
-            chunk_fraction: Fraction for sizing chunks (0.25 = quarters)
-            min_orders_per_level: Minimum orders per price level
             symbol: Trading symbol
+            side: Side.BUY or Side.SELL
+            chunk_size: order size
             max_price_levels: Maximum price levels to track
+            decimals: Number of decimal digits when converting to int
         """
-        self.side = side
-        self.chunk_fraction = chunk_fraction
-        self.min_orders_per_level = min_orders_per_level
         self.symbol = symbol
+        self.side = side
+        self.chunk_size = chunk_size
         self.max_price_levels = max_price_levels
+        self.decimals = decimals
+        self.decimal_scale = pow(10.0, decimals)
 
         # Price level tracking
-        self.levels: Dict[float, PriceLevel] = {}  # price -> PriceLevel
+        self.levels: Dict[int, PriceLevel] = {}  # price -> PriceLevel
 
-        # Order tracking
-        self.order_map: Dict[str, float] = {}  # order_id -> price
-
-        # Statistics
-        self.total_orders_placed = 0
-        self.total_orders_cancelled = 0
 
     # ==================== PUBLIC METHODS ====================
 
@@ -290,29 +286,27 @@ class OrderStack:
             'num_levels': self.get_num_levels(),
             'num_active_orders': self.get_num_active_orders(),
             'total_size': self.get_total_size(),
-            'total_orders_placed': self.total_orders_placed,
-            'total_orders_cancelled': self.total_orders_cancelled,
         }
 
     # Primary interface method
 
-    async def sync(
+    async def execute(
         self,
-        ws_client,
-        binance_prices: np.ndarray,
-        binance_sizes: np.ndarray,
+        ws_client: BulkWebSocketClient,
+        new_prices: np.ndarray,
+        new_sizes: np.ndarray,
         tolerance: float = 0.1
     ) -> Tuple[List[str], List[str]]:
         """
-        Sync with Binance book and execute order changes via WebSocket
+        Sync with reference book and execute order changes via WebSocket
 
         This is the PRIMARY interface method - call this in your main loop.
         Determines which orders to place/cancel, then executes via WebSocket.
 
         Args:
             ws_client: BulkWebSocketClient instance
-            binance_prices: Array of price levels from Binance (sorted)
-            binance_sizes: Array of sizes at each price level
+            new_prices: Array of price levels (sorted)
+            new_sizes: Array of sizes at each price level
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -327,7 +321,7 @@ class OrderStack:
         """
         # Determine actions
         orders_to_place, orders_to_cancel = self.plan(
-            binance_prices, binance_sizes, tolerance
+            new_prices, new_sizes, tolerance
         )
 
         # Execute actions
@@ -341,8 +335,8 @@ class OrderStack:
 
     def plan(
         self,
-        binance_prices: np.ndarray,
-        binance_sizes: np.ndarray,
+        new_prices: np.ndarray,
+        new_sizes: np.ndarray,
         tolerance: float = 0.1
     ) -> Tuple[List[Tuple[float, float]], List[str]]:
         """
@@ -353,8 +347,8 @@ class OrderStack:
         just call sync() instead.
 
         Args:
-            binance_prices: Array of price levels from Binance (sorted)
-            binance_sizes: Array of sizes at each price level
+            new_prices: Array of price levels from Binance (sorted)
+            new_sizes: Array of sizes at each price level
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -373,24 +367,25 @@ class OrderStack:
         seen_prices = set()
 
         # Limit to max_price_levels
-        n_levels = min(len(binance_prices), self.max_price_levels)
+        n_levels = min(len(new_prices), self.max_price_levels)
 
-        # Sync each Binance level
+        # Sync each refence level
         for i in range(n_levels):
-            price = binance_prices[i]
-            size = binance_sizes[i]
-            seen_prices.add(price)
+            price = new_prices[i]
+            key = int(round(price * self.decimal_scale))
+            size = new_sizes[i]
+            seen_prices.add(key)
 
             orders_to_place, orders_to_cancel = self._sync_level(
-                price, size, tolerance
+                key, price, size, tolerance
             )
             all_orders_to_place.extend(orders_to_place)
             all_orders_to_cancel.extend(orders_to_cancel)
 
         # Cancel orders at levels no longer in Binance book
-        for price in list(self.levels.keys()):
-            if price not in seen_prices:
-                level = self.levels[price]
+        for key in list(self.levels.keys()):
+            if key not in seen_prices:
+                level = self.levels[key]
                 orders_to_cancel = [
                     oid for oid, order in level.orders.items()
                     if order.is_active
@@ -414,14 +409,11 @@ class OrderStack:
 
         order_id = order_state.order_id
         price = order_state.price
-
-        # Track order location
-        if order_id not in self.order_map:
-            self.order_map[order_id] = price
+        key = int(round(price * self.decimal_scale))
 
         # Update level if it exists
         if price in self.levels:
-            level = self.levels[price]
+            level = self.levels[key]
             level.update_order(order_state)
 
             # Cleanup if needed
@@ -430,8 +422,8 @@ class OrderStack:
 
     def get_discrepancy(
         self,
-        binance_prices: np.ndarray,
-        binance_sizes: np.ndarray
+        prices: np.ndarray,
+        sizes: np.ndarray
     ) -> Dict[float, float]:
         """
         Calculate size discrepancy at each level vs Binance (for monitoring)
@@ -443,11 +435,12 @@ class OrderStack:
         """
         discrepancy = {}
 
-        for price, binance_size in zip(binance_prices, binance_sizes):
-            target_size = self._calculate_target_size(binance_size)
+        for price, size in zip(prices, sizes):
+            key = int(round(price * self.decimal_scale))
+            target_size = self._calculate_target_size(size)
             current_size = (
-                self.levels[price].total_size
-                if price in self.levels
+                self.levels[key].total_size
+                if key in self.levels
                 else 0.0
             )
             discrepancy[price] = current_size - target_size
@@ -455,9 +448,9 @@ class OrderStack:
         return discrepancy
 
     def get_total_discrepancy(
-            self,
-            binance_prices: np.ndarray,
-            binance_sizes: np.ndarray
+        self,
+        prices: np.ndarray,
+        sizes: np.ndarray
     ) -> float:
         """
         Calculate total absolute size discrepancy vs Binance (for monitoring)
@@ -465,7 +458,7 @@ class OrderStack:
         Returns:
             Total absolute size difference across all levels
         """
-        discrepancies = self.get_discrepancy(binance_prices, binance_sizes)
+        discrepancies = self.get_discrepancy(prices, sizes)
         return sum(abs(diff) for diff in discrepancies.values())
 
     def cleanup(self):
@@ -492,41 +485,11 @@ class OrderStack:
 
     # ==================== PRIVATE METHODS ====================
 
-    def _register_pending_order(
-            self,
-            order_id: str,
-            price: float,
-            size: float,
-            timestamp: int = 0
-    ):
-        """
-        Register a pending order that was just placed (internal use)
-
-        This is called automatically by place_and_cancel(). Only call this
-        directly if you're placing orders through a different mechanism.
-
-        Args:
-            order_id: Order ID from exchange (or temporary client ID)
-            price: Order price
-            size: Order size
-            timestamp: Order timestamp
-        """
-        if price not in self.levels:
-            # Estimate chunk size based on order size
-            chunk = size
-            self.levels[price] = PriceLevel(price, self.side, chunk)
-
-        level = self.levels[price]
-        level.add_order(order_id, size, timestamp)
-        self.order_map[order_id] = price
-        self.total_orders_placed += 1
-
-
     async def _place_and_cancel(
-            self,
-            ws_client,
-            orders_to_place: List[Tuple[float, float]],
-            orders_to_cancel: List[str]
+        self,
+        ws_client,
+        orders_to_place: List[Tuple[float, float]],
+        orders_to_cancel: List[str]
     ) -> Tuple[List[str], List[str]]:
         """
         Execute order placement and cancellation via WebSocket (internal)
@@ -574,10 +537,11 @@ class OrderStack:
         # Execute batch if there are actions
         if actions:
             try:
-                responses = await ws_client.place_multi(actions)
+                responses = await ws_client.place_orders(actions)
 
                 # Process responses
                 for i, response in enumerate(responses):
+
                     if i < len(orders_to_place):
                         # This was a placement
                         price, size = orders_to_place[i]
@@ -610,46 +574,12 @@ class OrderStack:
 
         return placed_oids, cancelled_oids
 
-    def _calculate_chunk_size(self, target_size: float) -> float:
-        """
-        Calculate the chunk size for dividing target_size
-
-        Args:
-            target_size: Total size at the level from Binance
-
-        Returns:
-            Size of each chunk
-        """
-        return target_size * self.chunk_fraction
-
-    def _calculate_target_size(self, binance_size: float) -> float:
-        """
-        Round Binance size to nearest chunk multiple
-
-        Ensures target is at least min_orders_per_level chunks to maintain
-        granular control over the level.
-
-        Args:
-            binance_size: Size from Binance orderbook
-
-        Returns:
-            Rounded target size as multiple of chunks
-        """
-        if binance_size == 0:
-            return 0.0
-
-        # Calculate chunk size
-        chunk = binance_size * self.chunk_fraction
-
-        # Round to nearest multiple of chunks, ensuring at least min_orders_per_level
-        num_chunks = max(self.min_orders_per_level, round(binance_size / chunk))
-
-        return num_chunks * chunk
 
     def _sync_level(
             self,
+            key: int,
             price: float,
-            binance_size: float,
+            size: float,
             tolerance: float = 0.1
     ) -> Tuple[List[Tuple[float, float]], List[str]]:
         """
@@ -657,7 +587,7 @@ class OrderStack:
 
         Args:
             price: Price level
-            binance_size: Size at this level on Binance
+            size: Size at this level on Binance
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -666,16 +596,15 @@ class OrderStack:
             - List of order_ids to cancel
         """
         # Calculate target size (rounded to chunk multiples)
-        target_size = self._calculate_target_size(binance_size)
+        target_size = round(size / self.chunk_size) * self.chunk_size
 
         # Get or create level
         if price not in self.levels:
             if target_size == 0:
                 return [], []
-            chunk = self._calculate_chunk_size(binance_size)
-            self.levels[price] = PriceLevel(price, self.side, chunk)
+            self.levels[key] = PriceLevel(price, self.side, self.chunk_size)
 
-        level = self.levels[price]
+        level = self.levels[key]
         current_size = level.total_size
 
         orders_to_place = []
