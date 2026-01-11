@@ -50,7 +50,7 @@ class TransactionSigner:
         Sign a transaction with Ed25519
 
         Args:
-            transaction: Transaction dict containing action, account, nonce
+            tx: Transaction dict containing action, account, nonce
 
         Returns:
             Base58 encoded signature
@@ -61,7 +61,6 @@ class TransactionSigner:
         signer = tx.get("signer", self.public_key)
         
         message = self.serialize_transaction(action, account, signer)
-        
         signed = self.signing_key.sign(message)
         
         sig = base58.b58encode(signed.signature).decode()

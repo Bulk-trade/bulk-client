@@ -103,13 +103,17 @@ class OrderStackTester:
         if not connected:
             self.logger.error("   Failed to connect to WebSocket")
             return False
-
         self.logger.info("   ✓ Connected to WebSocket")
 
         # Wait for account snapshot
         self.logger.info("   Waiting for account snapshot...")
         await asyncio.sleep(2)
         self.logger.info("   ✓ Account snapshot received")
+
+        # Cancel any orders from prior run
+        self.logger.info("   Cancelling all prior orders...")
+        result = await self.ws_client.cancel_all(symbols=[self.symbol])
+        print(f"cancel-all result: {result}")
 
         return True
 
@@ -151,8 +155,7 @@ class OrderStackTester:
         # Create OrderStack for bid side
         self.bid_stack = OrderStack(
             side=Side.BUY,
-            chunk_fraction=0.25,  # Quarter sizing
-            min_orders_per_level=4,
+            chunk_size=0.25,
             symbol=self.symbol,
             max_price_levels=n_levels
         )
@@ -176,7 +179,7 @@ class OrderStackTester:
 
         # Execute sync
         self.logger.info(f"\n   Executing sync via WebSocket...")
-        placed_oids, cancelled_oids = await self.bid_stack.sync(
+        placed_oids, cancelled_oids, success = await self.bid_stack.execute(
             self.ws_client,
             bid_prices,
             bid_sizes
@@ -262,7 +265,7 @@ class OrderStackTester:
 
         # Execute sync
         self.logger.info(f"\n   Executing adjustment sync...")
-        placed_oids, cancelled_oids = await self.bid_stack.sync(
+        placed_oids, cancelled_oids, success = await self.bid_stack.execute(
             self.ws_client,
             new_bid_prices,
             new_bid_sizes
@@ -309,7 +312,7 @@ class OrderStackTester:
         # Cancel all orders via WebSocket
         self.logger.info(f"\n   Issuing cancelAll...")
         try:
-            response = await self.ws_client.cancel_all(symbols=[self.symbol])
+            response = await self.bid_stack.cancel_all(self.ws_client)
             self.logger.info(f"   Cancel response: {response}")
         except Exception as e:
             self.logger.error(f"   Cancel error: {e}")
@@ -318,9 +321,6 @@ class OrderStackTester:
         # Wait for cancellations to process
         self.logger.info(f"\n   Waiting for cancellations to process...")
         await asyncio.sleep(3)
-
-        # Cleanup terminal orders
-        self.bid_stack.cleanup()
 
         # Check final state
         final_stats = self.bid_stack.get_stats()

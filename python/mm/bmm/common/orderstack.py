@@ -13,7 +13,6 @@ import base58
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
-from collections import defaultdict
 
 from bulk import BulkWebSocketClient
 from bulk.common import Side, OrderStatus, TimeInForce
@@ -23,7 +22,7 @@ from bulk.messages import L2Snapshot, OrderBookLevel
 
 import logging
 
-from messages import LimitOrder, CancelOrder
+from messages import LimitOrder, CancelOrder, CancelAll
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +257,7 @@ class OrderStack:
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
         tolerance: float = 0.1
-    ) -> Tuple[List[str], List[str]]:
+    ) -> Tuple[List[str], List[str], bool]:
         """
         Sync with reference book and execute order changes via WebSocket
 
@@ -272,10 +271,10 @@ class OrderStack:
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
-            true if placement was successful (i.e. without error)
+            new order IDs, cancelled order IDs
 
         Example:
-            placed, cancelled = await bid_side.sync(
+            placed, cancelled = await bid_side.execute(
                 ws_client, binance_prices, binance_sizes
             )
         """
@@ -370,7 +369,7 @@ class OrderStack:
         if not order_state.status.is_terminal():
             self.orders[order_id] = order_state
         else:
-            self.orders.pop(order_id)
+            self.orders.pop(order_id, None)
 
         # create level if does not exist
         if key not in self.levels:
@@ -406,6 +405,15 @@ class OrderStack:
             discrepancy[price] = current_size - target_size
 
         return discrepancy
+
+    async def cancel_all(self, ws_client: BulkWebSocketClient):
+        """Cancel whole stack of orders"""
+        actions = []
+        for order in self.orders.values():
+            order_id = order.order_id
+            actions.append(CancelOrder(oid=order_id, symbol=self.symbol))
+
+        return await ws_client.place_orders(actions)
 
     def get_total_discrepancy(
         self,
@@ -450,7 +458,7 @@ class OrderStack:
         ws_client,
         orders_to_place: List[Tuple[float, float]],
         orders_to_cancel: List[str]
-    ) -> bool:
+    ) -> Tuple[List[str], List[str]]:
         """
         Execute order placement and cancellation via WebSocket (internal)
 
@@ -463,7 +471,7 @@ class OrderStack:
             orders_to_cancel: List of order IDs to cancel
 
         Returns:
-            true if all adjustments were successful
+            added order_ids, cancelled order_ids, success
         """
         # Add placement orders
         actions = []
@@ -493,17 +501,24 @@ class OrderStack:
                 responses = await ws_client.place_orders(actions)
 
                 # Process responses
+                added = []
+                cancelled = []
                 for i, response in enumerate(responses):
                     if response.is_error():
                         good = False
                         logger.error(f"Error executing order: {actions[i]}: {response}")
-                return good
+                    if response.status.is_placed():
+                        added.append(response.order_id)
+                    elif response.status.is_cancelled():
+                        cancelled.append(response.order_id)
+
+                return added, cancelled, good
             except Exception as e:
                 # Log error but don't crash
                 logger.error(f"Error executing orders: {e}")
-                return False
+                return [], [], False
         else:
-            return True
+            return [], [], True
 
     def _simulate_place_and_cancel(
         self,
@@ -563,11 +578,11 @@ class OrderStack:
         return True
 
     def _sync_level(
-            self,
-            key: int,
-            price: float,
-            size: float,
-            tolerance: float = 0.1
+        self,
+        key: int,
+        price: float,
+        size: float,
+        tolerance: float = 0.1
     ) -> Tuple[List[Tuple[float, float]], List[str]]:
         """
         Synchronize a single price level with requested book
@@ -618,8 +633,9 @@ class OrderStack:
             else:
                 order_size = self.chunk_size
 
-            for _ in range(num_orders):
-                orders_to_place.append((price, order_size))
+            for i in range(num_orders):
+                jitter = 10.0 * i / self.decimal_scale
+                orders_to_place.append((price, order_size + jitter))
 
         elif size_diff < 0:
             # Need to cancel orders

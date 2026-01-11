@@ -222,8 +222,7 @@ class BulkWebSocketClient:
         """Check if WebSocket is connected"""
         return (
                 self.state == ConnectionState.CONNECTED and
-                self.ws and
-                not self.ws.closed
+                self.ws
         )
 
     # ==================== ACCESS METHODS ====================
