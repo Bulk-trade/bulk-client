@@ -1,34 +1,50 @@
-import json
-import struct
-import time
-from typing import Dict, Tuple, List
-
+from typing import Dict, List
 from nacl.signing import SigningKey
+import struct
 import base58
+import time
 
+ACTION_CODES = {
+    "order": 0,
+    "oracle": 1,
+    "faucet": 2,
+    "updateUserSettings": 3,
+    "agentWalletCreation": 4,
+    "testnetAdmin": 5,
+}
+
+ORDER_MAP = {
+    "order": 0,
+    "cancel": 1,
+    "cancelAll": 2,
+}
+
+TIME_IN_FORCE_MAP = {
+    "GTC": 0,
+    "IOC": 1,
+    "ALO": 2,
+}
+
+ADMIN_ACTION_MAP = {
+    "whitelistFaucet": 0
+}
 
 class TransactionSigner:
-    """Handle Ed25519 transaction signing"""
-
-    def __init__(self, private_key_b58: str):
+    """Handle Ed25519 transaction signing with serialization of bulk payloads"""
+    
+    def __init__(self, private_key: str):
         """
         Initialize signer with base58 encoded private key
-
+        
         Args:
-            private_key_b58: Base58 encoded private key
+            private_key: Base58 encoded private key
         """
-        # Decode the private key
-        private_key_bytes = base58.b58decode(private_key_b58)
+        private_key_bytes = base58.b58decode(private_key)
         self.signing_key = SigningKey(private_key_bytes[:32])
         self.public_key = base58.b58encode(bytes(self.signing_key.verify_key)).decode()
-        self.private_key = private_key_b58
+        self.private_key = private_key
         self.nonce = 0
-
-    def get_next_nonce(self) -> int:
-        """Get the next nonce value"""
-        self.nonce += 1
-        return self.nonce
-
+        
     def sign_transaction(self, tx: Dict) -> str:
         """
         Sign a transaction with Ed25519
@@ -43,71 +59,18 @@ class TransactionSigner:
         action = tx.get("action", {})
         account = tx.get("account", self.public_key)
         signer = tx.get("signer", self.public_key)
-
-        # Serialize transaction to binary format
-        message = self._serialize_transaction(action, account, signer)
-
-        # Sign the message
+        
+        message = self.serialize_transaction(action, account, signer)
+        
         signed = self.signing_key.sign(message)
-
-        # Return base58 encoded signature (just the signature part)
+        
         sig = base58.b58encode(signed.signature).decode()
-
-        # reload sorted tx and add signature
+        
         tx["signature"] = sig
         return tx
-
+        
     @staticmethod
-    def generate_account() -> Tuple[str, str, List[int]]:
-        """
-        Generate a new random Ed25519 keypair compatible with Solana
-
-        Returns:
-            tuple: (private_key_b58, public_key_b58, keypair_dict)
-        """
-        # Generate a new random signing key
-        signing_key = SigningKey.generate()
-
-        # Get the private key (32 bytes seed)
-        private_key_bytes = bytes(signing_key)
-
-        # Get the public key (32 bytes)
-        public_key_bytes = bytes(signing_key.verify_key)
-
-        # Encode both to base58
-        private_key_b58 = base58.b58encode(private_key_bytes).decode()
-        public_key_b58 = base58.b58encode(public_key_bytes).decode()
-
-        return private_key_b58, public_key_b58
-
-    @staticmethod
-    def _write_u64(value: int) -> bytes:
-        """Write u64 in little-endian format"""
-        return struct.pack('<Q', value)
-
-    @staticmethod
-    def _write_u32(value: int) -> bytes:
-        """Write u32 in little-endian format"""
-        return struct.pack('<I', value)
-
-    @staticmethod
-    def _write_f64(value: float) -> bytes:
-        """Write f64 (double) in little-endian format"""
-        return struct.pack('<d', value)
-
-    @staticmethod
-    def _write_string(s: str) -> bytes:
-        """Write string with length prefix (u64 LE + UTF-8 bytes)"""
-        s_bytes = s.encode('utf-8')
-        return TransactionSigner._write_u64(len(s_bytes)) + s_bytes
-
-    @staticmethod
-    def _write_bool(value: bool) -> bytes:
-        """Write boolean as single byte"""
-        return bytes([1 if value else 0])
-
-    @staticmethod
-    def _serialize_transaction(action: Dict, account: str, signer: str) -> bytes:
+    def serialize_transaction(action: Dict, account: str, signer: str) -> bytes:
         """
         Serialize transaction using bincode format
 
@@ -119,182 +82,194 @@ class TransactionSigner:
         Returns:
             Binary serialized transaction
         """
-        parts = []
         action_type = action.get("type", "")
-
-        # 1. Transaction type (length-prefixed string)
-        parts.append(TransactionSigner._write_string(action_type))
-
-        # 2. Serialize based on action type
+        parts = [TransactionSigner.serialize_action(action_type)]
+        
         match action_type:
             case "order":
-                parts.extend(TransactionSigner._serialize_orders(action.get("orders", [])))
-            case "cancel":
-                parts.extend(TransactionSigner._serialize_cancels(action.get("cancels", [])))
-            case "cancelall":
-                parts.extend(TransactionSigner._serialize_cancelall(action.get("cancels", [])))
-            case "updateusersettings":
-                parts.extend(TransactionSigner._serialize_user_settings(action.get("settings", {})))
+                parts.extend(TransactionSigner.serialize_orders(action.get("orders", [])))
             case "faucet":
-                parts.extend(TransactionSigner._serialize_faucet(action.get("faucet", {})))
-            #case "testnetAdmin":
-            #    parts.extend(TransactionSigner._serialize_admin(action.get("actions", {})))
-
-        # 3. Nonce
-        nonce_bytes = TransactionSigner._write_u64(action.get("nonce", time.time_ns()))
+                parts.extend(TransactionSigner.serialize_faucet(action.get("faucet", [])))
+            case "updateUserSettings":
+                parts.extend(TransactionSigner.serialize_update_user_settings(action.get("settings", [])))
+            case "agentWalletCreation":
+                parts.extend(TransactionSigner.serialize_agent_wallet_creation(action.get("agent", [])))
+            case "testnetAdmin":
+                parts.extend(TransactionSigner.serialize_testnet_admin(action.get("actions", [])))
+        
+        nonce_bytes = TransactionSigner.write_u64(action.get("nonce", time.time_ns()))
         parts.append(nonce_bytes)
-
-        # 4. Account (32 bytes from base58)
-        account_bytes = base58.b58decode(account)
-        if len(account_bytes) != 32:
-            raise ValueError(f"Account must be 32 bytes, got {len(account_bytes)}")
-        parts.append(account_bytes)
-
-        # 5. Signer (32 bytes from base58)
-        signer_bytes = base58.b58decode(signer)
-        if len(signer_bytes) != 32:
-            raise ValueError(f"Signer must be 32 bytes, got {len(signer_bytes)}")
-        parts.append(signer_bytes)
-
-        # Concatenate all parts
+        
+        parts.append(TransactionSigner.decode_and_validate_key(account))
+        parts.append(TransactionSigner.decode_and_validate_key(signer))
+        
         return b''.join(parts)
-
+        
     @staticmethod
-    def _serialize_admin(actions: List[Dict]) -> List[bytes]:
-        pass
+    def serialize_orders(orders: List[Dict]) -> List[bytes]:
+        """Serialize a order list"""
+        parts = [TransactionSigner.write_u64(len(orders))]
+        
+        for order in orders:
+            order_type = next(iter(order))
+            order_data = order[order_type]
 
-    @staticmethod
-    def _serialize_orders(orders: List[Dict]) -> List[bytes]:
-        """Serialize order list"""
-        parts = []
-
-        # Count of orders
-        parts.append(TransactionSigner._write_u64(len(orders)))
-
-        # Serialize each order
-        for order_wrapper in orders:
-            # Unwrap the order if wrapped in 'order' key
-            if 'order' in order_wrapper:
-                order = order_wrapper['order']
-            else:
-                order = order_wrapper
-
-            order_parts = []
-
-            # Asset (symbol) - length-prefixed string
-            order_parts.append(TransactionSigner._write_string(order['c']))
-
-            # is_buy - boolean
-            order_parts.append(TransactionSigner._write_bool(order['b']))
-
-            # price - f64
-            order_parts.append(TransactionSigner._write_f64(order['px']))
-
-            # size - f64
-            order_parts.append(TransactionSigner._write_f64(order['sz']))
-
-            # reduce_only - boolean
-            order_parts.append(TransactionSigner._write_bool(order['r']))
-
-            # order_type - enum with variants
-            order_type = order['t']
-
-            if 'limit' in order_type:
-                # Limit order (discriminant = 0)
-                order_parts.append(TransactionSigner._write_u32(0))
-
-                # TIF: GTC=0, IOC=1, ALO=2
-                tif_map = {'GTC': 0, 'IOC': 1, 'ALO': 2}
-                tif_str = order_type['limit']['tif']
-                tif_value = tif_map.get(tif_str, 0)
-                order_parts.append(TransactionSigner._write_u32(tif_value))
-
-            elif 'trigger' in order_type:
-                # Trigger order (discriminant = 1)
-                order_parts.append(TransactionSigner._write_u32(1))
-
-                # is_market - boolean
-                is_market = order_type['trigger'].get('is_market', False)
-                order_parts.append(TransactionSigner._write_bool(is_market))
-
-                # triggerPx - f64
-                trigger_px = order_type['trigger'].get('triggerPx', 0.0)
-                order_parts.append(TransactionSigner._write_f64(trigger_px))
-
-            parts.append(b''.join(order_parts))
-
+            parts.append(TransactionSigner.serialize_order_type(order_type))
+            
+            if order_type == "order":
+                parts.extend([
+                    TransactionSigner.write_string(order_data['c']),
+                    TransactionSigner.write_bool(order_data['b']),
+                    TransactionSigner.write_f64(order_data['px']),
+                    TransactionSigner.write_f64(order_data['sz']),
+                    TransactionSigner.write_bool(order_data['r'])
+                ])
+                
+                t = order_data["t"]
+                if "limit" in t:
+                    parts.extend([
+                        TransactionSigner.write_u32(0),
+                        TransactionSigner.serialize_time_in_force(t["limit"]["tif"]),
+                    ])
+                elif "trigger" in t:
+                    parts.extend([])
+                    
+                if "cloid" in order_data:
+                    parts.extend([
+                        TransactionSigner.write_bool(True),
+                        TransactionSigner.write_string(order_data["cloid"]),
+                    ])
+                else:
+                    parts.extend([
+                        TransactionSigner.write_bool(False),
+                    ])
+            elif order_type == "cancel":
+                parts.extend([
+                    TransactionSigner.write_string(order_data["c"]),
+                    base58.b58decode(order_data["oid"]) 
+                ])
+            elif order_type == "cancelAll":
+                parts.extend(
+                    [TransactionSigner.write_u64(len(order_data["c"]))]
+                    )
+                for s in order_data["c"]:
+                    parts.extend([
+                        TransactionSigner.write_string(s)
+                    ])
         return parts
-
+    
     @staticmethod
-    def _serialize_cancels(cancels: List[Dict]) -> List[bytes]:
-        """Serialize cancel order list"""
-        parts = []
-
-        # Count of cancels
-        parts.append(TransactionSigner._write_u64(len(cancels)))
-
-        # Serialize each cancel
-        for cancel in cancels:
-            cancel_parts = []
-
-            # Asset (symbol) - length-prefixed string
-            cancel_parts.append(TransactionSigner._write_string(cancel['c']))
-
-            # Order ID - length-prefixed string
-            cancel_parts.append(TransactionSigner._write_string(cancel['oid']))
-
-            parts.append(b''.join(cancel_parts))
-
-        return parts
-
-    @staticmethod
-    def _serialize_cancelall(cancels: List[Dict]) -> List[bytes]:
-        """Serialize cancel all list (symbol only, no oid)"""
-        parts = []
-
-        # Count of cancels
-        parts.append(TransactionSigner._write_u64(len(cancels)))
-
-        # Serialize each cancel (only symbol)
-        for cancel in cancels:
-            # Asset (symbol) - length-prefixed string
-            parts.append(TransactionSigner._write_string(cancel['c']))
-
-        return parts
-
-    @staticmethod
-    def _serialize_user_settings(settings: Dict) -> List[bytes]:
-        """Serialize user settings (leverage settings)"""
-        parts = []
-
-        # Get leverage map
-        leverage_map = settings.get('m', [])
-
-        # Count of leverage settings
-        parts.append(TransactionSigner._write_u64(len(leverage_map)))
-
-        # Serialize each leverage setting
+    def serialize_update_user_settings(settings: Dict) -> List[bytes]:
+        """Serialize a update user settings transaction"""
+        leverage_map = settings.get("m", [])
+        parts = [TransactionSigner.write_u64(len(leverage_map))]
+        
         for symbol, leverage in leverage_map:
-            leverage_parts = []
-
-            # Symbol - length-prefixed string
-            leverage_parts.append(TransactionSigner._write_string(symbol))
-
-            # Leverage - f64
-            leverage_parts.append(TransactionSigner._write_f64(leverage))
-
-            parts.append(b''.join(leverage_parts))
-
+            parts.extend([
+                TransactionSigner.write_string(symbol),
+                TransactionSigner.write_f64(leverage)
+            ])
+            
         return parts
 
     @staticmethod
-    def _serialize_faucet(faucet: Dict) -> List[bytes]:
-        """Serialize faucet request"""
-        parts = []
-
-        # User address - length-prefixed string
-        user = faucet.get('u', '')
-        parts.append(TransactionSigner._write_string(user))
-
+    def serialize_faucet(faucet: Dict) -> List[bytes]:
+        """Serialize a faucet request"""
+        parts = [TransactionSigner.decode_and_validate_key(faucet["u"])]
+        
+        amount = faucet.get("amount")
+        if amount is None:
+            parts.append(TransactionSigner.write_bool(False))
+        else:
+            parts.extend([
+                TransactionSigner.write_bool(True),
+                TransactionSigner.write_f64(amount)
+            ])
+            
+        return parts
+        
+    @staticmethod
+    def serialize_agent_wallet_creation(agent: Dict) -> List[bytes]:
+        """Serialize a agent wallet creation transaction"""
+        
+        parts = [TransactionSigner.decode_and_validate_key(agent["a"])]
+        
+        if agent.get("d", False):
+            parts.append(TransactionSigner.write_bool(True))
+        else:
+            parts.append(TransactionSigner.write_bool(False))
         return parts
 
+    @staticmethod
+    def serialize_testnet_admin(actions: Dict) -> List[bytes]:
+        """Serialize a testnet admin transaction"""
+        parts = [TransactionSigner.write_u64(len(actions))]
+        for action in actions:
+            admin_action = next(iter(action))
+            parts.extend([
+                TransactionSigner.serialize_admin_actin(admin_action),
+                TransactionSigner.decode_and_validate_key(action[admin_action]["account"]),
+                TransactionSigner.write_bool(action[admin_action]["whitelist"])
+            ])
+            
+        return parts
+
+    @staticmethod
+    def write_u64(value: int) -> bytes:
+        """Write a u64 in little-endian format"""
+        return struct.pack("<Q", value)
+
+    @staticmethod
+    def write_string(value: str) -> bytes:
+        """Write a string in little-endian format"""
+        s_bytes = value.encode('utf-8')
+        return TransactionSigner.write_u64(len(s_bytes)) + s_bytes
+
+    @staticmethod
+    def write_bool(value: bool) -> bytes:
+        """Write a boolean as single byte"""
+        return bytes([1 if value else 0])
+
+    @staticmethod
+    def write_f64(value: float) -> bytes:
+        """Write a f64 (double) in little-endian format"""
+        return struct.pack("<d", value)
+
+    @staticmethod
+    def write_u32(value: int) -> bytes:
+        """Write a u32 in little-endian format"""
+        return struct.pack("<I", value)
+
+    @staticmethod
+    def serialize_order_type(order_type: str) -> bytes:
+        print(order_type)
+        if order_type not in ORDER_MAP:
+            raise ValueError(f"Invalid order type: {order_type}")
+        return struct.pack("<I", ORDER_MAP[order_type])
+
+    @staticmethod
+    def serialize_action(action_type: str) -> bytes:
+        if action_type not in ACTION_CODES:
+            raise ValueError(f"Invalid action type: {action_type}")
+        return struct.pack("<I", ACTION_CODES[action_type])
+    
+    @staticmethod
+    def serialize_time_in_force(time_in_force: str) -> bytes:
+        if time_in_force not in TIME_IN_FORCE_MAP:
+            raise ValueError(f"Invalid time in force: {time_in_force}")
+        return struct.pack("<I", TIME_IN_FORCE_MAP[time_in_force])
+    
+    @staticmethod
+    def serialize_admin_actin(admin_action: str) -> bytes:
+        if admin_action not in ADMIN_ACTION_MAP:
+            raise ValueError(f"Invalid admin action: {admin_action}")
+        return struct.pack("<I", ADMIN_ACTION_MAP[admin_action])
+    
+    @staticmethod
+    def decode_and_validate_key(key: str) -> bytes:
+        """Decode a base58 public key"""
+        key_bytes = base58.b58decode(key)
+        
+        if len(key_bytes) != 32:
+            raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
+        return key_bytes

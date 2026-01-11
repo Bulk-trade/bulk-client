@@ -14,8 +14,7 @@ import time
 import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
-from bulk.common import TransactionSigner
-
+from bulk.common.signer import TransactionSigner
 
 class BulkHttpClient:
     """HTTP REST API client for Bulk Labs exchange"""
@@ -393,173 +392,61 @@ class BulkHttpClient:
     # TRADING ENDPOINTS (SIGNED, STATE-MUTATING)
     # ===================================================================
 
-    def place_order(
+    def place_orders(
         self,
-        symbol: str,
-        is_buy: bool,
-        price: float,
-        size: float,
-        order_type: Literal["limit", "market"] = "limit",
-        time_in_force: Literal["GTC", "IOC", "ALO"] = "GTC",
-        reduce_only: bool = False,
-        client_order_id: Optional[str] = None
+        orders: List[Dict]
     ) -> Dict:
         """
-        Place a new order
-
-        Args:
-            symbol: Market symbol (e.g., "BTC-USD")
-            is_buy: True for buy, False for sell
-            price: Order price (use 0.0 for market orders)
-            size: Order size
-            order_type: "limit" or "market"
-            time_in_force: "GTC" (Good Till Cancel), "IOC" (Immediate or Cancel), "ALO" (Add Liquidity Only)
-            reduce_only: True if order should only reduce position
-            client_order_id: Optional client order ID (base58)
-
-        Returns:
-            API response with order status
-
-        Example:
-            response = client.place_order(
-                symbol="BTC-USD",
-                is_buy=True,
-                price=99000.0,
-                size=0.1,
-                order_type="limit",
-                time_in_force="GTC"
-            )
-        """
-        if not self.signer:
-            raise ValueError("Private key required for trading operations")
-
-        # Build order object
-        order = {
-            "c": symbol,
-            "b": is_buy,
-            "px": price,
-            "sz": size,
-            "r": reduce_only
-        }
-
-        # Set order type
-        if order_type == "market":
-            order["t"] = {
-                "trigger": {
-                    "is_market": True,
-                    "triggerPx": 0.0
-                }
-            }
-        else:
-            order["t"] = {
-                "limit": {
-                    "tif": time_in_force
-                }
-            }
-
-        # Add client order ID if provided
-        if client_order_id:
-            order["cloid"] = client_order_id
-
-        # Build transaction
-        transaction = {
-            "action": {
-                "type": "order",
-                "orders": [order]
-            },
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key
-        }
-
-        # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
-        print(f"sending order tx: {transaction}")
-
-        # Send request
-        response = requests.post(
-            f"{self.base_url}/order",
-            json=transaction,
-            timeout=self.timeout
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def place_multiple_orders(self, orders: List[Dict]) -> Dict:
-        """
         Place multiple orders in a single transaction
-
-        Args:
-            orders: List of order dicts with keys:
-                - symbol: Market symbol
-                - is_buy: True for buy, False for sell
-                - price: Order price
-                - size: Order size
-                - order_type: "limit" or "market"
-                - time_in_force: "GTC", "IOC", or "ALO"
-                - reduce_only: Optional, default False
-                - client_order_id: Optional client order ID
-
-        Returns:
-            API response with order statuses
-
-        Example:
-            orders = [
-                {
-                    "symbol": "BTC-USD",
-                    "is_buy": True,
-                    "price": 99000.0,
-                    "size": 0.1,
-                    "order_type": "limit",
-                    "time_in_force": "GTC"
-                },
-                {
-                    "symbol": "ETH-USD",
-                    "is_buy": False,
-                    "price": 3000.0,
-                    "size": 1.0,
-                    "order_type": "limit",
-                    "time_in_force": "GTC"
-                }
-            ]
-            response = client.place_multiple_orders(orders)
         """
+        
         if not self.signer:
             raise ValueError("Private key required for trading operations")
-
-        # Build order objects
+        
         order_objects = []
         for order_spec in orders:
-            order = {
-                "c": order_spec["symbol"],
-                "b": order_spec["is_buy"],
-                "px": order_spec["price"],
-                "sz": order_spec["size"],
-                "r": order_spec.get("reduce_only", False)
-            }
-
-            # Set order type
-            if order_spec.get("order_type", "limit") == "market":
-                order["t"] = {
-                    "trigger": {
-                        "is_market": True,
-                        "triggerPx": 0.0
-                    }
+            if order_spec.get("type") == "order":
+                order = {
+                    "c": order_spec["symbol"],
+                    "b": order_spec["is_buy"],
+                    "px": order_spec["price"],
+                    "sz": order_spec["size"],
+                    "r": order_spec.get("reduce_only", False)
                 }
+                
+                if order_spec.get("order_type", "limit") == "market":
+                    order["t"] = {
+                        "trigger": {
+                            "is_market": True,
+                            "triggerPx": 0.0
+                        }
+                    }
+                else:
+                    order["t"] = {
+                        "limit": {
+                            "tif": order_spec.get("time_in_force", "GTC")
+                        }
+                    }
+                    
+                if "client_order_id" in order_spec:
+                    order["cloid"] = order_spec["client_order_id"]
+                    
+                order_objects.append({"order": order})
+                
+            elif order_spec.get("type") == "cancel":
+                cancel = {
+                    "c": order_spec["symbol"],
+                    "oid": order_spec["order_id"]
+                }
+                order_objects.append({"cancel": cancel})
+            elif order_spec.get("type") == "cancelAll":
+                cancelall = {
+                    "c": order_spec["symbols"]
+                }
+                order_objects.append({"cancelAll": cancelall})
             else:
-                order["t"] = {
-                    "limit": {
-                        "tif": order_spec.get("time_in_force", "GTC")
-                    }
-                }
+                raise ValueError(f"Invalid order type: {order_spec.get('type')}")
 
-            # Add client order ID if provided
-            if "client_order_id" in order_spec:
-                order["cloid"] = order_spec["client_order_id"]
-
-            order_objects.append(order)
-
-        # Build transaction
         transaction = {
             "action": {
                 "type": "order",
@@ -568,159 +455,9 @@ class BulkHttpClient:
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
-
-        # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
-
-        # Send request
-        response = requests.post(
-            f"{self.base_url}/order",
-            json=transaction,
-            timeout=self.timeout
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def cancel_order(self, symbol: str, order_id: str) -> Dict:
-        """
-        Cancel a specific order
-
-        Args:
-            symbol: Market symbol (e.g., "BTC-USD")
-            order_id: Order ID to cancel (base58)
-
-        Returns:
-            API response with cancellation status
-
-        Example:
-            response = client.cancel_order(
-                symbol="BTC-USD",
-                order_id="Fpa3oVuL3UzjNANAMZZdmrn6D1Zhk83GmBuJpuAWG51F"
-            )
-        """
-        if not self.signer:
-            raise ValueError("Private key required for trading operations")
-
-        # Build transaction
-        transaction = {
-            "action": {
-                "type": "cancel",
-                "cancels": [
-                    {
-                        "c": symbol,
-                        "oid": order_id
-                    }
-                ]
-            },
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key
-        }
-
-        # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
-
-        # Send request
-        response = requests.delete(
-            f"{self.base_url}/order",
-            json=transaction,
-            timeout=self.timeout
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def cancel_multiple_orders(self, cancellations: List[Dict]) -> Dict:
-        """
-        Cancel multiple orders in a single transaction
-
-        Args:
-            cancellations: List of dicts with keys:
-                - symbol: Market symbol
-                - order_id: Order ID to cancel
-
-        Returns:
-            API response with cancellation statuses
-
-        Example:
-            cancellations = [
-                {"symbol": "BTC-USD", "order_id": "order_id_1"},
-                {"symbol": "ETH-USD", "order_id": "order_id_2"}
-            ]
-            response = client.cancel_multiple_orders(cancellations)
-        """
-        if not self.signer:
-            raise ValueError("Private key required for trading operations")
-
-        # Build cancellation objects
-        cancel_objects = [
-            {
-                "c": cancel["symbol"],
-                "oid": cancel["order_id"]
-            }
-            for cancel in cancellations
-        ]
-
-        # Build transaction
-        transaction = {
-            "action": {
-                "type": "cancel",
-                "cancels": cancel_objects
-            },
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key
-        }
-
-        # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
-
-        # Send request
-        response = requests.delete(
-            f"{self.base_url}/order",
-            json=transaction,
-            timeout=self.timeout
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def cancel_all_orders(self, symbol: Optional[str] = None) -> Dict:
-        """
-        Cancel all orders (optionally for a specific symbol)
-
-        Args:
-            symbol: Optional market symbol to cancel orders for (None = all symbols)
-
-        Returns:
-            API response with cancellation status
-
-        Example:
-            # Cancel all orders on BTC-USD
-            response = client.cancel_all_orders(symbol="BTC-USD")
-
-            # Cancel all orders on all symbols
-            response = client.cancel_all_orders()
-        """
-        if not self.signer:
-            raise ValueError("Private key required for trading operations")
-
-        # Build transaction
-        transaction = {
-            "action": {
-                "type": "cancelall"
-            },
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key
-        }
-
-        # Add symbol filter if provided
-        if symbol:
-            transaction["action"]["c"] = symbol
-
-        # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
-
+        
+        transaction = self.signer.sign_transaction(transaction)
+        
         # Send request
         response = requests.post(
             f"{self.base_url}/order",
@@ -753,18 +490,18 @@ class BulkHttpClient:
         # Build transaction
         transaction = {
             "action": {
-                "type": "updateusersettings",
+                "type": "updateUserSettings",
                 "settings": {
                     "m": leverage_settings
-                }
+                },
+                "nonce": 1
             },
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
 
         # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
+        transaction = self.signer.sign_transaction(transaction)
 
         # Send request
         response = requests.post(
@@ -805,7 +542,7 @@ class BulkHttpClient:
         # Build transaction
         transaction = {
             "action": {
-                "type": "agentwalletcreation",
+                "type": "agentWalletCreation",
                 "agent": {
                     "a": agent_pubkey,
                     "d": delete
@@ -816,8 +553,7 @@ class BulkHttpClient:
         }
 
         # Sign transaction
-        signature = self.signer.sign_transaction(transaction)
-        transaction["signature"] = signature
+        transaction = self.signer.sign_transaction(transaction)
 
         # Send request
         response = requests.post(
@@ -956,7 +692,9 @@ class BulkHttpClient:
 
         # Sign transaction
         tx = self.signer.sign_transaction(transaction)
-
+        
+        print(f"Sending tx: {tx}")
+        
         # Send request
         response = requests.post(
             f"{self.base_url}/private/faucet",
