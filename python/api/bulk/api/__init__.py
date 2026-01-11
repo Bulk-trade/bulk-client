@@ -1,2 +1,2 @@
-from .ws import BulkWebSocketClient
-from .http import BulkHttpClient
+from .bulk_ws import BulkWebSocketClient, Topic
+from .bulk_http import BulkHttpClient

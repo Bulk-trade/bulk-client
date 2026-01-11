@@ -1,4 +1,6 @@
 from bulk.api import BulkWebSocketClient
+from common import Side
+
 
 async def test_market_data():
     """Example: Subscribe to market data and print updates"""

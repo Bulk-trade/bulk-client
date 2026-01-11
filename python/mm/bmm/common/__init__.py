@@ -1,1 +1,1 @@
-from .orderstack import *
+from .orderstack import OrderStack

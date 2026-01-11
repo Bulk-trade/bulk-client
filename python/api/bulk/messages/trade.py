@@ -26,12 +26,12 @@ class LimitOrder:
         order = {
             "order": {
                 'c': self.symbol,
-                'b': self.side == Side.BUY,
+                'b': self.side.value == Side.BUY.value,
                 'px': self.price,
                 'sz': self.size,
                 'r': self.reduce_only,
                 't': {
-                    'limit': {'tif': self.time_in_force.value}
+                    'limit': {'tif': str(self.time_in_force)}
                 }
             }
         }
@@ -65,7 +65,7 @@ class MarketOrder:
         order = {
             "order": {
                 'c': self.symbol,
-                'b': self.side == Side.BUY,
+                'b': self.side.value == Side.BUY.value,
                 'sz': self.size,
                 'px': 0.0,
                 'r': self.reduce_only,
@@ -195,26 +195,40 @@ class OrderResponse:
     message: Optional[str]
     meta: Dict
 
+    def is_error(self) -> bool:
+        """determine whether is an error"""
+        match self.status:
+            case OrderStatus.ERROR:
+                return True
+            case OrderStatus.REJECTED_RISKLIMIT:
+                return True
+            case OrderStatus.REJECTED_INVALID:
+                return True
+            case OrderStatus.REJECTED_DUPLICATE:
+                return True
+            case OrderStatus.REJECTED_CROSSING:
+                return True
+            case _:
+                return False
+
     @classmethod
     def from_api(cls, data: Dict) -> List['OrderResponse']:
         rlist = data.get("data",{}).get("payload",{}).get("response",{}).get("data",{}).get("statuses", [])
         responses = []
         for response in rlist:
             match response:
-                case {"resting": body}:
-                    # Handle resting order
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.RESTING, message=None, meta=body))
-                case {"filled": body}:
-                    # Handle filled case
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.FILLED, message=None, meta=body))
-                case {"partiallyfilled": body}:
-                    # Handle partial fill
-                    responses.append(cls(order_id=body.get("oid"), status=OrderStatus.PARTIALLY_FILLED, message=None, meta=body))
                 case {"error": body}:
                     # Handle error
                     responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None, meta=body)))
-                case {"cancelled": body}:
-                    # Order cancelled
-                   responses.append(cls(order_id=body.get("oid"), status=OrderStatus.CANCELLED, message=None, meta=body))
+                case _:
+                    status_key = next(iter(response.keys()))
+                    body = response[status_key]
+                    status = OrderStatus.from_string(status_key)  # or OrderStatus[status_key.upper()]
+                    responses.append(cls(
+                        order_id=body.get("oid"),
+                        status=status,
+                        message=None,
+                        meta=body
+                    ))
         return responses
 

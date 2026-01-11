@@ -36,6 +36,10 @@ class LoggingWebSocket:
     async def close(self):
         await self.ws.close()
 
+    @property
+    def closed(self):
+        return self.ws.paused
+
     def __aiter__(self):
         """Support async iteration"""
         return self
@@ -46,7 +50,3 @@ class LoggingWebSocket:
             return await self.recv()
         except websockets.exceptions.ConnectionClosed:
             raise StopAsyncIteration
-
-    def __getattr__(self, name):
-        # Delegate all other attributes to the wrapped websocket
-        return getattr(self._ws, name)
