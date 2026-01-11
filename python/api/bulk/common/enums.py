@@ -58,6 +58,14 @@ class OrderStatus(Enum):
         """Determine if the order is terminal or not"""
         return self.value > OrderStatus.WORKING.value
 
+    def is_cancelled(self) -> bool:
+        """Determine if the order is cancelled or not"""
+        return self.value >= OrderStatus.CANCELLED.value and self.value <= OrderStatus.CANCELLED_REDUCEONLY.value
+
+    def is_placed(self) -> bool:
+        """Determine if the order was placed or not"""
+        return self.value > OrderStatus.NONE.value and self.value < OrderStatus.CANCELLED.value
+
     @classmethod
     def from_string(cls, s: str) -> 'OrderStatus':
         """Construct an OrderStatus enum from a string"""

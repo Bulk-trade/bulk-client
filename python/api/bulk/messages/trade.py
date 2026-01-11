@@ -131,7 +131,6 @@ class CancelOrder:
 @dataclass
 class CancelAll:
     """Cancel all orders for symbol or across symbols"""
-    account: str
     symbols: List[str]
     nonce: int = time.time_ns()
 
