@@ -58,6 +58,7 @@ class BinanceMarketMaker:
         self.binance: Optional[BinanceFuturesWebSocketClient] = None
         self.bulk: Optional[BulkWebSocketClient] = None
         self.signer: Optional[TransactionSigner] = None
+        self.dryrun = config.dryrun
 
         # Order management
         self.bid_stack: Optional[OrderStack] = None
@@ -122,6 +123,28 @@ class BinanceMarketMaker:
             mid = book.get_mid_price()
             self.logger.info(f"   ✓ Binance book ready (mid: ${mid:,.2f})")
 
+            # Initialize order stacks
+            self.logger.info(f"\n6. Initializing order stacks...")
+            self.bid_stack = OrderStack(
+                symbol=self.config.bulk_symbol(),
+                side=Side.BUY,
+                chunk_size=self.config.chunk_size,
+                max_orders=self.config.max_new_orders,
+                max_price_levels=self.config.max_price_levels
+            )
+
+            self.ask_stack = OrderStack(
+                symbol=self.config.bulk_symbol(),
+                side=Side.SELL,
+                chunk_size=self.config.chunk_size,
+                max_orders=self.config.max_new_orders,
+                max_price_levels=self.config.max_price_levels
+            )
+
+            self.logger.info("   ✓ Order stacks initialized")
+            self.logger.info(f"      Bid stack: {self.bid_stack}")
+            self.logger.info(f"      Ask stack: {self.ask_stack}")
+
             # Initialize Bulk client
             self.logger.info(f"\n3. Connecting to Bulk ({self.config.bulk_symbol()})...")
             self.bulk = BulkWebSocketClient(
@@ -147,36 +170,14 @@ class BinanceMarketMaker:
             self.logger.info("   ✓ Account snapshot received")
 
             # Cancel all existing orders
-            self.logger.info("\n4. Cancelling all existing orders...")
+            self.logger.info("\n5. Cancelling all existing orders...")
             try:
                 result = await self.bulk.cancel_all(symbols=[self.config.bulk_symbol()])
                 self.logger.info(f"   ✓ Cancelled all orders: {result}")
             except Exception as e:
                 self.logger.warning(f"   Cancel all failed (might be no orders): {e}")
 
-            # Initialize order stacks
-            self.logger.info(f"\n5. Initializing order stacks...")
-            self.bid_stack = OrderStack(
-                symbol=self.config.bulk_symbol(),
-                side=Side.BUY,
-                chunk_size=self.config.chunk_size,
-                max_orders=self.config.max_new_orders,
-                max_price_levels=self.config.max_price_levels
-            )
-
-            self.ask_stack = OrderStack(
-                symbol=self.config.bulk_symbol(),
-                side=Side.SELL,
-                chunk_size=self.config.chunk_size,
-                max_orders=self.config.max_new_orders,
-                max_price_levels=self.config.max_price_levels
-            )
-
-            self.logger.info("   ✓ Order stacks initialized")
-            self.logger.info(f"      Bid stack: {self.bid_stack}")
-            self.logger.info(f"      Ask stack: {self.ask_stack}")
-
-            self.logger.info("\n" + "=" * 80)
+            self.logger.info("=" * 80)
             self.logger.info("INITIALIZATION COMPLETE - READY TO RUN")
             self.logger.info("=" * 80)
             return True
@@ -209,7 +210,7 @@ class BinanceMarketMaker:
 
     async def shutdown(self):
         """Clean shutdown"""
-        self.logger.info("\n" + "=" * 80)
+        self.logger.info("=" * 80)
         self.logger.info("SHUTTING DOWN MARKET MAKER")
         self.logger.info("=" * 80)
 
@@ -296,11 +297,12 @@ class BinanceMarketMaker:
 
         # Execute
         actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
-        if len(actions) > 0:
-            responses = await self.bulk.place_orders(actions)
-            for i, response in enumerate(responses):
-                if response.is_error():
-                    self.logger.error(f"Error executing order: {actions[i]}: {response}")
+        if not self.dryrun:
+            if len(actions) > 0:
+                responses = await self.bulk.place_orders(actions)
+                for i, response in enumerate(responses):
+                    if response.is_error():
+                        self.logger.error(f"Error executing order: {actions[i]}: {response}")
 
         # Update statistics
         self.sync_count += 1
@@ -315,7 +317,8 @@ class BinanceMarketMaker:
                 f"Sync #{self.sync_count}: "
                 f"Placed={len(bid_placed) + len(ask_placed)} "
                 f"Cancelled={len(bid_cancelled) + len(ask_cancelled)} "
-                f"Time={elapsed:.1f}ms"
+                f"Time={elapsed:.1f}ms, "
+                f"BBO: {bid_sizes[0]} @ {bid_prices[0]} / {ask_sizes[0]} @ {ask_prices[0]}"
             )
 
     # ==================== MONITORING ====================
@@ -352,21 +355,19 @@ class BinanceMarketMaker:
             size_to_close = abs(self.current_position_size) * self.config.inventory_close_fraction
             side = Side.SELL if self.current_position_size > 0 else Side.BUY
 
-            self.logger.warning(
-                f"Closing position: {side} {size_to_close:.4f} @ MARKET"
-            )
-
             try:
                 # Place market order to reduce position
                 market_order = MarketOrder(
-                    symbol=self.config.symbol,
+                    symbol=self.config.bulk_symbol(),
                     side=side,
                     size=size_to_close,
                     reduce_only=True
                 )
 
-                response = await self.bulk.place_orders([market_order])
-                self.logger.info(f"Position close response: {response}")
+                if not self.dryrun:
+                    self.logger.warning(f"Closing position: {side} {size_to_close:.4f} @ MARKET")
+                    response = await self.bulk.place_orders([market_order])
+                    self.logger.info(f"Position close response: {response}")
 
             except Exception as e:
                 self.logger.error(f"Error closing position: {e}", exc_info=True)
@@ -413,6 +414,8 @@ class BinanceMarketMaker:
     def _handle_binance_delta(self, delta: L2Delta):
         """Handle Binance order book delta"""
         self.last_binance_update = time.time()
+
+
 
     def _handle_order_state(self, order_state: OrderState):
         """Handle order state update from Bulk"""
@@ -530,13 +533,13 @@ async def main():
 
     # Setup logging
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
+        level=getattr(logging, config.log_level),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     logger = logging.getLogger(__name__)
 
     # Get private key
-    private_key = args.private_key or os.getenv('BULK_PRIVATE_KEY')
+    private_key = os.getenv('BULK_PRIVATE_KEY')
     if not private_key:
         logger.error("Private key required: BULK_PRIVATE_KEY env var should be set")
         return 1

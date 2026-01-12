@@ -1,4 +1,4 @@
-import json
+import json5
 import os
 from dataclasses import dataclass
 
@@ -34,6 +34,8 @@ class MMConfig:
 
     # Logging
     log_level: str
+    # Dry run
+    dryrun: bool
 
     def bulk_symbol(self) -> str:
         """symbol for bulk market"""
@@ -49,7 +51,7 @@ class MMConfig:
         Load config from file
         """
         with open(configfile, "r") as f:
-            config = json.load(f)
+            config = json5.load(f)
             return cls(
                 coin=config.get("coin"),
                 bulk_ws_url=config.get("bulk_ws_url", "wss://exchange-wss.bulk.trade"),
@@ -63,4 +65,5 @@ class MMConfig:
                 inventory_close_fraction=config.get("inventory_close_fraction", 0.25),
                 binance_timeout=config.get("binance_timeout", 60.0),
                 log_level=config.get("log_level", "INFO"),
+                dryrun=config.get("dryrun", False),
             )

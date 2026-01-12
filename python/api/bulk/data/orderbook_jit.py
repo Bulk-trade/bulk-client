@@ -236,6 +236,7 @@ def _binary_search_price(prices: np.ndarray, n_levels: int, target_price: float)
             right = mid
     return left
 
+
 @njit(cache=True, fastmath=True)
 def _update_level_sorted(
     prices: np.ndarray,
@@ -264,6 +265,14 @@ def _update_level_sorted(
             return n_levels
     else:
         if size > 0.0:
+            # Check if we're at max capacity
+            max_size = len(prices)
+            if n_levels >= max_size:
+                # Array is full - drop the worst level (furthest from best price)
+                # This means we drop the last element (index n_levels-1)
+                n_levels = max_size - 1
+
+            # Now we have room to insert
             if idx < n_levels:
                 prices[idx + 1:n_levels + 1] = prices[idx:n_levels]
                 sizes[idx + 1:n_levels + 1] = sizes[idx:n_levels]
