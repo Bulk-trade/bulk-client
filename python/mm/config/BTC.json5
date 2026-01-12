@@ -1,0 +1,30 @@
+{
+    // coin to be MM (will be rendered to proper bulk and binance perp symbol)
+    coin: "BTC",
+
+    bulk_ws_url: "wss://exchange-wss.bulk.trade",
+    // order size increment
+    chunk_size: 0.25,
+    // Maximum number of new orders per level
+    max_new_orders: 5,
+    // Maximum number of price levels to replicate
+    max_price_levels: 1000,
+
+    // Update frequency (seconds between syncs)
+    sync_interval: 1.0,
+    // Seconds between monitoring checks
+    monitor_interval: 1.0,
+
+    // Maximum inventory before squaring
+    max_inventory_notional: 250000.0,
+    // Amount of inventory to close when above threshold
+    inventory_close_fraction: 0.50,
+
+    // Binance monitoring (seconds without update before reconnect)
+    binance_timeout: 60.0,
+
+    // logging
+    log_level: "INFO",
+    // dryrun
+    dryrun: true,
+}
