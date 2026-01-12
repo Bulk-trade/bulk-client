@@ -308,7 +308,7 @@ class OrderStack:
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
         tolerance: float = 0.1
-    ) -> Tuple[List[Tuple[float, float]], List[str]]:
+    ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
         Plan order changes needed to sync with new sizes (without execution)
 
@@ -468,9 +468,9 @@ class OrderStack:
     async def _place_and_cancel(
         self,
         ws_client,
-        orders_to_place: List[Tuple[float, float]],
-        orders_to_cancel: List[str]
-    ) -> Tuple[List[str], List[str]]:
+        orders_to_place: List[LimitOrder],
+        orders_to_cancel: List[CancelOrder],
+    ) -> Tuple[List[str], List[str], bool]:
         """
         Execute order placement and cancellation via WebSocket (internal)
 
@@ -487,62 +487,47 @@ class OrderStack:
         """
         # Add placement orders
         actions = []
-        for price, size in orders_to_place:
-            order = LimitOrder(
-                symbol=self.symbol,
-                side=self.side,
-                price=price,
-                size=size,
-                reduce_only=False,
-                time_in_force=TimeInForce.GTC
-            )
-            actions.append(order)
+        actions.extend(orders_to_cancel)
+        actions.extend(orders_to_place)
 
-        # Add cancellation orders
-        for order_id in orders_to_cancel:
-            cancel = CancelOrder(
-                symbol=self.symbol,
-                oid=order_id
-            )
-            actions.append(cancel)
+        if len(actions) == 0:
+            return [], [], True
 
         # Execute batch if there are actions
-        if actions:
-            try:
-                good = True
-                responses = await ws_client.place_orders(actions)
+        try:
+            good = True
+            responses = await ws_client.place_orders(actions)
 
-                # Process responses
-                added = []
-                cancelled = []
-                for i, response in enumerate(responses):
-                    if response.is_error():
-                        good = False
-                        logger.error(f"Error executing order: {actions[i]}: {response}")
-                    if response.status.is_placed():
-                        added.append(response.order_id)
-                    elif response.status.is_cancelled():
-                        cancelled.append(response.order_id)
+            # Process responses
+            added = []
+            cancelled = []
+            for i, response in enumerate(responses):
+                if response.is_error():
+                    good = False
+                    logger.error(f"Error executing order: {actions[i]}: {response}")
+                if response.status.is_placed():
+                    added.append(response.order_id)
+                elif response.status.is_cancelled():
+                    cancelled.append(response.order_id)
 
-                return added, cancelled, good
-            except Exception as e:
-                # Log error but don't crash
-                logger.error(f"Error executing orders: {e}")
-                return [], [], False
-        else:
-            return [], [], True
+            return added, cancelled, good
+        except Exception as e:
+            # Log error but don't crash
+            logger.error(f"Error executing orders: {e}")
+            return [], [], False
+
 
     def _simulate_place_and_cancel(
         self,
-        orders_to_place: List[Tuple[float, float]],
-        orders_to_cancel: List[str]
-    ) -> bool:
+        orders_to_place: List[LimitOrder],
+        orders_to_cancel: List[CancelOrder]
+    ) -> Tuple[List[str], List[str], bool]:
         """
         Simulate execution of order placement and cancellation via WebSocket (internal)
 
         Args:
-            orders_to_place: List of (price, size) tuples
-            orders_to_cancel: List of order IDs to cancel
+            orders_to_place: List of limit orders to place
+            orders_to_cancel: List of orders to cancel
 
         Returns:
             true if all adjustments were successful
@@ -550,32 +535,37 @@ class OrderStack:
         # Add placement orders
         tnow = time.time_ns()
         oid = tnow
-        for price, size in orders_to_place:
+
+        added_oid = []
+        cancelled_oid = []
+        for order in orders_to_place:
+            order_id = base58.b58encode_int(oid).decode('utf-8')
             state = OrderState(
                 timestamp = tnow,
                 symbol = self.symbol,
-                order_id = base58.b58encode_int(oid).decode('utf-8'),
+                order_id = order_id,
                 side = self.side,
-                price = price,
+                price = order.price,
                 status = OrderStatus.RESTING,
                 vwap = 0.0,
-                size = size,
+                size = order.size,
                 size_done = 0.0,
-                size_orig = size,
+                size_orig = order.size,
                 is_maker = True
             )
             oid += 1
+            added_oid.append(order_id)
             self.update_order_state(state)
 
         # Add cancellation orders
-        for order_id in orders_to_cancel:
-            old = self.orders.get(order_id, None)
+        for cancel in orders_to_cancel:
+            old = self.orders.get(cancel.oid, None)
             size = old.size if old is not None else 0.0
             price = old.price if old is not None else 0.0
             state = OrderState(
                 timestamp = tnow,
                 symbol = self.symbol,
-                order_id = order_id,
+                order_id = cancel.oid,
                 side = self.side,
                 price = price,
                 status = OrderStatus.CANCELLED,
@@ -585,9 +575,10 @@ class OrderStack:
                 size_orig = size,
                 is_maker = True
             )
+            cancelled_oid.append(cancel.oid)
             self.update_order_state(state)
 
-        return True
+        return added_oid, cancelled_oid, True
 
     def _sync_level(
         self,
@@ -595,7 +586,7 @@ class OrderStack:
         price: float,
         size: float,
         tolerance: float = 0.1
-    ) -> Tuple[List[Tuple[float, float]], List[str]]:
+    ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
         Synchronize a single price level with requested book
 
@@ -606,8 +597,8 @@ class OrderStack:
 
         Returns:
             Tuple of:
-            - List of (price, size) tuples for new orders to place
-            - List of order_ids to cancel
+            - List of limit orders to add
+            - List of cancel orders to add
         """
         # Calculate target size (rounded to chunk multiples)
         target_size = round(size / self.chunk_size) * self.chunk_size
@@ -647,18 +638,33 @@ class OrderStack:
 
             for i in range(num_orders):
                 jitter = 10.0 * i / self.decimal_scale
-                orders_to_place.append((price, order_size + jitter))
+                order = LimitOrder(
+                    symbol=self.symbol,
+                    side=self.side,
+                    price=price,
+                    size=order_size + jitter,
+                    reduce_only=False,
+                    time_in_force=TimeInForce.GTC
+                )
+                orders_to_place.append(order)
 
-        elif size_diff < 0:
+        elif size_diff < 0 and target_size > 0:
             # Need to cancel orders
-            orders_to_cancel = level.get_orders_to_cancel(target_size)
+            for oid in level.get_orders_to_cancel(target_size):
+                action = CancelOrder(
+                    symbol=self.symbol,
+                    oid=oid,
+                )
+                orders_to_cancel.append(action)
 
-        # If target is zero, cancel all orders at this level
-        if target_size == 0:
-            orders_to_cancel = [
-                oid for oid, order in level.orders.items()
-                if order.is_active
-            ]
+        elif target_size == 0:
+            # If target is zero, cancel all orders at this level
+            for oid, order in level.orders.items():
+                action = CancelOrder(
+                    symbol=self.symbol,
+                    oid=oid,
+                )
+                orders_to_cancel.append(action)
 
         return orders_to_place, orders_to_cancel
 
