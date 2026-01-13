@@ -36,15 +36,16 @@ class OrderStatus(Enum):
     WORKING = 2
     FILLED = 3
     PARTIALLY_FILLED = 4
-    CANCELLED = 5
-    CANCELLED_RISKLIMIT = 6
-    CANCELLED_SELFCROSSING = 7
-    CANCELLED_IOC = 8
-    CANCELLED_REDUCEONLY = 9
-    REJECTED_CROSSING = 10
-    REJECTED_DUPLICATE = 11
-    REJECTED_RISKLIMIT = 12
-    REJECTED_INVALID = 13
+    CANCEL_PENDING = 5
+    CANCELLED = 6
+    CANCELLED_RISKLIMIT = 7
+    CANCELLED_SELFCROSSING = 8
+    CANCELLED_IOC = 9
+    CANCELLED_REDUCEONLY = 10
+    REJECTED_CROSSING = 11
+    REJECTED_DUPLICATE = 12
+    REJECTED_RISKLIMIT = 13
+    REJECTED_INVALID = 14
 
     def __str__(self):
         """Convert to string for API"""
@@ -64,7 +65,7 @@ class OrderStatus(Enum):
 
     def is_placed(self) -> bool:
         """Determine if the order was placed or not"""
-        return self.value > OrderStatus.NONE.value and self.value < OrderStatus.CANCELLED.value
+        return self.value > OrderStatus.NONE.value and self.value < OrderStatus.CANCEL_PENDING.value
 
     @classmethod
     def from_string(cls, s: str) -> 'OrderStatus':
