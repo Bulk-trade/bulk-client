@@ -7,7 +7,7 @@ from seaborn._stats import order
 
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
-from messages import OrderState
+from bulk.messages import OrderState
 
 
 # ----------------------------------------------------------
