@@ -10,13 +10,20 @@
     // Maximum number of price levels to replicate
     max_price_levels: 1000,
 
+    // tick resolution (in price) for the 1st K levels
+    fine_tick: 0.25,
+    // tick resolution (in price) for the deeper levels
+    coarse_tick: 5.0,
+    // maximum depth (bps)
+    max_depth: 1000.0,
+
     // Update frequency (seconds between syncs)
-    sync_interval: 1.0,
+    sync_interval: 5.0,
     // Seconds between monitoring checks
     monitor_interval: 1.0,
 
     // Maximum inventory before squaring
-    max_inventory_notional: 250000.0,
+    max_inventory_notional: 1000000.0,
     // Amount of inventory to close when above threshold
     inventory_close_fraction: 0.50,
 
@@ -26,5 +33,5 @@
     // logging
     log_level: "INFO",
     // dryrun
-    dryrun: true,
+    dryrun: false,
 }

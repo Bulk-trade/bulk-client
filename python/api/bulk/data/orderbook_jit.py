@@ -1,8 +1,10 @@
+import time
+
 import numpy as np
 from numba import njit, types
 from typing import Optional, Tuple
 from bulk.common import Side
-from bulk.messages import L2Snapshot, OrderBookLevel
+from bulk.messages import L2Snapshot, OrderBookLevel, L2Delta
 
 
 class FastOrderBook:
@@ -456,6 +458,464 @@ def _calculate_depth_fast(
     return total
 
 
+# ============================================================================
+# Tests
+# ============================================================================
+
+def test_snapshot_loading():
+    """
+    Test 1: Load full snapshot and verify book state
+    """
+    print("\n" + "=" * 80)
+    print("TEST 1: Snapshot Loading")
+    print("=" * 80)
+
+    # Create a snapshot with 20 bid levels and 20 ask levels
+    bid_levels = [
+        OrderBookLevel(price=100000.0 - i * 10.0, size=float(i + 1) * 0.5, num_orders=i + 1)
+        for i in range(600)
+    ]
+    ask_levels = [
+        OrderBookLevel(price=100010.0 + i * 10.0, size=float(i + 1) * 0.5, num_orders=i + 1)
+        for i in range(600)
+    ]
+
+    snapshot = L2Snapshot(
+        timestamp=int(time.time() * 1000),
+        symbol="BTC-USD",
+        bids=bid_levels,
+        asks=ask_levels
+    )
+
+    # Create book and load snapshot
+    book = FastOrderBook("BTC-USD", max_levels=1000)
+    book.from_snapshot(snapshot)
+
+    print(f"\nBook initialized: {book}")
+
+    # Test 1.1: Verify number of levels
+    assert book.n_bids == 600, f"Expected 20 bids, got {book.n_bids}"
+    assert book.n_asks == 600, f"Expected 20 asks, got {book.n_asks}"
+    print(f"✓ Correct number of levels: {book.n_bids} bids, {book.n_asks} asks")
+
+    # Test 1.2: Verify best bid/ask
+    best_bid = book.get_best_bid()
+    best_ask = book.get_best_ask()
+    assert best_bid == 100000.0, f"Expected best bid 100000.0, got {best_bid}"
+    assert best_ask == 100010.0, f"Expected best ask 100010.0, got {best_ask}"
+    print(f"✓ Best bid: ${best_bid:,.2f}, Best ask: ${best_ask:,.2f}")
+
+    # Test 1.3: Verify mid price and spread
+    mid = book.get_mid_price()
+    spread = book.get_spread()
+    expected_mid = (100000.0 + 100010.0) / 2.0
+    expected_spread = 10.0
+    assert abs(mid - expected_mid) < 1e-6, f"Expected mid {expected_mid}, got {mid}"
+    assert abs(spread - expected_spread) < 1e-6, f"Expected spread {expected_spread}, got {spread}"
+    print(f"✓ Mid: ${mid:,.2f}, Spread: ${spread:.2f}")
+
+    # Test 1.4: Verify bid array sorting (highest to lowest)
+    bid_prices, bid_sizes = book.get_bids_array()
+    print(f"\n✓ Bid array retrieved: {len(bid_prices)} levels")
+    print(f"  First 5 bids:")
+    for i in range(min(5, len(bid_prices))):
+        print(f"    {i + 1}. ${bid_prices[i]:,.2f} x {bid_sizes[i]:.4f}")
+
+    # Verify bids are sorted descending (highest to lowest)
+    for i in range(len(bid_prices) - 1):
+        assert bid_prices[i] > bid_prices[i + 1], \
+            f"Bids not sorted: {bid_prices[i]} should be > {bid_prices[i + 1]}"
+    print(f"  ✓ Bids properly sorted (highest to lowest)")
+
+    # Verify bid prices and sizes match expected
+    for i in range(len(bid_prices)):
+        expected_price = 100000.0 - i * 10.0
+        expected_size = (i + 1) * 0.5
+        assert abs(bid_prices[i] - expected_price) < 1e-6, \
+            f"Bid price mismatch at {i}: expected {expected_price}, got {bid_prices[i]}"
+        assert abs(bid_sizes[i] - expected_size) < 1e-6, \
+            f"Bid size mismatch at {i}: expected {expected_size}, got {bid_sizes[i]}"
+    print(f"  ✓ All bid prices and sizes match snapshot")
+
+    # Test 1.5: Verify ask array sorting (lowest to highest)
+    ask_prices, ask_sizes = book.get_asks_array()
+    print(f"\n✓ Ask array retrieved: {len(ask_prices)} levels")
+    print(f"  First 5 asks:")
+    for i in range(min(5, len(ask_prices))):
+        print(f"    {i + 1}. ${ask_prices[i]:,.2f} x {ask_sizes[i]:.4f}")
+
+    # Verify asks are sorted ascending (lowest to highest)
+    for i in range(len(ask_prices) - 1):
+        assert ask_prices[i] < ask_prices[i + 1], \
+            f"Asks not sorted: {ask_prices[i]} should be < {ask_prices[i + 1]}"
+    print(f"  ✓ Asks properly sorted (lowest to highest)")
+
+    # Verify ask prices and sizes match expected
+    for i in range(len(ask_prices)):
+        expected_price = 100010.0 + i * 10.0
+        expected_size = (i + 1) * 0.5
+        assert abs(ask_prices[i] - expected_price) < 1e-6, \
+            f"Ask price mismatch at {i}: expected {expected_price}, got {ask_prices[i]}"
+        assert abs(ask_sizes[i] - expected_size) < 1e-6, \
+            f"Ask size mismatch at {i}: expected {expected_size}, got {ask_sizes[i]}"
+    print(f"  ✓ All ask prices and sizes match snapshot")
+
+    print(f"\n✓ TEST 1 PASSED: Snapshot loading works correctly")
+    return book
+
+
+def test_delta_updates(book: FastOrderBook):
+    """
+    Test 2: Apply deltas and verify book updates correctly
+    """
+    print("\n" + "=" * 80)
+    print("TEST 2: Delta Updates")
+    print("=" * 80)
+
+    # Get initial state
+    initial_bids, _ = book.get_bids_array()
+    initial_asks, _ = book.get_asks_array()
+    print(f"\nInitial state: {book.n_bids} bids, {book.n_asks} asks")
+    print(f"  Best bid: ${book.get_best_bid():,.2f}")
+    print(f"  Best ask: ${book.get_best_ask():,.2f}")
+
+    # Test 2.1: Update existing bid level
+    print("\n--- Test 2.1: Update existing bid level ---")
+    update_price = 99990.0  # This is the second bid level
+    new_size = 5.0
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[OrderBookLevel(price=update_price, size=new_size)],
+        ask_changes=[],
+        timestamp=int(time.time() * 1000)
+    )
+    book.apply_delta(delta)
+
+    bid_prices, bid_sizes = book.get_bids_array()
+    # Find the updated level
+    idx = np.where(np.abs(bid_prices - update_price) < 1e-6)[0]
+    assert len(idx) > 0, f"Updated bid level {update_price} not found"
+    assert abs(bid_sizes[idx[0]] - new_size) < 1e-6, \
+        f"Bid size not updated: expected {new_size}, got {bid_sizes[idx[0]]}"
+    print(f"✓ Updated bid at ${update_price:,.2f} to size {new_size:.4f}")
+
+    # Test 2.2: Add new bid level (better than current best)
+    print("\n--- Test 2.2: Add new best bid ---")
+    new_best_bid = 100001.0
+    new_bid_size = 2.5
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[OrderBookLevel(price=new_best_bid, size=new_bid_size)],
+        ask_changes=[],
+        timestamp=int(time.time() * 1000)
+    )
+    book.apply_delta(delta)
+
+    assert book.get_best_bid() == new_best_bid, \
+        f"New best bid not correct: expected {new_best_bid}, got {book.get_best_bid()}"
+
+    bid_prices, bid_sizes = book.get_bids_array()
+    assert bid_prices[0] == new_best_bid, f"New bid not at top: {bid_prices[0]}"
+    assert abs(bid_sizes[0] - new_bid_size) < 1e-6, \
+        f"New bid size wrong: expected {new_bid_size}, got {bid_sizes[0]}"
+    print(f"✓ New best bid: ${new_best_bid:,.2f} x {new_bid_size:.4f}")
+    print(f"  Book now has {book.n_bids} bid levels")
+
+    # Test 2.3: Delete a bid level (size=0)
+    print("\n--- Test 2.3: Delete bid level ---")
+    delete_price = 99980.0  # Delete one of the middle levels
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[OrderBookLevel(price=delete_price, size=0.0)],
+        ask_changes=[],
+        timestamp=int(time.time() * 1000)
+    )
+    n_bids_before = book.n_bids
+    book.apply_delta(delta)
+    n_bids_after = book.n_bids
+
+    assert n_bids_after == n_bids_before - 1, \
+        f"Level not deleted: expected {n_bids_before - 1} bids, got {n_bids_after}"
+
+    bid_prices, _ = book.get_bids_array()
+    assert not np.any(np.abs(bid_prices - delete_price) < 1e-6), \
+        f"Deleted level {delete_price} still in book"
+    print(f"✓ Deleted bid at ${delete_price:,.2f}")
+    print(f"  Book now has {book.n_bids} bid levels")
+
+    # Test 2.4: Update existing ask level
+    print("\n--- Test 2.4: Update existing ask level ---")
+    update_ask_price = 100020.0  # Second ask level
+    new_ask_size = 7.5
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[],
+        ask_changes=[OrderBookLevel(price=update_ask_price, size=new_ask_size)],
+        timestamp=int(time.time() * 1000)
+    )
+    book.apply_delta(delta)
+
+    ask_prices, ask_sizes = book.get_asks_array()
+    idx = np.where(np.abs(ask_prices - update_ask_price) < 1e-6)[0]
+    assert len(idx) > 0, f"Updated ask level {update_ask_price} not found"
+    assert abs(ask_sizes[idx[0]] - new_ask_size) < 1e-6, \
+        f"Ask size not updated: expected {new_ask_size}, got {ask_sizes[idx[0]]}"
+    print(f"✓ Updated ask at ${update_ask_price:,.2f} to size {new_ask_size:.4f}")
+
+    # Test 2.5: Add new ask level (better than current best)
+    print("\n--- Test 2.5: Add new best ask ---")
+    new_best_ask = 100009.0
+    new_ask_size = 3.5
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[],
+        ask_changes=[OrderBookLevel(price=new_best_ask, size=new_ask_size)],
+        timestamp=int(time.time() * 1000)
+    )
+    book.apply_delta(delta)
+
+    assert book.get_best_ask() == new_best_ask, \
+        f"New best ask not correct: expected {new_best_ask}, got {book.get_best_ask()}"
+
+    ask_prices, ask_sizes = book.get_asks_array()
+    assert ask_prices[0] == new_best_ask, f"New ask not at top: {ask_prices[0]}"
+    assert abs(ask_sizes[0] - new_ask_size) < 1e-6, \
+        f"New ask size wrong: expected {new_ask_size}, got {ask_sizes[0]}"
+    print(f"✓ New best ask: ${new_best_ask:,.2f} x {new_ask_size:.4f}")
+    print(f"  Book now has {book.n_asks} ask levels")
+
+    # Test 2.6: Delete an ask level
+    print("\n--- Test 2.6: Delete ask level ---")
+    delete_ask_price = 100030.0
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=[],
+        ask_changes=[OrderBookLevel(price=delete_ask_price, size=0.0)],
+        timestamp=int(time.time() * 1000)
+    )
+    n_asks_before = book.n_asks
+    book.apply_delta(delta)
+    n_asks_after = book.n_asks
+
+    assert n_asks_after == n_asks_before - 1, \
+        f"Level not deleted: expected {n_asks_before - 1} asks, got {n_asks_after}"
+
+    ask_prices, _ = book.get_asks_array()
+    assert not np.any(np.abs(ask_prices - delete_ask_price) < 1e-6), \
+        f"Deleted level {delete_ask_price} still in book"
+    print(f"✓ Deleted ask at ${delete_ask_price:,.2f}")
+    print(f"  Book now has {book.n_asks} ask levels")
+
+    # Test 2.7: Multi-level delta (update multiple levels at once)
+    print("\n--- Test 2.7: Multi-level delta update ---")
+    bid_changes = [
+        OrderBookLevel(price=99970.0, size=10.0),
+        OrderBookLevel(price=99960.0, size=12.0),
+        OrderBookLevel(price=99950.0, size=0.0),  # Delete this one
+    ]
+    ask_changes = [
+        OrderBookLevel(price=100040.0, size=8.0),
+        OrderBookLevel(price=100050.0, size=9.0),
+    ]
+
+    delta = L2Delta(
+        symbol="BTC-USD",
+        bid_changes=bid_changes,
+        ask_changes=ask_changes,
+        timestamp=int(time.time() * 1000)
+    )
+    book.apply_delta(delta)
+
+    bid_prices, bid_sizes = book.get_bids_array()
+    ask_prices, ask_sizes = book.get_asks_array()
+
+    # Verify bid changes
+    idx = np.where(np.abs(bid_prices - 99970.0) < 1e-6)[0]
+    assert len(idx) > 0 and abs(bid_sizes[idx[0]] - 10.0) < 1e-6, "Bid 99970 not updated"
+
+    idx = np.where(np.abs(bid_prices - 99960.0) < 1e-6)[0]
+    assert len(idx) > 0 and abs(bid_sizes[idx[0]] - 12.0) < 1e-6, "Bid 99960 not updated"
+
+    assert not np.any(np.abs(bid_prices - 99950.0) < 1e-6), "Bid 99950 not deleted"
+
+    # Verify ask changes
+    idx = np.where(np.abs(ask_prices - 100040.0) < 1e-6)[0]
+    assert len(idx) > 0 and abs(ask_sizes[idx[0]] - 8.0) < 1e-6, "Ask 100040 not updated"
+
+    idx = np.where(np.abs(ask_prices - 100050.0) < 1e-6)[0]
+    assert len(idx) > 0 and abs(ask_sizes[idx[0]] - 9.0) < 1e-6, "Ask 100050 not updated"
+
+    print(f"✓ Multi-level delta applied successfully")
+    print(f"  Updated 3 bid levels (2 updates, 1 delete)")
+    print(f"  Updated 2 ask levels")
+
+    # Test 2.8: Verify sorting maintained after all updates
+    print("\n--- Test 2.8: Verify sorting integrity ---")
+    bid_prices, _ = book.get_bids_array()
+    ask_prices, _ = book.get_asks_array()
+
+    # Check bids are still sorted descending
+    for i in range(len(bid_prices) - 1):
+        assert bid_prices[i] > bid_prices[i + 1], \
+            f"Bid sorting broken at {i}: {bid_prices[i]} should be > {bid_prices[i + 1]}"
+    print(f"✓ Bids still properly sorted (highest to lowest)")
+
+    # Check asks are still sorted ascending
+    for i in range(len(ask_prices) - 1):
+        assert ask_prices[i] < ask_prices[i + 1], \
+            f"Ask sorting broken at {i}: {ask_prices[i]} should be < {ask_prices[i + 1]}"
+    print(f"✓ Asks still properly sorted (lowest to highest)")
+
+    # Verify spread is positive
+    spread = book.get_spread()
+    assert spread > 0, f"Spread should be positive, got {spread}"
+    print(f"✓ Spread is positive: ${spread:.2f}")
+
+    # Final state
+    print(f"\n--- Final book state ---")
+    print(f"  {book}")
+    print(f"  Best bid: ${book.get_best_bid():,.2f}")
+    print(f"  Best ask: ${book.get_best_ask():,.2f}")
+    print(f"  Mid: ${book.get_mid_price():,.2f}")
+    print(f"  Spread: ${book.get_spread():.2f}")
+
+    # Show top 5 levels
+    bid_prices, bid_sizes = book.get_bids_array(n=5)
+    ask_prices, ask_sizes = book.get_asks_array(n=5)
+
+    print(f"\n  Top 5 bids:")
+    for i in range(len(bid_prices)):
+        print(f"    {i + 1}. ${bid_prices[i]:,.2f} x {bid_sizes[i]:.4f}")
+
+    print(f"\n  Top 5 asks:")
+    for i in range(len(ask_prices)):
+        print(f"    {i + 1}. ${ask_prices[i]:,.2f} x {ask_sizes[i]:.4f}")
+
+    print(f"\n✓ TEST 2 PASSED: Delta updates work correctly")
+
+
+def test_array_retrieval_with_limit():
+    """
+    Test 3: Verify get_bids_array and get_asks_array with n parameter
+    """
+    print("\n" + "=" * 80)
+    print("TEST 3: Array Retrieval with Limit")
+    print("=" * 80)
+
+    # Create book with 50 levels per side
+    bid_levels = [
+        OrderBookLevel(price=50000.0 - i * 5.0, size=float(i + 1) * 0.1)
+        for i in range(50)
+    ]
+    ask_levels = [
+        OrderBookLevel(price=50100.0 + i * 5.0, size=float(i + 1) * 0.1)
+        for i in range(50)
+    ]
+
+    snapshot = L2Snapshot(
+        timestamp=int(time.time() * 1000),
+        symbol="ETH-USD",
+        bids=bid_levels,
+        asks=ask_levels
+    )
+
+    book = FastOrderBook("ETH-USD", max_levels=1000)
+    book.from_snapshot(snapshot)
+
+    print(f"\nBook initialized with 50 levels per side")
+
+    # Test 3.1: Get all levels (no limit)
+    print("\n--- Test 3.1: Get all levels ---")
+    all_bid_prices, all_bid_sizes = book.get_bids_array()
+    all_ask_prices, all_ask_sizes = book.get_asks_array()
+
+    assert len(all_bid_prices) == 50, f"Expected 50 bids, got {len(all_bid_prices)}"
+    assert len(all_ask_prices) == 50, f"Expected 50 asks, got {len(all_ask_prices)}"
+    print(f"✓ Retrieved all levels: {len(all_bid_prices)} bids, {len(all_ask_prices)} asks")
+
+    # Test 3.2: Get limited levels
+    print("\n--- Test 3.2: Get top 10 levels ---")
+    top10_bid_prices, top10_bid_sizes = book.get_bids_array(n=10)
+    top10_ask_prices, top10_ask_sizes = book.get_asks_array(n=10)
+
+    assert len(top10_bid_prices) == 10, f"Expected 10 bids, got {len(top10_bid_prices)}"
+    assert len(top10_ask_prices) == 10, f"Expected 10 asks, got {len(top10_ask_prices)}"
+    print(f"✓ Retrieved top 10 levels per side")
+
+    # Verify these are the best 10 levels
+    assert np.allclose(top10_bid_prices, all_bid_prices[:10]), "Top 10 bids don't match"
+    assert np.allclose(top10_ask_prices, all_ask_prices[:10]), "Top 10 asks don't match"
+    print(f"✓ Top 10 levels match first 10 from full array")
+
+    # Test 3.3: Get 1 level (best only)
+    print("\n--- Test 3.3: Get best level only ---")
+    best_bid_prices, best_bid_sizes = book.get_bids_array(n=1)
+    best_ask_prices, best_ask_sizes = book.get_asks_array(n=1)
+
+    assert len(best_bid_prices) == 1, f"Expected 1 bid, got {len(best_bid_prices)}"
+    assert len(best_ask_prices) == 1, f"Expected 1 ask, got {len(best_ask_prices)}"
+    assert best_bid_prices[0] == book.get_best_bid(), "Best bid doesn't match"
+    assert best_ask_prices[0] == book.get_best_ask(), "Best ask doesn't match"
+    print(f"✓ Single level retrieval works correctly")
+    print(f"  Best bid: ${best_bid_prices[0]:,.2f}")
+    print(f"  Best ask: ${best_ask_prices[0]:,.2f}")
+
+    # Test 3.4: Request more levels than available
+    print("\n--- Test 3.4: Request more levels than available ---")
+    oversize_bids, _ = book.get_bids_array(n=100)
+    oversize_asks, _ = book.get_asks_array(n=100)
+
+    assert len(oversize_bids) == 50, \
+        f"Should return 50 bids when requesting 100, got {len(oversize_bids)}"
+    assert len(oversize_asks) == 50, \
+        f"Should return 50 asks when requesting 100, got {len(oversize_asks)}"
+    print(f"✓ Correctly handles oversized requests (returns available levels)")
+
+    print(f"\n✓ TEST 3 PASSED: Array retrieval with limits works correctly")
+
+
+def run_all_tests():
+    """Run all test cases"""
+    print("\n" + "=" * 80)
+    print("FASTORDERBOOK TEST SUITE")
+    print("=" * 80)
+    print(f"Testing snapshot loading, delta updates, and array retrieval")
+
+    try:
+        # Test 1: Snapshot loading
+        book = test_snapshot_loading()
+
+        # Test 2: Delta updates (uses book from Test 1)
+        test_delta_updates(book)
+
+        # Test 3: Array retrieval with limits
+        test_array_retrieval_with_limit()
+
+        # Summary
+        print("\n" + "=" * 80)
+        print("ALL TESTS PASSED ✓")
+        print("=" * 80)
+        print("\nSummary:")
+        print("  ✓ Snapshot loading works correctly")
+        print("  ✓ Bid/ask arrays properly sorted")
+        print("  ✓ Delta updates (add/update/delete) work correctly")
+        print("  ✓ Multi-level deltas work correctly")
+        print("  ✓ Sorting maintained after updates")
+        print("  ✓ Array retrieval with limits works correctly")
+        print("\n" + "=" * 80)
+
+    except AssertionError as e:
+        print(f"\n❌ TEST FAILED: {e}")
+        raise
+    except Exception as e:
+        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        raise
 
 
 # ============================================================================
@@ -512,4 +972,5 @@ def example_usage():
 
 
 if __name__ == "__main__":
+    run_all_tests()
     example_usage()

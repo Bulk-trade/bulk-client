@@ -106,6 +106,16 @@ class Inventory:
             self.positions[instrument] = Position(instrument, 0.0, vwap)
             return self.positions[instrument]
 
+    def quantity_for(self, instrument: str):
+        """
+        Get position quantity associated with instrument
+        """
+        pos = self.positions.get(instrument)
+        if not (pos is None):
+            return pos.quantity
+        else:
+            return 0.0
+
     def add_cash (self, amount: float, symbol: str = "USDC"):
         """
         Add a cash

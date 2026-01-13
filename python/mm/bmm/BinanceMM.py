@@ -177,6 +177,23 @@ class BinanceMarketMaker:
             except Exception as e:
                 self.logger.warning(f"   Cancel all failed (might be no orders): {e}")
 
+            # Close any inventory
+            position = self.bulk.inventory.quantity_for(self.config.bulk_symbol())
+            side = Side.SELL if position < 0.0 else Side.BUY
+
+            self.logger.info(f"\n6. Closing all inventory, pos: {position}...")
+            if position != 0:
+                try:
+                    result = await self.bulk.place_market_order(
+                        symbol = self.config.bulk_symbol(),
+                        side = side,
+                        size = abs(position),
+                        reduce_only=True,
+                    )
+                    self.logger.info(f"   ✓ Close position status: {result}")
+                except Exception as e:
+                    self.logger.warning(f"   Closing position failed: {e}")
+
             self.logger.info("=" * 80)
             self.logger.info("INITIALIZATION COMPLETE - READY TO RUN")
             self.logger.info("=" * 80)
@@ -280,22 +297,31 @@ class BinanceMarketMaker:
             return
 
         # Get bid and ask arrays
-        bid_prices, bid_sizes = binance_book.get_bids_array(n=self.config.max_price_levels)
-        ask_prices, ask_sizes = binance_book.get_asks_array(n=self.config.max_price_levels)
+        bid_prices, bid_sizes = binance_book.aggregate_dual(
+            Side.BUY, self.config.fine_tick, self.config.coarse_tick)
+        ask_prices, ask_sizes = binance_book.aggregate_dual(
+            Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
         # Sync bid side
         bid_placed, bid_cancelled = self.bid_stack.plan(
             bid_prices,
-            bid_sizes
+            bid_sizes,
+            self.config.max_depth
         )
 
         # Sync ask side
         ask_placed, ask_cancelled = self.ask_stack.plan(
             ask_prices,
-            ask_sizes
+            ask_sizes,
+            self.config.max_depth
         )
 
         # Execute
+        self.logger.info(
+            f"updating {self.config.bulk_symbol()} book with "
+            f"{len(bid_placed) + len(ask_placed)} new orders "
+            f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels")
+
         actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
         if not self.dryrun:
             if len(actions) > 0:
@@ -411,11 +437,9 @@ class BinanceMarketMaker:
 
     # ==================== EVENT HANDLERS ====================
 
-    def _handle_binance_delta(self, delta: L2Delta):
+    def _handle_binance_delta(self, binance, delta: L2Delta):
         """Handle Binance order book delta"""
         self.last_binance_update = time.time()
-
-
 
     def _handle_order_state(self, order_state: OrderState):
         """Handle order state update from Bulk"""

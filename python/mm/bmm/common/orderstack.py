@@ -176,6 +176,7 @@ class OrderStack:
         side: Side,
         chunk_size: float = 0.5,
         max_orders: int = 5,
+        tif: TimeInForce = TimeInForce.GTC,
         max_price_levels: int = 1000,
         decimals: int = 8
     ):
@@ -187,6 +188,7 @@ class OrderStack:
             side: Side.BUY or Side.SELL
             chunk_size: order size
             max_orders: maximum number of orders to be added (a guideline)
+            tif: TimeInForce
             max_price_levels: Maximum price levels to track
             decimals: Number of decimal digits when converting to int
         """
@@ -194,6 +196,7 @@ class OrderStack:
         self.side = side
         self.chunk_size = chunk_size
         self.max_orders = max_orders
+        self.tif = tif
         self.max_price_levels = max_price_levels
         self.decimals = decimals
         self.decimal_scale = pow(10.0, decimals)
@@ -268,6 +271,7 @@ class OrderStack:
         ws_client: Optional[BulkWebSocketClient],
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
+        maxdepth: float,
         tolerance: float = 0.1
     ) -> Tuple[List[str], List[str], bool]:
         """
@@ -280,6 +284,7 @@ class OrderStack:
             ws_client: BulkWebSocketClient instance
             new_prices: Array of price levels (sorted)
             new_sizes: Array of sizes at each price level
+            maxdepth: Max depth in bps to consider
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -292,7 +297,7 @@ class OrderStack:
         """
         # Determine actions
         orders_to_place, orders_to_cancel = self.plan(
-            new_prices, new_sizes, tolerance
+            new_prices, new_sizes, maxdepth, tolerance
         )
 
         # Execute actions
@@ -307,6 +312,7 @@ class OrderStack:
         self,
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
+        maxdepth: float,
         tolerance: float = 0.1
     ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
@@ -319,6 +325,7 @@ class OrderStack:
         Args:
             new_prices: Array of price levels from Binance (sorted)
             new_sizes: Array of sizes at each price level
+            maxdepth: Max depth in bps to consider
             tolerance: Tolerance for size difference (fraction of chunk_size)
 
         Returns:
@@ -338,10 +345,16 @@ class OrderStack:
 
         # Limit to max_price_levels
         n_levels = min(len(new_prices), self.max_price_levels)
+        top = new_prices[0]
 
-        # Sync each refence level
+        # Sync each reference level
         for i in range(n_levels):
             price = new_prices[i]
+            depth = np.abs(np.log(price / top)) * 1e4
+
+            if depth >= maxdepth:
+                break
+
             key = int(round(price * self.decimal_scale))
             size = new_sizes[i]
             seen_prices.add(key)
@@ -353,12 +366,21 @@ class OrderStack:
             all_orders_to_cancel.extend(orders_to_cancel)
 
         # Cancel orders at levels no longer in Binance book
+        nremoved = 0
         for key in list(self.levels.keys()):
             if key not in seen_prices:
                 level = self.levels[key]
                 orders_to_cancel = list(level.orders.keys())
-                all_orders_to_cancel.extend(orders_to_cancel)
 
+                nremoved += 1
+                for oid in orders_to_cancel:
+                    action = CancelOrder(
+                        symbol=self.symbol,
+                        oid=oid,
+                    )
+                    all_orders_to_cancel.append(action)
+
+        logger.info(f"added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
         return all_orders_to_place, all_orders_to_cancel
 
     # State management
@@ -644,7 +666,7 @@ class OrderStack:
                     price=price,
                     size=order_size + jitter,
                     reduce_only=False,
-                    time_in_force=TimeInForce.GTC
+                    time_in_force=self.tif
                 )
                 orders_to_place.append(order)
 
