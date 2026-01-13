@@ -47,7 +47,7 @@ class PriceLevel:
         self.price = price
         self.side = side
         self.chunk_size = chunk_size
-        self.orders: Dict[str, OrderState] = {}  # order_id -> OrderInfo
+        self.orders: Dict[str, OrderState] = {}
 
     @property
     def total_size(self) -> float:
