@@ -218,7 +218,7 @@ class OrderResponse:
             match response:
                 case {"error": body}:
                     # Handle error
-                    responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None, meta=body)))
+                    responses.append(cls(order_id=None, status=OrderStatus.ERROR, message=body.get("message",None), meta=body))
                 case _:
                     status_key = next(iter(response.keys()))
                     body = response[status_key]

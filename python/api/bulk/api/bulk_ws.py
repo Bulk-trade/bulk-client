@@ -340,6 +340,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
+            #print(sjson)
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -1041,6 +1042,7 @@ class BulkWebSocketClient:
 
     async def _handle_post_response(self, data: Dict):
         """Handle response to order placement/cancellation"""
+        #print(f"order response: {data}")
         request_id = data.get("id")
         response_data = data.get("data", {})
         payload = response_data.get("payload", {})

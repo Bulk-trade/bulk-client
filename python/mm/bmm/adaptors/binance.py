@@ -12,6 +12,7 @@ from enum import Enum
 import aiohttp
 
 import websockets
+from polars.io import delta
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 from bulk.common import Side
@@ -341,9 +342,9 @@ class BinanceFuturesWebSocketClient:
             for handler in self.handlers[event_type]:
                 try:
                     if asyncio.iscoroutinefunction(handler):
-                        asyncio.create_task(handler(event_data))
+                        asyncio.create_task(handler(self, event_data))
                     else:
-                        handler(event_data)
+                        handler(self, event_data)
                 except Exception as e:
                     self.logger.error(
                         f"Handler error for {event_type}: {e}",
@@ -543,6 +544,13 @@ class BinanceFuturesWebSocketClient:
 # ==================== EXAMPLE USAGE ====================
 
 symbols_seen = set([])
+ticks = 0
+
+bids_seen1 = set()
+asks_seen1 = set()
+
+bids_seen2 = set()
+asks_seen2 = set()
 
 async def main():
     """Example usage"""
@@ -552,26 +560,121 @@ async def main():
     )
 
     # BBO handler
-    async def handle_bbo(bbo: BBO):
+    async def handle_bbo(client: BinanceFuturesWebSocketClient, bbo: BBO):
         print(bbo)
 
     # Delta handler
-    async def handle_delta(delta: L2Delta):
-        global symbols_seen
+    async def handle_delta1(client: BinanceFuturesWebSocketClient, delta: L2Delta):
+        global symbols_seen, ticks, bids_seen, asks_seen
+
+        ticks += 1
         symbols_seen.add(delta.symbol)
         print(
             f"[{delta.symbol}] Delta: "
             f"Bids={len(delta.bid_changes)} Asks={len(delta.ask_changes)}"
         )
 
+        if (ticks % 10) > 0:
+            return
+
+        book = client.get_book(symbol=delta.symbol)
+        bid_prices,_ = book.get_bids_array()
+        ask_prices,_ = book.get_asks_array()
+
+        bids_prior = bids_seen.copy()
+        bids_seen = set()
+        for b in bid_prices:
+            key = int(round(b * 1e8))
+            bids_seen.add(key)
+
+        asks_prior = asks_seen.copy()
+        asks_seen = set()
+        for b in ask_prices:
+            key = int(round(b * 1e8))
+            asks_seen.add(key)
+
+        ndelete = 0
+        for p in bids_prior:
+            if p not in bids_seen:
+                ndelete += 1
+        for p in asks_prior:
+            if p not in asks_seen:
+                ndelete += 1
+
+        print(f"deleting: {ndelete}, {len(bids_prior)} -> {len(bids_seen)}, {len(asks_prior)} -> {len(asks_seen)}")
+
+    # Delta handler
+    async def handle_delta2(client: BinanceFuturesWebSocketClient, delta: L2Delta):
+        global symbols_seen, ticks, bids_seen1, asks_seen1, bids_seen2, asks_seen2
+
+        ticks += 1
+        symbols_seen.add(delta.symbol)
+        print(
+            f"[{delta.symbol}] Delta: "
+            f"Bids={len(delta.bid_changes)} Asks={len(delta.ask_changes)}"
+        )
+
+        if (ticks % 2) > 0:
+            return
+
+        book = client.get_book(symbol=delta.symbol)
+        bid_prices1,_ = book.get_bids_array()
+        ask_prices1,_ = book.get_asks_array()
+        bid_prices2,_ = book.aggregate_dual(Side.BUY, 0.3, 5.0)
+        ask_prices2,_ = book.aggregate_dual(Side.SELL, 0.3, 5.0)
+
+        bids_prior1 = bids_seen1.copy()
+        bids_seen1 = set()
+        for b in bid_prices1:
+            key = int(round(b * 1e8))
+            bids_seen1.add(key)
+
+        asks_prior1 = asks_seen1.copy()
+        asks_seen1 = set()
+        for b in ask_prices1:
+            key = int(round(b * 1e8))
+            asks_seen1.add(key)
+
+        ndelete1 = 0
+        for p in bids_prior1:
+            if p not in bids_seen1:
+                ndelete1 += 1
+        for p in asks_prior1:
+            if p not in asks_seen1:
+                ndelete1 += 1
+
+        bids_prior2 = bids_seen2.copy()
+        bids_seen2 = set()
+        for b in bid_prices2:
+            key = int(round(b * 1e8))
+            bids_seen2.add(key)
+
+        asks_prior2 = asks_seen2.copy()
+        asks_seen2 = set()
+        for b in ask_prices2:
+            key = int(round(b * 1e8))
+            asks_seen2.add(key)
+
+        ndelete2 = 0
+        for p in bids_prior2:
+            if p not in bids_seen2:
+                ndelete2 += 1
+        for p in asks_prior2:
+            if p not in asks_seen2:
+                ndelete2 += 1
+
+        print(f"[1] deleting: {ndelete1}, {len(bids_prior1)} -> {len(bids_seen1)}, {len(asks_prior1)} -> {len(asks_seen1)}")
+        print(f"[2] deleting: {ndelete2}, {len(bids_prior2)} -> {len(bids_seen2)}, {len(asks_prior2)} -> {len(asks_seen2)}")
+
+
     # Create client
     client = BinanceFuturesWebSocketClient(
-        symbols=["SOLUSDT"],
+        symbols=["BTCUSDT"],
         snapshot_limit=1000,
         enable_bbo=False,
         handlers={
             Topic.BBO: handle_bbo,
-            Topic.L2_DELTA: handle_delta,
+            Topic.L2_DELTA: handle_delta2,
         }
     )
 
@@ -582,7 +685,7 @@ async def main():
     try:
         while len(symbols_seen) < 2:
             await asyncio.sleep(5)
-            await asyncio.sleep(5)
+
 
         for symbol in client.symbols:
             book = client.get_book(symbol)

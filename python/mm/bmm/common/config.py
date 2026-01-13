@@ -20,6 +20,13 @@ class MMConfig:
     # Maximum number of price levels to replicate
     max_price_levels: int
 
+    # tick resolution (in price) for the 1st K levels
+    fine_tick: float
+    # tick resolution (in price) for the deeper levels
+    coarse_tick: float
+    # max depth (bps)
+    max_depth: float
+
     # Update frequency (seconds between syncs)
     sync_interval: float
     # Seconds between monitoring checks
@@ -59,6 +66,9 @@ class MMConfig:
                 chunk_size=config.get("chunk_size", 0.25),
                 max_new_orders=config.get("max_new_orders", 5),
                 max_price_levels=config.get("max_price_levels", 1000),
+                fine_tick=config.get("fine_tick", 0.25),
+                coarse_tick=config.get("coarse_tick", 5.0),
+                max_depth=config.get("max_depth", 1000.0),
                 sync_interval=config.get("sync_interval", 1.0),
                 monitor_interval=config.get("monitor_interval", 1.0),
                 max_inventory_notional=config.get("max_inventory_notional", 250000.0),
