@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Replicating Market Mmaker for bulk exchange API"
 requires-python = ">=3.10"
 dependencies = [
-    "bulk @ file:///${PROJECT_ROOT}/../bulk",
+    #"bulk @ file:///${PROJECT_ROOT}/../bulk",
+    "bulk",
     "pandas>=2.3.0",
     "numpy>=2.2.0",
     "websockets>=14.0",
@@ -18,6 +19,9 @@ dependencies = [
     "aiohttp>=3.11",
     "json5>=0.13.0"
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["bmm"]
