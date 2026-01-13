@@ -1,18 +1,30 @@
+import hashlib
+import struct
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional, List
-from unittest import case
 
-from seaborn._stats import order
-
+import base58
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
 from bulk.messages import OrderState
-
+from numba.parfors.parfor_lowering import redtyp_to_redarraytype
 
 # ----------------------------------------------------------
-# Order types
+# Limit Order
 # ----------------------------------------------------------
+
+TIME_IN_FORCE_MAP = {
+    TimeInForce.GTC: 0,
+    TimeInForce.IOC: 1,
+    TimeInForce.ALO: 2,
+}
+
+SIDE_MAP = {
+    Side.BUY: 0,
+    Side.SELL: 1,
+}
+
 
 @dataclass
 class LimitOrder:
@@ -24,6 +36,24 @@ class LimitOrder:
     nonce: int = time.time_ns()
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
+
+    def hash(self, key: str) -> str:
+        """
+        Generate hash used as order ID
+        """
+        ser = b''.join([
+            LimitOrder.write_u64(self.nonce),
+            LimitOrder.write_string(self.symbol),
+            LimitOrder.write_key(key),
+            LimitOrder.write_u8(SIDE_MAP[self.side]),
+            LimitOrder.write_f64(self.size),
+            LimitOrder.write_f64(self.price),
+            LimitOrder.write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
+            LimitOrder.write_bool(self.reduce_only),
+        ])
+        hash = hashlib.sha256(ser).digest()
+        b58 = base58.b58encode(hash).decode('utf-8')
+        return b58
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -71,6 +101,51 @@ class LimitOrder:
             is_maker=True
         )
 
+    @staticmethod
+    def write_u64(value: int) -> bytes:
+        """Write a u64 in little-endian format"""
+        return struct.pack("<Q", value)
+
+    @staticmethod
+    def write_string(value: str) -> bytes:
+        """Write a string in little-endian format"""
+        s_bytes = value.encode('utf-8')
+        return LimitOrder.write_u64(len(s_bytes)) + s_bytes
+
+    @staticmethod
+    def write_bool(value: bool) -> bytes:
+        """Write a boolean as single byte"""
+        return bytes([1 if value else 0])
+
+    @staticmethod
+    def write_f64(value: float) -> bytes:
+        """Write a f64 (double) in little-endian format"""
+        return struct.pack("<d", value)
+
+    @staticmethod
+    def write_u32(value: int) -> bytes:
+        """Write a u32 in little-endian format"""
+        return struct.pack("<I", value)
+
+    @staticmethod
+    def write_u8(value: int) -> bytes:
+        """Write a u8 in little-endian format"""
+        return struct.pack("B", value)
+
+    @staticmethod
+    def write_key(key: str) -> bytes:
+        """Decode a base58 public key"""
+        key_bytes = base58.b58decode(key)
+
+        if len(key_bytes) != 32:
+            raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
+        return key_bytes
+
+
+
+# ----------------------------------------------------------
+# Market Order
+# ----------------------------------------------------------
 
 @dataclass
 class MarketOrder:
@@ -80,6 +155,23 @@ class MarketOrder:
     size: float
     nonce: int = time.time_ns()
     reduce_only: bool = False
+
+    def hash(self, key: str) -> str:
+        """
+        Generate hash used as order ID
+        """
+        ser = b''.join([
+            LimitOrder.write_u64(self.nonce),
+            LimitOrder.write_string(self.symbol),
+            LimitOrder.write_key(key),
+            LimitOrder.write_u8(SIDE_MAP[self.side]),
+            LimitOrder.write_f64(self.size),
+            LimitOrder.write_bool(self.reduce_only),
+        ])
+        hash = hashlib.sha256(ser).digest()
+        b58 = base58.b58encode(hash).decode('utf-8')
+        return b58
+
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -268,3 +360,37 @@ class OrderResponse:
                     ))
         return responses
 
+#
+# Tests
+#
+
+def test_limitorder_hash():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.BUY,
+        price=98000.0,
+        size=1.0,
+        nonce=123456789,
+        time_in_force=TimeInForce.ALO,
+        reduce_only=True,
+    )
+    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
+    hash = order.hash(pubkey)
+    assert hash == "BxTeTZmVgYfgkfiQDo9WkeWKdiF7btQXThXpdjbq8qoj"
+
+def test_marketorder_hash():
+    order = MarketOrder(
+        symbol="BTC-USD",
+        side=Side.BUY,
+        size=1.0,
+        nonce=123456789,
+        reduce_only=True,
+    )
+    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
+    hash = order.hash(pubkey)
+    assert hash == "5RVGMQ41vwqjM2HooQqA1UEFhtg3mUxRfcAbAG2yafX2"
+
+
+if __name__ == "__main__":
+    test_limitorder_hash()
+    test_marketorder_hash()

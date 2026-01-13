@@ -47,17 +47,54 @@ class PriceLevel:
         self.price = price
         self.side = side
         self.chunk_size = chunk_size
+        self.pending_placed = 0
+        self.pending_cancel = 0
+        self.current_size = 0
         self.orders: Dict[str, OrderState] = {}
 
     @property
     def total_size(self) -> float:
         """Total size resting at this level (active orders only)"""
-        return sum(order.amount_remaining() for order in self.orders.values())
+        return self.current_size
+
+    @property
+    def effective_size(self) -> float:
+        """Effective size of this level, including in-flight"""
+        return self.current_size + self.pending_placed - self.pending_cancel
 
     @property
     def num_active_orders(self) -> int:
         """Number of active orders at this level"""
         return len(self.orders)
+
+    def place_inflight(self, order_state: OrderState):
+        """
+        Add an in-flight order
+
+        Args:
+            order_state: Order state to add
+        """
+        order_id = order_state.order_id
+        self.pending_placed += order_state.size
+        self.orders[order_id] = order_state.copy()
+        self.orders[order_id].status = OrderStatus.NONE
+
+    def cancel_inflight(self, tocancel: OrderState):
+        """
+        Add an in-flight cancel
+
+        Args:
+            order_state: Order to be cancelled
+        """
+        order_id = tocancel.order_id
+        if order_id in self.orders:
+            state = self.orders[order_id].copy()
+            state.status = OrderStatus.CANCEL_PENDING
+            self.orders[order_id] = state
+            self.pending_cancel += tocancel.size
+        else:
+            # order not found, so nothing to do
+            pass
 
     def update_order(self, order_state: OrderState):
         """
@@ -67,7 +104,17 @@ class PriceLevel:
             order_state: OrderState update from exchange
         """
         order_id = order_state.order_id
-        if order_state.status.is_terminal() :
+        if order_id not in self.orders:
+            self.orders[order_id] = order_state
+
+        state = self.orders[order_id]
+        if state.status == OrderStatus.NONE:
+            self.pending_placed -= order_state.size
+        if state.status == OrderStatus.CANCEL_PENDING:
+            self.pending_cancel -= order_state.size
+
+        if order_state.status.is_terminal():
+            self.current_size -= order_state.size
             self.orders.pop(order_id, None)
         else:
             self.orders[order_id] = order_state
@@ -84,7 +131,7 @@ class PriceLevel:
         Returns:
             List of order IDs to cancel
         """
-        current_size = self.total_size
+        current_size = self.effective_size
         if current_size <= target_size:
             return []
 
@@ -108,7 +155,8 @@ class PriceLevel:
 
     def get_size_to_add(self, target_size: float) -> float:
         """
-        Calculate how much size needs to be added to reach target
+        Calculate how much size needs to be added to reach target, taking into account
+        possible in-flight orders
 
         Args:
             target_size: Target total size for this level
@@ -116,13 +164,14 @@ class PriceLevel:
         Returns:
             Size that needs to be added (0 if no addition needed)
         """
-        current_size = self.total_size
+        current_size = self.effective_size
         return max(0.0, target_size - current_size)
 
     def __repr__(self) -> str:
         return (
             f"PriceLevel(price={self.price:.2f}, "
             f"size={self.total_size:.4f}, "
+            f"effsize={self.effective_size:.4f}, "
             f"orders={self.num_active_orders})"
         )
 
@@ -337,6 +386,7 @@ class OrderStack:
             orders, cancels = bid_side.plan(binance_prices, binance_sizes)
             print(f"Would place {len(orders)} and cancel {len(cancels)}")
         """
+        nonce = time.time_ns()
         all_orders_to_place = []
         all_orders_to_cancel = []
 
@@ -360,7 +410,7 @@ class OrderStack:
             seen_prices.add(key)
 
             orders_to_place, orders_to_cancel = self._sync_level(
-                key, price, size, tolerance
+                key, price, size, tolerance, nonce=nonce
             )
             all_orders_to_place.extend(orders_to_place)
             all_orders_to_cancel.extend(orders_to_cancel)
@@ -370,15 +420,8 @@ class OrderStack:
         for key in list(self.levels.keys()):
             if key not in seen_prices:
                 level = self.levels[key]
-                orders_to_cancel = list(level.orders.keys())
-
+                all_orders_to_cancel.extend(self._cancel_level(level))
                 nremoved += 1
-                for oid in orders_to_cancel:
-                    action = CancelOrder(
-                        symbol=self.symbol,
-                        oid=oid,
-                    )
-                    all_orders_to_cancel.append(action)
 
         logger.info(f"added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
         return all_orders_to_place, all_orders_to_cancel
@@ -465,10 +508,6 @@ class OrderStack:
 
     def cleanup(self):
         """Clean up terminal orders and empty levels"""
-        # Cleanup each level
-        for level in self.levels.values():
-            level.cleanup_terminal_orders()
-
         # Remove empty levels
         empty_prices = [
             price for price, level in self.levels.items()
@@ -607,7 +646,8 @@ class OrderStack:
         key: int,
         price: float,
         size: float,
-        tolerance: float = 0.1
+        tolerance: float = 0.1,
+        nonce: int = 0,
     ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
         Synchronize a single price level with requested book
@@ -666,9 +706,14 @@ class OrderStack:
                     price=price,
                     size=order_size + jitter,
                     reduce_only=False,
-                    time_in_force=self.tif
+                    time_in_force=self.tif,
+                    nonce=nonce,
                 )
                 orders_to_place.append(order)
+
+                # placeholder for in-flight orders
+                order_id = order.hash()
+                level.pending_placed(order.to_state(order_id, OrderStatus.NONE))
 
         elif size_diff < 0 and target_size > 0:
             # Need to cancel orders
@@ -679,16 +724,32 @@ class OrderStack:
                 )
                 orders_to_cancel.append(action)
 
+                # placeholder for in-flight cancel
+                state = level.orders.get(oid, None)
+                level.pending_cancel(state)
+
         elif target_size == 0:
             # If target is zero, cancel all orders at this level
-            for oid, order in level.orders.items():
-                action = CancelOrder(
-                    symbol=self.symbol,
-                    oid=oid,
-                )
-                orders_to_cancel.append(action)
+            orders_to_cancel.extend(self._cancel_level(level))
 
         return orders_to_place, orders_to_cancel
+
+    def _cancel_level(self, level: PriceLevel) -> List[CancelOrder]:
+        """
+        Cancel all orders in level
+        """
+        actions = []
+        for oid, order in level.orders.items():
+            action = CancelOrder(
+                symbol=self.symbol,
+                oid=oid,
+            )
+            actions.append(action)
+
+            # placeholder for in-flight cancel
+            level.pending_cancel(order)
+
+        return actions
 
     def __repr__(self) -> str:
         return (

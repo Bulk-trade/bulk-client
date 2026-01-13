@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from nacl.signing import SigningKey
 import struct
 import base58
@@ -93,7 +93,7 @@ class TransactionSigner:
         return private_key_b58, public_key_b58
         
     @staticmethod
-    def serialize_transaction(action: Dict, account: str, signer: str) -> bytes:
+    def serialize_transaction(action: Dict, account: Optional[str], signer: Optional[str]) -> bytes:
         """
         Serialize transaction using bincode format
 
