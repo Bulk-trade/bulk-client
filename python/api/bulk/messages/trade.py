@@ -3,8 +3,12 @@ from dataclasses import dataclass
 from typing import Dict, Optional, List
 from unittest import case
 
+from seaborn._stats import order
+
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
+from messages import OrderState
+
 
 # ----------------------------------------------------------
 # Order types
@@ -51,6 +55,23 @@ class LimitOrder:
         tx = signer.sign_transaction(tx)
         return tx
 
+    def to_state(self, oid: str, status: OrderStatus) -> OrderState:
+        """Create state for this order"""
+        return OrderState(
+            timestamp=time.time_ns(),
+            symbol=self.symbol,
+            order_id=oid,
+            side=self.side,
+            price=self.price,
+            status=status,
+            vwap=0.0,
+            size=self.size,
+            size_done=0.0,
+            size_orig=self.size,
+            is_maker=True
+        )
+
+
 @dataclass
 class MarketOrder:
     """Market Order"""
@@ -92,6 +113,22 @@ class MarketOrder:
         }
         tx = signer.sign_transaction(tx)
         return tx
+
+    def to_state(self, oid: str, status: OrderStatus, price: float = 0.0) -> OrderState:
+        """Create state for this order"""
+        return OrderState(
+            timestamp=time.time_ns(),
+            symbol=self.symbol,
+            order_id=oid,
+            side=self.side,
+            price=0.0,
+            status=status,
+            vwap=0.0,
+            size=self.size,
+            size_done=0.0,
+            size_orig=self.size,
+            is_maker=False
+        )
 
 # ----------------------------------------------------------
 # Order related
