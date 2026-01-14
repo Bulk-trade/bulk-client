@@ -81,7 +81,11 @@ class OrderStackTester:
         self.logger.info(f"\n1. Fetching current price for {self.symbol}...")
         ticker = self.http_client.get_ticker(self.symbol)
         self.current_price = ticker.get('lastPrice', 100000.0)
-        self.logger.info(f"   Current price: ${self.current_price:,.2f}")
+        if self.current_price:
+            self.logger.info(f"   Current price: ${self.current_price:.2f}")
+        else:
+            self.logger.info("   No current price")
+        self.logger.info("=" * 80)
 
         # Initialize signer
         self.signer = TransactionSigner(self.private_key)
@@ -157,7 +161,8 @@ class OrderStackTester:
             side=Side.BUY,
             chunk_size=0.25,
             symbol=self.symbol,
-            max_price_levels=n_levels
+            max_price_levels=n_levels,
+            signer=self.signer,
         )
 
         self.logger.info(f"\n   OrderStack created: {self.bid_stack}")

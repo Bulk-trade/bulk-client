@@ -69,7 +69,7 @@ class TransactionSigner:
         return tx
 
     @staticmethod
-    def generate_account() -> Tuple[str, str]:
+    def generate_account() -> 'TransactionSigner':
         """
         Generate a new random Ed25519 keypair compatible with Solana (this is just used for testing
         and is not a recommended way to generate accounts).
@@ -83,14 +83,9 @@ class TransactionSigner:
         # Get the private key (32 bytes seed)
         private_key_bytes = bytes(signing_key)
 
-        # Get the public key (32 bytes)
-        public_key_bytes = bytes(signing_key.verify_key)
-
         # Encode both to base58
         private_key_b58 = base58.b58encode(private_key_bytes).decode()
-        public_key_b58 = base58.b58encode(public_key_bytes).decode()
-
-        return private_key_b58, public_key_b58
+        return TransactionSigner(private_key_b58)
         
     @staticmethod
     def serialize_transaction(action: Dict, account: Optional[str], signer: Optional[str]) -> bytes:
@@ -123,10 +118,10 @@ class TransactionSigner:
                 parts.extend(TransactionSigner.serialize_agent_wallet_creation(action.get("agent", [])))
             case "testnetAdmin":
                 parts.extend(TransactionSigner.serialize_testnet_admin(action.get("actions", [])))
-        
-        nonce_bytes = TransactionSigner.write_u64(nonce)
-        parts.append(nonce_bytes)
-        
+            case "oracle":
+                parts.extend(TransactionSigner.serialize_oracle(action.get("oracles", [])))
+
+        parts.append(TransactionSigner.write_u64(nonce))
         parts.append(TransactionSigner.decode_and_validate_key(account))
         parts.append(TransactionSigner.decode_and_validate_key(signer))
         
@@ -156,15 +151,19 @@ class TransactionSigner:
                 if "limit" in t:
                     parts.extend([
                         TransactionSigner.write_u32(0),
-                        TransactionSigner.serialize_time_in_force(t["limit"]["tif"]),
+                        TransactionSigner.write_u32(TIME_IN_FORCE_MAP[t["limit"]["tif"]]),
                     ])
                 elif "trigger" in t:
-                    parts.extend([])
+                    parts.extend([
+                        TransactionSigner.write_u32(1),  # ORDER_TYPE_CODES.trigger
+                        TransactionSigner.write_bool(t["trigger"]["is_market"]),
+                        TransactionSigner.write_f64(t["trigger"]["triggerPx"]),
+                    ])
                     
                 if "cloid" in order_data:
                     parts.extend([
                         TransactionSigner.write_bool(True),
-                        TransactionSigner.write_string(order_data["cloid"]),
+                        TransactionSigner.decode_and_validate_key(order_data["cloid"]),
                     ])
                 else:
                     parts.extend([
@@ -183,6 +182,20 @@ class TransactionSigner:
                     parts.extend([
                         TransactionSigner.write_string(s)
                     ])
+        return parts
+
+    @staticmethod
+    def serialize_oracle(oracles: List[Dict]) -> List[bytes]:
+        """Serialize oracle updates"""
+        parts = [TransactionSigner.write_u64(len(oracles))]
+
+        for oracle in oracles:
+            parts.extend([
+                TransactionSigner.write_u64(oracle['t']),  # timestamp
+                TransactionSigner.write_string(oracle['c']),  # asset
+                TransactionSigner.write_f64(oracle['px'])  # price
+            ])
+
         return parts
     
     @staticmethod
@@ -234,7 +247,7 @@ class TransactionSigner:
         for action in actions:
             admin_action = next(iter(action))
             parts.extend([
-                TransactionSigner.serialize_admin_actin(admin_action),
+                TransactionSigner.serialize_admin_action(admin_action),
                 TransactionSigner.decode_and_validate_key(action[admin_action]["account"]),
                 TransactionSigner.write_bool(action[admin_action]["whitelist"])
             ])
@@ -280,13 +293,7 @@ class TransactionSigner:
         return struct.pack("<I", ACTION_CODES[action_type])
     
     @staticmethod
-    def serialize_time_in_force(time_in_force: str) -> bytes:
-        if time_in_force not in TIME_IN_FORCE_MAP:
-            raise ValueError(f"Invalid time in force: {time_in_force}")
-        return struct.pack("<I", TIME_IN_FORCE_MAP[time_in_force])
-    
-    @staticmethod
-    def serialize_admin_actin(admin_action: str) -> bytes:
+    def serialize_admin_action(admin_action: str) -> bytes:
         if admin_action not in ADMIN_ACTION_MAP:
             raise ValueError(f"Invalid admin action: {admin_action}")
         return struct.pack("<I", ADMIN_ACTION_MAP[admin_action])

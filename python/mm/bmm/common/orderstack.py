@@ -14,8 +14,10 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
 
+from more_itertools.more import side_effect
+
 from bulk import BulkWebSocketClient
-from bulk.common import Side, OrderStatus, TimeInForce
+from bulk.common import Side, OrderStatus, TimeInForce, TransactionSigner
 from bulk.messages.account import OrderState
 from bulk.data import FastOrderBook
 from bulk.messages import L2Snapshot, OrderBookLevel
@@ -35,18 +37,23 @@ class PriceLevel:
     granular size adjustments as Binance book changes.
     """
 
-    def __init__(self, price: float, side: Side, chunk_size: float):
+    def __init__(self, symbol, price: float, side: Side, chunk_size: float, decimals: int):
         """
         Initialize price level
 
         Args:
+            symbol: The symbol for this price level
             price: Price level
             side: Side.BUY or Side.SELL
             chunk_size: Base size for each order chunk
+            decimals: Number of decimal digits
         """
+        self.symbol = symbol
         self.price = price
         self.side = side
         self.chunk_size = chunk_size
+        self.decimal_scale = 10.0**decimals
+
         self.pending_placed = 0
         self.pending_cancel = 0
         self.current_size = 0
@@ -67,7 +74,7 @@ class PriceLevel:
         """Number of active orders at this level"""
         return len(self.orders)
 
-    def place_inflight(self, order_state: OrderState):
+    def inflight_place(self, order_state: OrderState):
         """
         Add an in-flight order
 
@@ -76,10 +83,10 @@ class PriceLevel:
         """
         order_id = order_state.order_id
         self.pending_placed += order_state.size
-        self.orders[order_id] = order_state.copy()
+        self.orders[order_id] = OrderState(**vars(order_state))
         self.orders[order_id].status = OrderStatus.NONE
 
-    def cancel_inflight(self, tocancel: OrderState):
+    def inflight_cancel(self, tocancel: OrderState):
         """
         Add an in-flight cancel
 
@@ -88,7 +95,8 @@ class PriceLevel:
         """
         order_id = tocancel.order_id
         if order_id in self.orders:
-            state = self.orders[order_id].copy()
+            state = OrderState(**vars(self.orders[order_id]))
+            state.timestamp = time.time_ns()
             state.status = OrderStatus.CANCEL_PENDING
             self.orders[order_id] = state
             self.pending_cancel += tocancel.size
@@ -119,7 +127,109 @@ class PriceLevel:
         else:
             self.orders[order_id] = order_state
 
-    def get_orders_to_cancel(self, target_size: float) -> List[str]:
+    def plan_resize(
+        self,
+        target_size: float,
+        signer: TransactionSigner,
+        tif: TimeInForce,
+        tolerance: float = 0.1,
+        max_orders: int = 5,
+        nonce: int = 0,
+    ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
+        """
+        Synchronize a single price level with requested book
+
+        Args:
+            target_size: target size for this level
+            tolerance: Tolerance for size difference (fraction of chunk_size)
+            max_orders: maximum number of orders to request
+            nonce: nonce for these orders
+
+        Returns:
+            Tuple of:
+            - List of limit orders to add
+            - List of cancel orders to add
+        """
+        # Calculate target size (rounded to chunk multiples)
+        current_size = self.effective_size
+        orders_to_place = []
+        orders_to_cancel = []
+
+        # Calculate size difference
+        size_diff = target_size - current_size
+
+        # Check if within tolerance (avoid unnecessary churn)
+        tolerance_size = self.chunk_size * tolerance
+        if abs(size_diff) < tolerance_size:
+            return [], []
+
+        if size_diff > 0:
+            # Need to add orders
+            size_to_add = self._get_size_to_add(target_size)
+            chunk = self.chunk_size
+
+            # Create orders in chunks (at least 1)
+            num_orders = max(1, int(np.ceil(size_to_add / chunk)))
+            if num_orders > max_orders:
+                order_size = size_to_add / max_orders
+                num_orders = max_orders
+            else:
+                order_size = self.chunk_size
+
+            for i in range(num_orders):
+                jitter = 10.0 * i / self.decimal_scale
+                order = LimitOrder(
+                    symbol=self.symbol,
+                    side=self.side,
+                    price=self.price,
+                    size=order_size + jitter,
+                    reduce_only=False,
+                    time_in_force=tif,
+                    nonce=nonce,
+                )
+                orders_to_place.append(order)
+
+                # placeholder for in-flight orders
+                order_id = order.hash(signer.public_key)
+                state = order.to_state(order_id, OrderStatus.NONE)
+                self.inflight_place(state)
+
+        elif size_diff < 0 and target_size > 0:
+            # Need to cancel orders
+            for oid in self._get_orders_to_cancel(target_size):
+                action = CancelOrder(
+                    symbol=self.symbol,
+                    oid=oid,
+                )
+                orders_to_cancel.append(action)
+
+                # placeholder for in-flight cancel
+                state = self.orders.get(oid, None)
+                self.inflight_cancel(state)
+
+        elif target_size == 0:
+            # If target is zero, cancel all orders at this level
+            orders_to_cancel.extend(self.plan_cancel())
+
+        return orders_to_place, orders_to_cancel
+
+    def plan_cancel(self) -> List[CancelOrder]:
+        """
+        Cancel all orders in level
+        """
+        actions = []
+        for oid, order in self.orders.items():
+            action = CancelOrder(
+                symbol=self.symbol,
+                oid=oid,
+            )
+            actions.append(action)
+
+            # placeholder for in-flight cancel
+            self.inflight_cancel(order)
+        return actions
+
+    def _get_orders_to_cancel(self, target_size: float) -> List[str]:
         """
         Determine which orders to cancel to reach target size
 
@@ -153,7 +263,7 @@ class PriceLevel:
 
         return to_cancel
 
-    def get_size_to_add(self, target_size: float) -> float:
+    def _get_size_to_add(self, target_size: float) -> float:
         """
         Calculate how much size needs to be added to reach target, taking into account
         possible in-flight orders
@@ -223,6 +333,7 @@ class OrderStack:
         self,
         symbol: str,
         side: Side,
+        signer: TransactionSigner,
         chunk_size: float = 0.5,
         max_orders: int = 5,
         tif: TimeInForce = TimeInForce.GTC,
@@ -235,6 +346,7 @@ class OrderStack:
         Args:
             symbol: Trading symbol
             side: Side.BUY or Side.SELL
+            signer: Transaction signer
             chunk_size: order size
             max_orders: maximum number of orders to be added (a guideline)
             tif: TimeInForce
@@ -243,6 +355,7 @@ class OrderStack:
         """
         self.symbol = symbol
         self.side = side
+        self.signer = signer
         self.chunk_size = chunk_size
         self.max_orders = max_orders
         self.tif = tif
@@ -320,7 +433,7 @@ class OrderStack:
         ws_client: Optional[BulkWebSocketClient],
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
-        maxdepth: float,
+        maxdepth: float = 2500.0,
         tolerance: float = 0.1
     ) -> Tuple[List[str], List[str], bool]:
         """
@@ -408,9 +521,19 @@ class OrderStack:
             key = int(round(price * self.decimal_scale))
             size = new_sizes[i]
             seen_prices.add(key)
+            target_size = round(size / self.chunk_size) * self.chunk_size
 
-            orders_to_place, orders_to_cancel = self._sync_level(
-                key, price, size, tolerance, nonce=nonce
+            if key not in self.levels:
+                if target_size == 0:
+                    continue
+                self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals)
+                level = self.levels[key]
+            else:
+                level = self.levels[key]
+
+            orders_to_place, orders_to_cancel = level.plan_resize (
+                target_size=size, tolerance=tolerance, nonce=nonce,
+                max_orders=self.max_orders, tif=self.tif, signer=self.signer
             )
             all_orders_to_place.extend(orders_to_place)
             all_orders_to_cancel.extend(orders_to_cancel)
@@ -420,7 +543,7 @@ class OrderStack:
         for key in list(self.levels.keys()):
             if key not in seen_prices:
                 level = self.levels[key]
-                all_orders_to_cancel.extend(self._cancel_level(level))
+                all_orders_to_cancel.extend(level.plan_cancel())
                 nremoved += 1
 
         logger.info(f"added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
@@ -450,7 +573,7 @@ class OrderStack:
 
         # create level if does not exist
         if key not in self.levels:
-            self.levels[key] = PriceLevel(price, self.side, self.chunk_size)
+            self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals)
 
         # Update level
         level = self.levels[key]
@@ -641,116 +764,6 @@ class OrderStack:
 
         return added_oid, cancelled_oid, True
 
-    def _sync_level(
-        self,
-        key: int,
-        price: float,
-        size: float,
-        tolerance: float = 0.1,
-        nonce: int = 0,
-    ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
-        """
-        Synchronize a single price level with requested book
-
-        Args:
-            price: Price level
-            size: Size at this level
-            tolerance: Tolerance for size difference (fraction of chunk_size)
-
-        Returns:
-            Tuple of:
-            - List of limit orders to add
-            - List of cancel orders to add
-        """
-        # Calculate target size (rounded to chunk multiples)
-        target_size = round(size / self.chunk_size) * self.chunk_size
-
-        # Get or create level
-        if key not in self.levels:
-            if target_size == 0:
-                return [], []
-            self.levels[key] = PriceLevel(price, self.side, self.chunk_size)
-
-        level = self.levels[key]
-        current_size = level.total_size
-
-        orders_to_place = []
-        orders_to_cancel = []
-
-        # Calculate size difference
-        size_diff = target_size - current_size
-
-        # Check if within tolerance (avoid unnecessary churn)
-        tolerance_size = level.chunk_size * tolerance
-        if abs(size_diff) < tolerance_size:
-            return [], []
-
-        if size_diff > 0:
-            # Need to add orders
-            size_to_add = level.get_size_to_add(target_size)
-            chunk = level.chunk_size
-
-            # Create orders in chunks (at least 1)
-            num_orders = max(1, int(np.ceil(size_to_add / chunk)))
-            if num_orders > self.max_orders:
-                order_size = size_to_add / self.max_orders
-                num_orders = self.max_orders
-            else:
-                order_size = self.chunk_size
-
-            for i in range(num_orders):
-                jitter = 10.0 * i / self.decimal_scale
-                order = LimitOrder(
-                    symbol=self.symbol,
-                    side=self.side,
-                    price=price,
-                    size=order_size + jitter,
-                    reduce_only=False,
-                    time_in_force=self.tif,
-                    nonce=nonce,
-                )
-                orders_to_place.append(order)
-
-                # placeholder for in-flight orders
-                order_id = order.hash()
-                level.pending_placed(order.to_state(order_id, OrderStatus.NONE))
-
-        elif size_diff < 0 and target_size > 0:
-            # Need to cancel orders
-            for oid in level.get_orders_to_cancel(target_size):
-                action = CancelOrder(
-                    symbol=self.symbol,
-                    oid=oid,
-                )
-                orders_to_cancel.append(action)
-
-                # placeholder for in-flight cancel
-                state = level.orders.get(oid, None)
-                level.pending_cancel(state)
-
-        elif target_size == 0:
-            # If target is zero, cancel all orders at this level
-            orders_to_cancel.extend(self._cancel_level(level))
-
-        return orders_to_place, orders_to_cancel
-
-    def _cancel_level(self, level: PriceLevel) -> List[CancelOrder]:
-        """
-        Cancel all orders in level
-        """
-        actions = []
-        for oid, order in level.orders.items():
-            action = CancelOrder(
-                symbol=self.symbol,
-                oid=oid,
-            )
-            actions.append(action)
-
-            # placeholder for in-flight cancel
-            level.pending_cancel(order)
-
-        return actions
-
     def __repr__(self) -> str:
         return (
             f"OrderBookSide(side={self.side.name}, "
@@ -767,6 +780,21 @@ class OrderStack:
 async def example_usage():
     """Demonstrate OrderBookSide usage"""
     import time
+
+    signer = TransactionSigner.generate_account()
+
+    # test order state
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.BUY,
+        price=98000.0,
+        size=1.3,
+        reduce_only=False,
+        time_in_force=TimeInForce.GTC,
+        nonce=time.time_ns(),
+    )
+    state = order.to_state(signer.public_key, OrderStatus.NONE)
+    print(state)
 
     # Create a synthetic Binance book
     bid_levels = [
@@ -791,6 +819,7 @@ async def example_usage():
     # Create bid side manager
     bid_side = OrderStack(
         side=Side.BUY,
+        signer=signer,
         chunk_size=0.25,  # Quarter sizing
         max_orders=5,
         symbol="BTC-USD"
@@ -805,7 +834,8 @@ async def example_usage():
     await bid_side.execute(
         ws_client=None,
         new_prices = binance_prices,
-        new_sizes = binance_sizes
+        new_sizes = binance_sizes,
+        maxdepth=1000.0
     )
 
     # Check discrepancy
@@ -831,7 +861,8 @@ async def example_usage():
     await bid_side.execute(
         ws_client=None,
         new_prices = binance_prices2,
-        new_sizes = binance_sizes2
+        new_sizes = binance_sizes2,
+        maxdepth=1000.0
     )
 
     # Check discrepancy
