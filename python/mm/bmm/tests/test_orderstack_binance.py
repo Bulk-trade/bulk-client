@@ -19,6 +19,8 @@ import numpy as np
 import sys
 from pathlib import Path
 
+from common import TransactionSigner
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -120,6 +122,8 @@ class OrderStackSimulator:
                 }
             )
 
+            signer = TransactionSigner.generate_account()
+
             # Connect to Binance
             connected = await self.binance_client.connect()
             if not connected:
@@ -153,7 +157,8 @@ class OrderStackSimulator:
                 side=Side.BUY,
                 chunk_size=self.chunk_size,
                 max_orders=self.max_orders,
-                max_price_levels=self.max_price_levels
+                max_price_levels=self.max_price_levels,
+                signer=signer,
             )
 
             self.ask_stack = OrderStack(
@@ -161,7 +166,8 @@ class OrderStackSimulator:
                 side=Side.SELL,
                 chunk_size=self.chunk_size,
                 max_orders=self.max_orders,
-                max_price_levels=self.max_price_levels
+                max_price_levels=self.max_price_levels,
+                signer=signer,
             )
 
             self.logger.info("   ✓ OrderStacks created")

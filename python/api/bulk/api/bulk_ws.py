@@ -782,9 +782,10 @@ class BulkWebSocketClient:
         # Emit typed event
         await self._emit_event(Topic.TICKER, ticker)
 
+        price = ticker.last_price or 0.0
         self.logger.debug(
             f"Ticker: {ticker.symbol} "
-            f"Last={ticker.last_price:.2f} "
+            f"Last={price:.2f} "
             f"Change={ticker.price_change_percent:.2f}%"
         )
 
