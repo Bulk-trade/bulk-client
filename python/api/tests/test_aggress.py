@@ -26,6 +26,7 @@ from bulk.common import TransactionSigner, Side
 from bulk.api import BulkHttpClient
 from bulk.api import BulkWebSocketClient
 from bulk.messages.trade import MarketOrder
+from common import signer
 from messages import LimitOrder
 
 # Configuration
@@ -53,7 +54,8 @@ def load_or_generate_keys():
         return keys['private_key'], keys['public_key']
 
     print("🔑 Generating new Ed25519 keypair...")
-    private_key, public_key = TransactionSigner.generate_account()
+    signer = TransactionSigner.generate_account()
+    private_key, public_key = signer.private_key, signer.public_key
 
     # Save to file
     keys_data = {
