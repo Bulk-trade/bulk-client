@@ -340,7 +340,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
-            #print(sjson)
+            print(sjson)
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -418,7 +418,10 @@ class BulkWebSocketClient:
         future = asyncio.Future()
         self.pending_requests[request_id] = future
         try:
-            await self.ws.send(json.dumps(request))
+            sjson = json.dumps(request)
+            print(sjson)
+
+            await self.ws.send(sjson)
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
