@@ -8,13 +8,10 @@ Manages a collection of orders on one side (bid or ask) with:
 - Discrepancy calculation
 """
 import time
+from typing import Dict, List, Tuple, Optional
 
 import base58
 import numpy as np
-from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple, Optional
-
-from more_itertools.more import side_effect
 
 from bulk import BulkWebSocketClient
 from bulk.common import Side, OrderStatus, TimeInForce, TransactionSigner
@@ -141,6 +138,8 @@ class PriceLevel:
 
         Args:
             target_size: target size for this level
+            signer: TransactionSigner for order ID computation
+            tif: TimeInForce
             tolerance: Tolerance for size difference (fraction of chunk_size)
             max_orders: maximum number of orders to request
             nonce: nonce for these orders
@@ -188,8 +187,17 @@ class PriceLevel:
                 )
                 orders_to_place.append(order)
 
-                # placeholder for in-flight orders
-                order_id = order.hash(signer.public_key, nonce=nonce)
+                # Compute order ID using bulk-keychain (fast, Rust)
+                order_id, _ = signer.compute_limit_order_id(
+                    symbol=self.symbol,
+                    side=self.side,
+                    price=self.price,
+                    size=order_size + jitter,
+                    reduce_only=False,
+                    time_in_force=tif,
+                    nonce=nonce,
+                )
+
                 order.oid = order_id
                 order.nonce = nonce
 
@@ -349,7 +357,7 @@ class OrderStack:
         Args:
             symbol: Trading symbol
             side: Side.BUY or Side.SELL
-            signer: Transaction signer
+            signer: TransactionSigner for order ID computation
             chunk_size: order size
             max_orders: maximum number of orders to be added (a guideline)
             tif: TimeInForce
@@ -788,6 +796,7 @@ async def example_usage():
     """Demonstrate OrderBookSide usage"""
     import time
 
+   
     signer = TransactionSigner.generate_account()
 
     # test order state

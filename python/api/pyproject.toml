@@ -14,7 +14,8 @@ dependencies = [
     "pynacl>=1.2.0",
     "base58>=2.1.0",
     "sortedcontainers>=2.4.0",
-    "aiohttp>=3.11"
+    "aiohttp>=3.11",
+    "bulk-keychain>=0.1.4"
 ]
 
 [tool.hatch.build.targets.wheel]

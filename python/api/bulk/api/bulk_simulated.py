@@ -281,8 +281,23 @@ class SimulatedWebSocketClient:
     ) -> OrderResponse:
         """Handle order placement without latency (called from place_orders)"""
 
-        # Generate order ID
-        order_id = order.hash(self.signer.public_key)
+        # Generate order ID using bulk-keychain
+        if isinstance(order, LimitOrder):
+            order_id, _ = self.signer.compute_limit_order_id(
+                symbol=order.symbol,
+                side=order.side,
+                price=order.price,
+                size=order.size,
+                reduce_only=order.reduce_only,
+                time_in_force=order.time_in_force,
+            )
+        else:
+            order_id, _ = self.signer.compute_market_order_id(
+                symbol=order.symbol,
+                side=order.side,
+                size=order.size,
+                reduce_only=order.reduce_only,
+            )
 
         # Create initial order state
         state = OrderState(

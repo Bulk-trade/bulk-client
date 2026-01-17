@@ -91,8 +91,7 @@ class BinanceMarketMaker:
         self.logger.info("=" * 80)
 
         try:
-            # Initialize signer
-            self.logger.info("\n1. Initializing transaction signer...")
+            self.logger.info("\n1. Initializing TransactionSigner (bulk-keychain)...")
             self.signer = TransactionSigner(self.config.private_key)
             self.logger.info(f"   Account: {self.signer.public_key}")
 

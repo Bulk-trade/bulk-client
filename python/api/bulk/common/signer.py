@@ -1,51 +1,73 @@
-from typing import Dict, List, Tuple, Optional
-from nacl.signing import SigningKey
-import struct
-import base58
+"""
+Transaction Signer using bulk-keychain 
+"""
+
 import time
+from typing import Dict, List, Optional, Tuple
 
-ACTION_CODES = {
-    "order": 0,
-    "oracle": 1,
-    "faucet": 2,
-    "updateUserSettings": 3,
-    "agentWalletCreation": 4,
-    "testnetAdmin": 5,
-}
+from bulk_keychain import Keypair, Signer
 
-ORDER_MAP = {
-    "order": 0,
-    "cancel": 1,
-    "cancelAll": 2,
-}
+from bulk.common.enums import Side, TimeInForce
 
-TIME_IN_FORCE_MAP = {
-    "GTC": 0,
-    "IOC": 1,
-    "ALO": 2,
-}
-
-ADMIN_ACTION_MAP = {
-    "whitelistFaucet": 0
-}
 
 class TransactionSigner:
-    """Handle Ed25519 transaction signing with serialization of bulk payloads"""
-    
+    """
+    Example:
+        signer = TransactionSigner(private_key_b58)
+        print(f"Account: {signer.public_key}")
+
+        # Sign transaction (compatible with existing code)
+        tx = signer.sign_transaction(tx)
+
+        # Compute order ID for a limit order
+        order_id, nonce = signer.compute_limit_order_id(
+            symbol="BTC-USD",
+            side=Side.BUY,
+            price=99000.0,
+            size=0.25,
+        )
+    """
+
+    __slots__ = ('_keypair', '_signer', '_public_key', '_private_key')
+
     def __init__(self, private_key: str):
         """
         Initialize signer with base58 encoded private key
-        
+
         Args:
-            private_key: Base58 encoded private key
+            private_key: Base58 encoded Ed25519 private key
         """
-        private_key_bytes = base58.b58decode(private_key)
-        self.signing_key = SigningKey(private_key_bytes[:32])
-        self.public_key = base58.b58encode(bytes(self.signing_key.verify_key)).decode()
-        self.private_key = private_key
-        self.nonce = 0
-        
-    def sign_transaction(self, tx: Dict) -> str:
+        self._keypair = Keypair.from_base58(private_key)
+        self._signer = Signer(self._keypair)
+        self._public_key: str = self._keypair.public_key()
+        self._private_key: str = private_key
+
+    @property
+    def public_key(self) -> str:
+        """Base58 encoded public key"""
+        return self._public_key
+
+    @property
+    def private_key(self) -> str:
+        """Base58 encoded private key"""
+        return self._private_key
+
+    # ==================== GENERATION ====================
+
+    @staticmethod
+    def generate_account() -> 'TransactionSigner':
+        """
+        Generate a new random Ed25519 keypair
+
+        Returns:
+            TransactionSigner with new keypair
+        """
+        keypair = Keypair()
+        return TransactionSigner(keypair.to_base58())
+
+    # ==================== TRANSACTION SIGNING ====================
+
+    def sign_transaction(self, tx: Dict) -> Dict:
         """
         Sign a transaction with Ed25519
 
@@ -53,258 +75,256 @@ class TransactionSigner:
             tx: Transaction dict containing action, account, nonce
 
         Returns:
-            Base58 encoded signature
+            Transaction dict with signature added
         """
-        # Extract components
         action = tx.get("action", {})
-        account = tx.get("account", self.public_key)
-        signer = tx.get("signer", self.public_key)
-        
-        message = self.serialize_transaction(action, account, signer)
-        signed = self.signing_key.sign(message)
-        
-        sig = base58.b58encode(signed.signature).decode()
-        
-        tx["signature"] = sig
+        action_type = action.get("type", "")
+        nonce = action.get("nonce") or _generate_nonce()
+        action["nonce"] = nonce
+
+        # Convert to bulk-keychain format based on action type
+        if action_type == "order":
+            orders = action.get("orders", [])
+            if orders:
+                kc_orders = _convert_orders_to_keychain(orders)
+                signed = self._signer.sign_group(kc_orders, nonce=nonce)
+                tx["signature"] = signed.get("signature") or signed.get("sig", "")
+            else:
+                tx["signature"] = ""
+
+        elif action_type == "faucet":
+            faucet = action.get("faucet", {})
+            kc_action = {
+                "type": "faucet",
+                "user": faucet.get("u"),
+                "amount": faucet.get("amount"),
+                "nonce": nonce,
+            }
+            signed = self._signer.sign(kc_action)
+            tx["signature"] = signed.get("signature") or signed.get("sig", "")
+
+        elif action_type == "updateUserSettings":
+            settings = action.get("settings", {})
+            leverage_map = settings.get("m", [])
+            kc_action = {
+                "type": "updateUserSettings",
+                "leverage": [{"symbol": s, "leverage": l} for s, l in leverage_map],
+                "nonce": nonce,
+            }
+            signed = self._signer.sign(kc_action)
+            tx["signature"] = signed.get("signature") or signed.get("sig", "")
+
+        elif action_type == "agentWalletCreation":
+            agent = action.get("agent", {})
+            kc_action = {
+                "type": "agentWalletCreation",
+                "agent": agent.get("a"),
+                "delete": agent.get("d", False),
+                "nonce": nonce,
+            }
+            signed = self._signer.sign(kc_action)
+            tx["signature"] = signed.get("signature") or signed.get("sig", "")
+
+        else:
+            # Generic signing for other action types
+            signed = self._signer.sign(action)
+            tx["signature"] = signed.get("signature") or signed.get("sig", "")
+
         return tx
 
-    @staticmethod
-    def generate_account() -> 'TransactionSigner':
-        """
-        Generate a new random Ed25519 keypair compatible with Solana (this is just used for testing
-        and is not a recommended way to generate accounts).
+    # ==================== ORDER ID COMPUTATION ====================
 
-        Returns:
-            tuple: (private_key_b58, public_key_b58)
+    def compute_limit_order_id(
+        self,
+        symbol: str,
+        side: Side,
+        price: float,
+        size: float,
+        reduce_only: bool = False,
+        time_in_force: TimeInForce = TimeInForce.GTC,
+        nonce: Optional[int] = None,
+    ) -> Tuple[str, int]:
         """
-        # Generate a new random signing key
-        signing_key = SigningKey.generate()
+        Compute order ID for a limit order
 
-        # Get the private key (32 bytes seed)
-        private_key_bytes = bytes(signing_key)
-
-        # Encode both to base58
-        private_key_b58 = base58.b58encode(private_key_bytes).decode()
-        return TransactionSigner(private_key_b58)
-        
-    @staticmethod
-    def serialize_transaction(action: Dict, account: Optional[str], signer: Optional[str]) -> bytes:
-        """
-        Serialize transaction using bincode format
+        Order ID is computed using the same algorithm as the exchange,
+        allowing you to know the order ID before submission.
 
         Args:
-            action: Action object with type and parameters
-            account: Base58 encoded account public key
-            signer: Base58 encoded signer public key
+            symbol: Trading symbol (e.g. "BTC-USD")
+            side: Side.BUY or Side.SELL
+            price: Limit price
+            size: Order size
+            reduce_only: Reduce-only flag
+            time_in_force: GTC, IOC, or ALO
+            nonce: Optional nonce (auto-generated if not provided)
 
         Returns:
-            Binary serialized transaction
+            Tuple of (order_id, nonce)
         """
-        action_type = action.get("type", "")
-        parts = [TransactionSigner.serialize_action(action_type)]
+        nonce = nonce if nonce is not None else _generate_nonce()
 
-        # get / add nonce
-        nonce = action.get("nonce",None)
-        if not nonce:
-            nonce = int(time.time_ns() / 1000 % 1000000000)
-            action["nonce"] = nonce
+        order_dict = {
+            "type": "order",
+            "symbol": symbol,
+            "is_buy": side == Side.BUY,
+            "price": price,
+            "size": size,
+            "reduce_only": reduce_only,
+            "order_type": {"type": "limit", "tif": str(time_in_force)},
+            "nonce": nonce,
+        }
 
-        match action_type:
-            case "order":
-                parts.extend(TransactionSigner.serialize_orders(action.get("orders", [])))
-            case "faucet":
-                parts.extend(TransactionSigner.serialize_faucet(action.get("faucet", [])))
-            case "updateUserSettings":
-                parts.extend(TransactionSigner.serialize_update_user_settings(action.get("settings", [])))
-            case "agentWalletCreation":
-                parts.extend(TransactionSigner.serialize_agent_wallet_creation(action.get("agent", [])))
-            case "testnetAdmin":
-                parts.extend(TransactionSigner.serialize_testnet_admin(action.get("actions", [])))
-            case "oracle":
-                parts.extend(TransactionSigner.serialize_oracle(action.get("oracles", [])))
+        signed = self._signer.sign(order_dict)
+        order_id = signed.get("order_id") or signed.get("orderId", "")
+        return order_id, nonce
 
-        parts.append(TransactionSigner.write_u64(nonce))
-        parts.append(TransactionSigner.decode_and_validate_key(account))
-        parts.append(TransactionSigner.decode_and_validate_key(signer))
-        return b''.join(parts)
-        
-    @staticmethod
-    def serialize_orders(orders: List[Dict]) -> List[bytes]:
-        """Serialize a order list"""
-        parts = [TransactionSigner.write_u64(len(orders))]
-        
-        for order in orders:
-            order_type = next(iter(order))
-            order_data = order[order_type]
+    def compute_market_order_id(
+        self,
+        symbol: str,
+        side: Side,
+        size: float,
+        reduce_only: bool = False,
+        nonce: Optional[int] = None,
+    ) -> Tuple[str, int]:
+        """
+        Compute order ID for a market order
 
-            parts.append(TransactionSigner.serialize_order_type(order_type))
+        Args:
+            symbol: Trading symbol
+            side: Side.BUY or Side.SELL
+            size: Order size
+            reduce_only: Reduce-only flag
+            nonce: Optional nonce
 
-            match order_type:
-                case "order":
-                    parts.extend([
-                        TransactionSigner.write_string(order_data['c']),
-                        TransactionSigner.write_bool(order_data['b']),
-                        TransactionSigner.write_f64(order_data['px']),
-                        TransactionSigner.write_f64(order_data['sz']),
-                        TransactionSigner.write_bool(order_data['r'])
-                    ])
+        Returns:
+            Tuple of (order_id, nonce)
+        """
+        nonce = nonce if nonce is not None else _generate_nonce()
 
-                    t = order_data["t"]
-                    if "limit" in t:
-                        parts.extend([
-                            TransactionSigner.write_u32(0),
-                            TransactionSigner.write_u32(TIME_IN_FORCE_MAP[t["limit"]["tif"]]),
-                        ])
-                    elif "trigger" in t:
-                        parts.extend([
-                            TransactionSigner.write_u32(1),
-                            TransactionSigner.write_bool(t["trigger"]["is_market"]),
-                            TransactionSigner.write_f64(t["trigger"]["triggerPx"]),
-                        ])
+        order_dict = {
+            "type": "order",
+            "symbol": symbol,
+            "is_buy": side == Side.BUY,
+            "price": 0.0,
+            "size": size,
+            "reduce_only": reduce_only,
+            "order_type": {"type": "market", "is_market": True, "trigger_px": 0.0},
+            "nonce": nonce,
+        }
 
-                    if "cloid" in order_data:
-                        parts.extend([
-                            TransactionSigner.write_bool(True),
-                            TransactionSigner.decode_and_validate_key(order_data["cloid"]),
-                        ])
-                    else:
-                        parts.extend([
-                            TransactionSigner.write_bool(False),
-                        ])
-                case "cancel":
-                    parts.extend([
-                        TransactionSigner.write_string(order_data["c"]),
-                        base58.b58decode(order_data["oid"])
-                    ])
-                case "cancelAll":
-                    parts.extend(
-                        [TransactionSigner.write_u64(len(order_data["c"]))]
-                        )
-                    for s in order_data["c"]:
-                        parts.extend([
-                            TransactionSigner.write_string(s)
-                        ])
-        return parts
+        signed = self._signer.sign(order_dict)
+        order_id = signed.get("order_id") or signed.get("orderId", "")
+        return order_id, nonce
 
-    @staticmethod
-    def serialize_oracle(oracles: List[Dict]) -> List[bytes]:
-        """Serialize oracle updates"""
-        parts = [TransactionSigner.write_u64(len(oracles))]
+    # ==================== BATCH OPERATIONS ====================
 
-        for oracle in oracles:
-            parts.extend([
-                TransactionSigner.write_u64(oracle['t']),  # timestamp
-                TransactionSigner.write_string(oracle['c']),  # asset
-                TransactionSigner.write_f64(oracle['px'])  # price
-            ])
+    def sign_limit_orders(
+        self,
+        orders: List[Dict],
+        nonce: Optional[int] = None,
+    ) -> List[Tuple[str, int]]:
+        """
+        Sign multiple limit orders and get pre-computed order IDs
 
-        return parts
-    
-    @staticmethod
-    def serialize_update_user_settings(settings: Dict) -> List[bytes]:
-        """Serialize a update user settings transaction"""
-        leverage_map = settings.get("m", [])
-        parts = [TransactionSigner.write_u64(len(leverage_map))]
-        
-        for symbol, leverage in leverage_map:
-            parts.extend([
-                TransactionSigner.write_string(symbol),
-                TransactionSigner.write_f64(leverage)
-            ])
-            
-        return parts
+        Uses Rust parallel signing for high performance.
+        Args:
+            orders: List of order dicts with keys:
+                - symbol: str
+                - side: Side
+                - price: float
+                - size: float
+                - reduce_only: bool (optional)
+                - time_in_force: TimeInForce (optional)
+            nonce: Base nonce (each order gets nonce + index)
 
-    @staticmethod
-    def serialize_faucet(faucet: Dict) -> List[bytes]:
-        """Serialize a faucet request"""
-        parts = [TransactionSigner.decode_and_validate_key(faucet["u"])]
-        
-        amount = faucet.get("amount")
-        if amount is None:
-            parts.append(TransactionSigner.write_bool(False))
-        else:
-            parts.extend([
-                TransactionSigner.write_bool(True),
-                TransactionSigner.write_f64(amount)
-            ])
-            
-        return parts
-        
-    @staticmethod
-    def serialize_agent_wallet_creation(agent: Dict) -> List[bytes]:
-        """Serialize a agent wallet creation transaction"""
-        
-        parts = [TransactionSigner.decode_and_validate_key(agent["a"])]
-        
-        if agent.get("d", False):
-            parts.append(TransactionSigner.write_bool(True))
-        else:
-            parts.append(TransactionSigner.write_bool(False))
-        return parts
+        Returns:
+            List of (order_id, nonce) tuples
+        """
+        base_nonce = nonce if nonce is not None else _generate_nonce()
+        order_dicts = []
 
-    @staticmethod
-    def serialize_testnet_admin(actions: Dict) -> List[bytes]:
-        """Serialize a testnet admin transaction"""
-        parts = [TransactionSigner.write_u64(len(actions))]
-        for action in actions:
-            admin_action = next(iter(action))
-            parts.extend([
-                TransactionSigner.serialize_admin_action(admin_action),
-                TransactionSigner.decode_and_validate_key(action[admin_action]["account"]),
-                TransactionSigner.write_bool(action[admin_action]["whitelist"])
-            ])
-            
-        return parts
+        for i, order in enumerate(orders):
+            order_nonce = base_nonce + i
+            tif = order.get('time_in_force', TimeInForce.GTC)
 
-    @staticmethod
-    def write_u64(value: int) -> bytes:
-        """Write a u64 in little-endian format"""
-        return struct.pack("<Q", value)
+            order_dict = {
+                "type": "order",
+                "symbol": order['symbol'],
+                "is_buy": order['side'] == Side.BUY,
+                "price": order['price'],
+                "size": order['size'],
+                "reduce_only": order.get('reduce_only', False),
+                "order_type": {"type": "limit", "tif": str(tif)},
+                "nonce": order_nonce,
+            }
+            order_dicts.append(order_dict)
 
-    @staticmethod
-    def write_string(value: str) -> bytes:
-        """Write a string in little-endian format"""
-        s_bytes = value.encode('utf-8')
-        return TransactionSigner.write_u64(len(s_bytes)) + s_bytes
+        # Parallel signing in Rust
+        signed_list = self._signer.sign_all(order_dicts)
 
-    @staticmethod
-    def write_bool(value: bool) -> bytes:
-        """Write a boolean as single byte"""
-        return bytes([1 if value else 0])
+        results = []
+        for i, signed in enumerate(signed_list):
+            order_id = signed.get("order_id") or signed.get("orderId", "")
+            results.append((order_id, base_nonce + i))
 
-    @staticmethod
-    def write_f64(value: float) -> bytes:
-        """Write a f64 (double) in little-endian format"""
-        return struct.pack("<d", value)
+        return results
 
-    @staticmethod
-    def write_u32(value: int) -> bytes:
-        """Write a u32 in little-endian format"""
-        return struct.pack("<I", value)
 
-    @staticmethod
-    def serialize_order_type(order_type: str) -> bytes:
-        if order_type not in ORDER_MAP:
-            raise ValueError(f"Invalid order type: {order_type}")
-        return struct.pack("<I", ORDER_MAP[order_type])
+# ==================== MODULE-LEVEL HELPERS ====================
 
-    @staticmethod
-    def serialize_action(action_type: str) -> bytes:
-        if action_type not in ACTION_CODES:
-            raise ValueError(f"Invalid action type: {action_type}")
-        return struct.pack("<I", ACTION_CODES[action_type])
-    
-    @staticmethod
-    def serialize_admin_action(admin_action: str) -> bytes:
-        if admin_action not in ADMIN_ACTION_MAP:
-            raise ValueError(f"Invalid admin action: {admin_action}")
-        return struct.pack("<I", ADMIN_ACTION_MAP[admin_action])
-    
-    @staticmethod
-    def decode_and_validate_key(key: str) -> bytes:
-        """Decode a base58 public key"""
-        key_bytes = base58.b58decode(key)
-        
-        if len(key_bytes) != 32:
-            raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
-        return key_bytes
+def _generate_nonce() -> int:
+    """Generate nonce from current timestamp (microseconds)"""
+    return int(time.time_ns() / 1000)
+
+
+def _convert_orders_to_keychain(orders: List[Dict]) -> List[Dict]:
+    """Convert internal order format to bulk-keychain format"""
+    kc_orders = []
+
+    for order_wrapper in orders:
+        if "order" in order_wrapper:
+            order_data = order_wrapper["order"]
+            is_market = "trigger" in order_data.get("t", {})
+
+            if is_market:
+                kc_order = {
+                    "type": "order",
+                    "symbol": order_data['c'],
+                    "is_buy": order_data['b'],
+                    "price": 0.0,
+                    "size": order_data['sz'],
+                    "reduce_only": order_data.get('r', False),
+                    "order_type": {"type": "market", "is_market": True, "trigger_px": 0.0},
+                }
+            else:
+                tif = order_data.get("t", {}).get("limit", {}).get("tif", "GTC")
+                kc_order = {
+                    "type": "order",
+                    "symbol": order_data['c'],
+                    "is_buy": order_data['b'],
+                    "price": order_data['px'],
+                    "size": order_data['sz'],
+                    "reduce_only": order_data.get('r', False),
+                    "order_type": {"type": "limit", "tif": tif},
+                }
+            kc_orders.append(kc_order)
+
+        elif "cancel" in order_wrapper:
+            cancel_data = order_wrapper["cancel"]
+            kc_order = {
+                "type": "cancel",
+                "symbol": cancel_data['c'],
+                "order_id": cancel_data['oid'],
+            }
+            kc_orders.append(kc_order)
+
+        elif "cancelAll" in order_wrapper:
+            cancel_all_data = order_wrapper["cancelAll"]
+            kc_order = {
+                "type": "cancelAll",
+                "symbols": cancel_all_data.get('c', []),
+            }
+            kc_orders.append(kc_order)
+
+    return kc_orders
