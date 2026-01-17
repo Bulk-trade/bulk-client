@@ -104,8 +104,10 @@ class TransactionSigner:
         parts = [TransactionSigner.serialize_action(action_type)]
 
         # get / add nonce
-        nonce = action.get("nonce", time.time_ns())
-        action["nonce"] = nonce
+        nonce = action.get("nonce",None)
+        if not nonce:
+            nonce = int(time.time_ns() / 1000 % 1000000000)
+            action["nonce"] = nonce
 
         match action_type:
             case "order":
@@ -124,7 +126,6 @@ class TransactionSigner:
         parts.append(TransactionSigner.write_u64(nonce))
         parts.append(TransactionSigner.decode_and_validate_key(account))
         parts.append(TransactionSigner.decode_and_validate_key(signer))
-        
         return b''.join(parts)
         
     @staticmethod
@@ -137,51 +138,52 @@ class TransactionSigner:
             order_data = order[order_type]
 
             parts.append(TransactionSigner.serialize_order_type(order_type))
-            
-            if order_type == "order":
-                parts.extend([
-                    TransactionSigner.write_string(order_data['c']),
-                    TransactionSigner.write_bool(order_data['b']),
-                    TransactionSigner.write_f64(order_data['px']),
-                    TransactionSigner.write_f64(order_data['sz']),
-                    TransactionSigner.write_bool(order_data['r'])
-                ])
-                
-                t = order_data["t"]
-                if "limit" in t:
+
+            match order_type:
+                case "order":
                     parts.extend([
-                        TransactionSigner.write_u32(0),
-                        TransactionSigner.write_u32(TIME_IN_FORCE_MAP[t["limit"]["tif"]]),
+                        TransactionSigner.write_string(order_data['c']),
+                        TransactionSigner.write_bool(order_data['b']),
+                        TransactionSigner.write_f64(order_data['px']),
+                        TransactionSigner.write_f64(order_data['sz']),
+                        TransactionSigner.write_bool(order_data['r'])
                     ])
-                elif "trigger" in t:
+
+                    t = order_data["t"]
+                    if "limit" in t:
+                        parts.extend([
+                            TransactionSigner.write_u32(0),
+                            TransactionSigner.write_u32(TIME_IN_FORCE_MAP[t["limit"]["tif"]]),
+                        ])
+                    elif "trigger" in t:
+                        parts.extend([
+                            TransactionSigner.write_u32(1),
+                            TransactionSigner.write_bool(t["trigger"]["is_market"]),
+                            TransactionSigner.write_f64(t["trigger"]["triggerPx"]),
+                        ])
+
+                    if "cloid" in order_data:
+                        parts.extend([
+                            TransactionSigner.write_bool(True),
+                            TransactionSigner.decode_and_validate_key(order_data["cloid"]),
+                        ])
+                    else:
+                        parts.extend([
+                            TransactionSigner.write_bool(False),
+                        ])
+                case "cancel":
                     parts.extend([
-                        TransactionSigner.write_u32(1),  # ORDER_TYPE_CODES.trigger
-                        TransactionSigner.write_bool(t["trigger"]["is_market"]),
-                        TransactionSigner.write_f64(t["trigger"]["triggerPx"]),
+                        TransactionSigner.write_string(order_data["c"]),
+                        base58.b58decode(order_data["oid"])
                     ])
-                    
-                if "cloid" in order_data:
-                    parts.extend([
-                        TransactionSigner.write_bool(True),
-                        TransactionSigner.decode_and_validate_key(order_data["cloid"]),
-                    ])
-                else:
-                    parts.extend([
-                        TransactionSigner.write_bool(False),
-                    ])
-            elif order_type == "cancel":
-                parts.extend([
-                    TransactionSigner.write_string(order_data["c"]),
-                    base58.b58decode(order_data["oid"]) 
-                ])
-            elif order_type == "cancelAll":
-                parts.extend(
-                    [TransactionSigner.write_u64(len(order_data["c"]))]
-                    )
-                for s in order_data["c"]:
-                    parts.extend([
-                        TransactionSigner.write_string(s)
-                    ])
+                case "cancelAll":
+                    parts.extend(
+                        [TransactionSigner.write_u64(len(order_data["c"]))]
+                        )
+                    for s in order_data["c"]:
+                        parts.extend([
+                            TransactionSigner.write_string(s)
+                        ])
         return parts
 
     @staticmethod

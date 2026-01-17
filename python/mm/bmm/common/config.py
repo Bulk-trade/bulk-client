@@ -41,8 +41,8 @@ class MMConfig:
 
     # Logging
     log_level: str
-    # Dry run
-    dryrun: bool
+    # Indicate whether simulated or hitting bulk
+    simulated: bool
 
     def bulk_symbol(self) -> str:
         """symbol for bulk market"""
@@ -75,5 +75,5 @@ class MMConfig:
                 inventory_close_fraction=config.get("inventory_close_fraction", 0.25),
                 binance_timeout=config.get("binance_timeout", 60.0),
                 log_level=config.get("log_level", "INFO"),
-                dryrun=config.get("dryrun", False),
+                simulated=config.get("simulated", True),
             )

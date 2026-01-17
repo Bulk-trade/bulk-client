@@ -27,7 +27,7 @@ from bulk import BulkHttpClient
 def setup_whitelist(
     auth_key: str,
     target_key: str,
-    base_url: str = "https://exchange-api2.bulk.trade/api/v1"
+    base_url: str,
 ) -> dict:
     """
     Complete faucet setup workflow for a testnet account
@@ -69,8 +69,8 @@ def setup_whitelist(
 def fund(
     auth_key: str,
     target_key: str,
+    base_url: str,
     amount: float = 1_000_000.0,
-    base_url: str = "https://exchange-api2.bulk.trade/api/v1"
 ) -> dict:
     """
     Complete faucet setup workflow for a testnet account
@@ -237,6 +237,7 @@ def main():
         '--url',
         type=str,
         default='https://exchange-api2.bulk.trade/api/v1',
+        #default='http://bulkstar.tplinkdns.com:12000/api/v1',
         help='API base URL (default: testnet URL)'
     )
 
