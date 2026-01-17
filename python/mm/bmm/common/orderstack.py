@@ -185,12 +185,14 @@ class PriceLevel:
                     size=order_size + jitter,
                     reduce_only=False,
                     time_in_force=tif,
-                    nonce=nonce,
                 )
                 orders_to_place.append(order)
 
                 # placeholder for in-flight orders
-                order_id = order.hash(signer.public_key)
+                order_id = order.hash(signer.public_key, nonce=nonce)
+                order.oid = order_id
+                order.nonce = nonce
+
                 state = order.to_state(order_id, OrderStatus.NONE)
                 self.inflight_place(state)
 
@@ -200,6 +202,7 @@ class PriceLevel:
                 action = CancelOrder(
                     symbol=self.symbol,
                     oid=oid,
+                    nonce=nonce
                 )
                 orders_to_cancel.append(action)
 
@@ -474,7 +477,7 @@ class OrderStack:
         self,
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
-        maxdepth: float,
+        maxdepth: float = 2500.0,
         tolerance: float = 0.1
     ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
@@ -499,7 +502,7 @@ class OrderStack:
             orders, cancels = bid_side.plan(binance_prices, binance_sizes)
             print(f"Would place {len(orders)} and cancel {len(cancels)}")
         """
-        nonce = time.time_ns()
+        nonce = int(time.time_ns() / 1000)
         all_orders_to_place = []
         all_orders_to_cancel = []
 
@@ -509,6 +512,9 @@ class OrderStack:
         # Limit to max_price_levels
         n_levels = min(len(new_prices), self.max_price_levels)
         top = new_prices[0]
+
+        prices_current = [int(1000.0 * x.price) for x in self.levels.values() if x.effective_size > 0.0]
+        prices_next = [int(1000.0 * x) for x in new_prices[:n_levels+1]]
 
         # Sync each reference level
         for i in range(n_levels):
@@ -546,7 +552,7 @@ class OrderStack:
                 all_orders_to_cancel.extend(level.plan_cancel())
                 nremoved += 1
 
-        logger.info(f"added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
+        logger.info(f"{len(prices_current)} -> {len(prices_next)} added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
         return all_orders_to_place, all_orders_to_cancel
 
     # State management
@@ -678,9 +684,10 @@ class OrderStack:
             return [], [], True
 
         # Execute batch if there are actions
+        nonce = actions[0].nonce
         try:
             good = True
-            responses = await ws_client.place_orders(actions)
+            responses = await ws_client.place_orders(actions, nonce=nonce)
 
             # Process responses
             added = []

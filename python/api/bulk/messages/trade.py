@@ -25,6 +25,8 @@ SIDE_MAP = {
     Side.SELL: 1,
 }
 
+DECIMALS_MULTIPLIER = 100000000.0
+
 
 @dataclass
 class LimitOrder:
@@ -33,24 +35,26 @@ class LimitOrder:
     side: Side
     price: float
     size: float
-    nonce: int = time.time_ns()
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
+    nonce: Optional[int] = None
+    oid: Optional[str] = None
 
-    def hash(self, key: str) -> str:
+    def hash(self, pubkey: str, nonce: int) -> str:
         """
         Generate hash used as order ID
         """
         ser = b''.join([
-            LimitOrder.write_u64(self.nonce),
+            LimitOrder.write_u64(nonce),
             LimitOrder.write_string(self.symbol),
-            LimitOrder.write_key(key),
+            LimitOrder.write_key(pubkey),
             LimitOrder.write_u8(SIDE_MAP[self.side]),
-            LimitOrder.write_f64(self.size),
-            LimitOrder.write_f64(self.price),
+            LimitOrder.write_u64(round(self.size * DECIMALS_MULTIPLIER)),
+            LimitOrder.write_u64(round(self.price * DECIMALS_MULTIPLIER)),
             LimitOrder.write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             LimitOrder.write_bool(self.reduce_only),
         ])
+
         hash = hashlib.sha256(ser).digest()
         b58 = base58.b58encode(hash).decode('utf-8')
         return b58
@@ -71,20 +75,6 @@ class LimitOrder:
         }
         return order
 
-    def to_tx(self, signer: TransactionSigner) -> Dict:
-        """Create TX for this order"""
-        tx = {
-            "action": {
-                "type": "order",
-                "orders": [self.to_api()],
-                "nonce": self.nonce
-            },
-            "account": signer.public_key,
-            "signer": signer.public_key,
-        }
-        tx = signer.sign_transaction(tx)
-        return tx
-
     def to_state(self, oid: str, status: OrderStatus) -> OrderState:
         """Create state for this order"""
         return OrderState(
@@ -101,6 +91,20 @@ class LimitOrder:
             is_maker=True
         )
 
+    def __str__(self) -> str:
+        parts = [f"{self.side.name} {self.size:.17g} {self.symbol} @ {self.price:.17g}"]
+
+        if self.reduce_only:
+            parts.append("reduce_only")
+        if self.time_in_force != TimeInForce.GTC:
+            parts.append(f"tif={self.time_in_force.name}")
+        if self.oid:
+            parts.append(f"oid={self.oid}")
+        if self.nonce is not None:
+            parts.append(f"nonce={self.nonce}")
+
+        return f"LimitOrder({', '.join(parts)})"
+
     @staticmethod
     def write_u64(value: int) -> bytes:
         """Write a u64 in little-endian format"""
@@ -110,7 +114,7 @@ class LimitOrder:
     def write_string(value: str) -> bytes:
         """Write a string in little-endian format"""
         s_bytes = value.encode('utf-8')
-        return LimitOrder.write_u64(len(s_bytes)) + s_bytes
+        return LimitOrder.write_u32(len(s_bytes)) + s_bytes
 
     @staticmethod
     def write_bool(value: bool) -> bytes:
@@ -153,19 +157,20 @@ class MarketOrder:
     symbol: str
     side: Side
     size: float
-    nonce: int = time.time_ns()
     reduce_only: bool = False
+    nonce: Optional[int] = None
+    oid: Optional[str] = None
 
-    def hash(self, key: str) -> str:
+    def hash(self, pubkey: str, nonce: int) -> str:
         """
         Generate hash used as order ID
         """
         ser = b''.join([
-            LimitOrder.write_u64(self.nonce),
+            LimitOrder.write_u64(nonce),
             LimitOrder.write_string(self.symbol),
-            LimitOrder.write_key(key),
+            LimitOrder.write_key(pubkey),
             LimitOrder.write_u8(SIDE_MAP[self.side]),
-            LimitOrder.write_f64(self.size),
+            LimitOrder.write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             LimitOrder.write_bool(self.reduce_only),
         ])
         hash = hashlib.sha256(ser).digest()
@@ -192,20 +197,6 @@ class MarketOrder:
         }
         return order
 
-    def to_tx(self, signer: TransactionSigner) -> Dict:
-        """Create TX for this order"""
-        tx = {
-            "action": {
-                "type": "order",
-                "orders": [self.to_api()],
-                "nonce": self.nonce
-            },
-            "account": signer.public_key,
-            "signer": signer.public_key,
-        }
-        tx = signer.sign_transaction(tx)
-        return tx
-
     def to_state(self, oid: str, status: OrderStatus, price: float = 0.0) -> OrderState:
         """Create state for this order"""
         return OrderState(
@@ -222,6 +213,19 @@ class MarketOrder:
             is_maker=False
         )
 
+    def __str__(self) -> str:
+        parts = [f"{self.side.name} {self.size:.17g} {self.symbol}"]
+
+        if self.reduce_only:
+            parts.append("reduce_only")
+        if self.oid:
+            parts.append(f"oid={self.oid}")
+        if self.nonce is not None:
+            parts.append(f"nonce={self.nonce}")
+
+        return f"MarketOrder({', '.join(parts)})"
+
+
 # ----------------------------------------------------------
 # Order related
 # ----------------------------------------------------------
@@ -231,7 +235,7 @@ class CancelOrder:
     """Cancel order"""
     symbol: str
     oid: str
-    nonce: int = time.time_ns()
+    nonce: Optional[int] = None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -242,26 +246,12 @@ class CancelOrder:
             }
         }
 
-    def to_tx(self, signer: TransactionSigner) -> Dict:
-        """Create TX for this cancel order"""
-        tx = {
-            "action": {
-                "type": "order",
-                "orders": [self.to_api()],
-                "nonce": self.nonce
-            },
-            "account": signer.public_key,
-            "signer": signer.public_key,
-        }
-        tx = signer.sign_transaction(tx)
-        return tx
-
 
 @dataclass
 class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     symbols: List[str]
-    nonce: int = time.time_ns()
+    nonce: Optional[int] = None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -271,19 +261,6 @@ class CancelAll:
             }
         }
 
-    def to_tx(self, signer: TransactionSigner) -> Dict:
-        """Create TX for this cancel order"""
-        tx = {
-            "action": {
-                "type": "order",
-                "orders": [self.to_api()],
-                "nonce": self.nonce
-            },
-            "account": signer.public_key,
-            "signer": signer.public_key,
-        }
-        tx = signer.sign_transaction(tx)
-        return tx
 
 # ----------------------------------------------------------
 # Order Responses
@@ -364,7 +341,7 @@ class OrderResponse:
 # Tests
 #
 
-def test_limitorder_hash():
+def test_limitorder_hash1():
     order = LimitOrder(
         symbol="BTC-USD",
         side=Side.BUY,
@@ -375,8 +352,23 @@ def test_limitorder_hash():
         reduce_only=True,
     )
     pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
-    hash = order.hash(pubkey)
-    assert hash == "BxTeTZmVgYfgkfiQDo9WkeWKdiF7btQXThXpdjbq8qoj"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "9ih2tCrhdiNqX1erp3bfmhRNeu7dWvte9f9K3Toy9xUP"
+
+def test_limitorder_hash2():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.SELL,
+        price=94865.0,
+        size=0.9170000,
+        nonce=123456789,
+        time_in_force=TimeInForce.ALO,
+        reduce_only=True,
+    )
+    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "HHrRQSycSTkQ3Aaw16UGwBxYVEy585gvvZF11pTYT3K7"
+
 
 def test_marketorder_hash():
     order = MarketOrder(
@@ -387,10 +379,11 @@ def test_marketorder_hash():
         reduce_only=True,
     )
     pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
-    hash = order.hash(pubkey)
-    assert hash == "5RVGMQ41vwqjM2HooQqA1UEFhtg3mUxRfcAbAG2yafX2"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "HDoXpY5bNBrwnCp5B4MJSLLaagTkJUEhTH3cNZYGLXmj"
 
 
 if __name__ == "__main__":
-    test_limitorder_hash()
+    test_limitorder_hash1()
+    test_limitorder_hash2()
     test_marketorder_hash()

@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Optional, Dict
 from dataclasses import dataclass
 
+from bulk import SimulatedWebSocketClient
+from messages import LimitOrder
+
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -58,7 +61,7 @@ class BinanceMarketMaker:
         self.binance: Optional[BinanceFuturesWebSocketClient] = None
         self.bulk: Optional[BulkWebSocketClient] = None
         self.signer: Optional[TransactionSigner] = None
-        self.dryrun = config.dryrun
+        self.simulated = config.simulated
 
         # Order management
         self.bid_stack: Optional[OrderStack] = None
@@ -130,7 +133,8 @@ class BinanceMarketMaker:
                 side=Side.BUY,
                 chunk_size=self.config.chunk_size,
                 max_orders=self.config.max_new_orders,
-                max_price_levels=self.config.max_price_levels
+                max_price_levels=self.config.max_price_levels,
+                signer=self.signer,
             )
 
             self.ask_stack = OrderStack(
@@ -138,7 +142,8 @@ class BinanceMarketMaker:
                 side=Side.SELL,
                 chunk_size=self.config.chunk_size,
                 max_orders=self.config.max_new_orders,
-                max_price_levels=self.config.max_price_levels
+                max_price_levels=self.config.max_price_levels,
+                signer=self.signer,
             )
 
             self.logger.info("   ✓ Order stacks initialized")
@@ -146,17 +151,29 @@ class BinanceMarketMaker:
             self.logger.info(f"      Ask stack: {self.ask_stack}")
 
             # Initialize Bulk client
-            self.logger.info(f"\n3. Connecting to Bulk ({self.config.bulk_symbol()})...")
-            self.bulk = BulkWebSocketClient(
-                url=self.config.bulk_ws_url,
-                symbols=[self.config.bulk_symbol()],
-                signer=self.signer,
-                handlers={
-                    BulkTopic.ORDER: self._handle_order_state,
-                    BulkTopic.FILL: self._handle_fill,
-                    BulkTopic.POSITION: self._handle_position_update,
-                }
-            )
+            if not self.simulated:
+                self.logger.info(f"\n3. Connecting to Bulk for ({self.config.bulk_symbol()}), on: {self.config.bulk_ws_url}...")
+                self.bulk = BulkWebSocketClient(
+                    url=self.config.bulk_ws_url,
+                    symbols=[self.config.bulk_symbol()],
+                    signer=self.signer,
+                    handlers={
+                        BulkTopic.ORDER: self._handle_order_state,
+                        BulkTopic.FILL: self._handle_fill,
+                        BulkTopic.POSITION: self._handle_position_update,
+                    }
+                )
+            else:
+                self.logger.info(f"\n3. Connecting to Simulator for ({self.config.bulk_symbol()})...")
+                self.bulk = SimulatedWebSocketClient(
+                    symbols=[self.config.bulk_symbol()],
+                    signer=self.signer,
+                    handlers={
+                        BulkTopic.ORDER: self._handle_order_state,
+                        BulkTopic.FILL: self._handle_fill,
+                        BulkTopic.POSITION: self._handle_position_update,
+                    }
+                )
 
             connected = await self.bulk.connect()
             if not connected:
@@ -323,12 +340,14 @@ class BinanceMarketMaker:
             f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels")
 
         actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
-        if not self.dryrun:
-            if len(actions) > 0:
-                responses = await self.bulk.place_orders(actions)
-                for i, response in enumerate(responses):
-                    if response.is_error():
-                        self.logger.error(f"Error executing order: {actions[i]}: {response}")
+        if len(actions) > 0:
+            responses = await self.bulk.place_orders(actions, nonce=actions[0].nonce)
+            for i, response in enumerate(responses):
+                print(f"response: {response}, order: {actions[i]}")
+                if isinstance(actions[i], LimitOrder):
+                    assert response.order_id == actions[i].oid
+                if response.is_error():
+                    self.logger.error(f"Error executing order: {actions[i]}: {response}")
 
         # Update statistics
         self.sync_count += 1
@@ -390,10 +409,9 @@ class BinanceMarketMaker:
                     reduce_only=True
                 )
 
-                if not self.dryrun:
-                    self.logger.warning(f"Closing position: {side} {size_to_close:.4f} @ MARKET")
-                    response = await self.bulk.place_orders([market_order])
-                    self.logger.info(f"Position close response: {response}")
+                self.logger.warning(f"Closing position: {side} {size_to_close:.4f} @ MARKET")
+                response = await self.bulk.place_orders([market_order])
+                self.logger.info(f"Position close response: {response}")
 
             except Exception as e:
                 self.logger.error(f"Error closing position: {e}", exc_info=True)
