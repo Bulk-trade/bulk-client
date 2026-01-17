@@ -65,7 +65,7 @@ class BulkWebSocketClient:
         Args:
             url: WebSocket endpoint URL
             symbols: List of symbols to subscribe to
-            signer: TransactionSigner for signing orders
+            signer: TransactionSigner for signing orders (uses bulk-keychain)
             inventory: Inventory instance for position tracking
             logger: Logger instance
         """

@@ -8,7 +8,6 @@ import base58
 from bulk.common import OrderStatus, TimeInForce, Side
 from bulk.common.signer import TransactionSigner
 from bulk.messages import OrderState
-from numba.parfors.parfor_lowering import redtyp_to_redarraytype
 
 # ----------------------------------------------------------
 # Limit Order

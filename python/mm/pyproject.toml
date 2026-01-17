@@ -17,7 +17,8 @@ dependencies = [
     "base58>=2.1.0",
     "sortedcontainers>=2.4.0",
     "aiohttp>=3.11",
-    "json5>=0.13.0"
+    "json5>=0.13.0",
+    "bulk-keychain>=0.1.4"
 ]
 
 [tool.hatch.metadata]
