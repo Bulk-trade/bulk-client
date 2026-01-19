@@ -46,6 +46,7 @@ class OrderStatus(Enum):
     REJECTED_DUPLICATE = 12
     REJECTED_RISKLIMIT = 13
     REJECTED_INVALID = 14
+    CANCEL_REJECT = 15
 
     def __str__(self):
         """Convert to string for API"""
@@ -85,6 +86,10 @@ class OrderStatus(Enum):
                 return OrderStatus.CANCELLED
             case "cancelledRiskLimit":
                 return OrderStatus.CANCELLED_RISKLIMIT
+            case "cancelAllRejected":
+                return OrderStatus.CANCEL_REJECT
+            case "cancelOneRejected":
+                return OrderStatus.CANCEL_REJECT
             case "cancelledSelfCrossing":
                 return OrderStatus.CANCELLED_SELFCROSSING
             case "cancelledReduceOnly":

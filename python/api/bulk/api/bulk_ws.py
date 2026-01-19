@@ -319,7 +319,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
-            self.logger.info(f"Sending request: {sjson}")
+            self.logger.debug(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -921,7 +921,7 @@ class BulkWebSocketClient:
             await self._emit_event(Topic.ERROR, response_data)
         else:
             # Parse order responses
-            self.logger.info(f"Received response: {data}")
+            self.logger.debug(f"Received response: {data}")
             order_responses = OrderResponse.from_api(data)
 
             # Resolve the future if it exists

@@ -117,7 +117,6 @@ class LimitOrder:
                 't': {
                     'limit': {'tif': str(self.time_in_force)}
                 },
-                'oid': self.oid if self.oid else "unknown",
             }
         }
         return order
