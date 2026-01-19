@@ -540,7 +540,7 @@ class BinanceMarketMaker:
         self.logger.info(f"  Notional: ${self.current_position_notional:,.2f}")
 
         # Inventory P&L
-        binance_book = self.binance.get_book(self.config.binance_symbol)
+        binance_book = self.binance.get_book(self.config.binance_symbol())
         if binance_book:
             mid_price = binance_book.get_mid_price()
             if mid_price:
