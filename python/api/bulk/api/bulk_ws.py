@@ -154,7 +154,7 @@ class BulkWebSocketClient:
             # Resubscribe to previous subscriptions
             if self.subscriptions:
                 self.logger.info(f"Resubscribing to {len(self.subscriptions)} topics")
-                await self._subscribe(self.subscriptions.copy())
+                await self._subscribe(self.subscriptions.copy(), resubscription=True)
 
             # subscribe to account and tickers
             else:
@@ -555,7 +555,11 @@ class BulkWebSocketClient:
 
     # ==================== SUBSCRIPTION MANAGEMENT ====================
 
-    async def _subscribe(self, subscriptions: List[SubscriptionRequest]) -> List[str]:
+    async def _subscribe(
+        self,
+        subscriptions: List[SubscriptionRequest],
+        resubscription = False
+    ) -> List[str]:
         """
         Subscribe to one or more topics
 
@@ -577,7 +581,8 @@ class BulkWebSocketClient:
         await self.ws.send(json.dumps(request))
 
         # Store subscriptions for reconnection
-        self.subscriptions.extend(subscriptions)
+        if not resubscription:
+            self.subscriptions.extend(subscriptions)
 
         self.logger.info(f"Subscribed to {len(subscriptions)} topics")
         return list(self.active_topics)
