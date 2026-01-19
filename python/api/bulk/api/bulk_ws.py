@@ -287,7 +287,10 @@ class BulkWebSocketClient:
 
         # Bundle
         if not nonce:
-            nonce = int(time.time_ns() / 1000 % 1000000000)
+            if actions[0].nonce:
+                nonce = actions[0].nonce
+            else:
+                nonce = int(time.time_ns() / 1000 % 1000000000)
 
         tx = tx = {
             "action": {
@@ -316,12 +319,11 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
-            print(sjson)
+            self.logger.info(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
-            print(responses)
             return responses
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
@@ -918,6 +920,7 @@ class BulkWebSocketClient:
             await self._emit_event(Topic.ERROR, response_data)
         else:
             # Parse order responses
+            self.logger.info(f"Received response: {data}")
             order_responses = OrderResponse.from_api(data)
 
             # Resolve the future if it exists
