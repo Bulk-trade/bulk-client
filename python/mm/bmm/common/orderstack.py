@@ -119,13 +119,13 @@ class PriceLevel:
 
         prior_state = self.orders[order_id]
         if prior_state.status == OrderStatus.NONE:
-            self.pending_placed -= order_state.size
+            self.pending_placed = max(self.pending_placed + order_state.size, 0.0)
         if prior_state.status == OrderStatus.CANCEL_PENDING:
-            self.pending_cancel -= order_state.size
+            self.pending_cancel = max(self.pending_cancel + order_state.size, 0.0)
 
         if order_state.status.is_terminal():
             logger.debug(f"Order {order_id} is terminal, removing")
-            self.current_size -= order_state.size
+            self.current_size = order_state.size
             self.orders.pop(order_id, None)
         else:
             self.orders[order_id] = order_state
@@ -282,7 +282,7 @@ class PriceLevel:
         Returns:
             Size that needs to be added (0 if no addition needed)
         """
-        current_size = self.effective_size
+        current_size = max(self.current_size, 0.0) + max(self.pending_placed, 0.0)
         return max(0.0, target_size - current_size)
 
     def __repr__(self) -> str:

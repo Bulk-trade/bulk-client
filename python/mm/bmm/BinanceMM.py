@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Optional, Dict
 from dataclasses import dataclass
 
+import numpy as np
+
 from bulk import SimulatedWebSocketClient
 from messages import LimitOrder, CancelOrder
 
@@ -320,6 +322,10 @@ class BinanceMarketMaker:
             Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
         nonce = int(time.time_ns() / 1000)
+
+        bidmax = np.max(bid_sizes)
+        askmax = np.max(ask_sizes)
+        self.logger.info(f"Max level sizes bid/ask: {bidmax} / {askmax}")
 
         # Sync bid side
         bid_placed, bid_cancelled = self.bid_stack.plan(

@@ -172,6 +172,7 @@ class SimulatedWebSocketClient:
         self,
         actions: List[Union[LimitOrder, MarketOrder, CancelAll, CancelOrder]],
         timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
     ) -> List[OrderResponse]:
         """
         Place multiple orders and/or cancels with simulated latency
@@ -219,6 +220,7 @@ class SimulatedWebSocketClient:
         reduce_only: bool = False,
         time_in_force: TimeInForce = TimeInForce.GTC,
         timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
     ) -> OrderResponse:
         """Place a limit order"""
         order = LimitOrder(
@@ -240,6 +242,7 @@ class SimulatedWebSocketClient:
         size: float,
         reduce_only: bool = False,
         timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
     ) -> OrderResponse:
         """Place a market order"""
         order = MarketOrder(
@@ -257,6 +260,7 @@ class SimulatedWebSocketClient:
         symbol: str,
         order_id: str,
         timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
     ) -> OrderResponse:
         """Cancel an order"""
         cancel = CancelOrder(symbol=symbol, oid=order_id)
