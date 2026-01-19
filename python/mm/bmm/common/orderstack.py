@@ -185,15 +185,13 @@ class PriceLevel:
                     size=order_size + jitter,
                     reduce_only=False,
                     time_in_force=tif,
+                    pubkey=signer.public_key,
+                    nonce=nonce,
                 )
                 orders_to_place.append(order)
 
                 # placeholder for in-flight orders
-                order_id = order.hash(signer.public_key, nonce=nonce)
-                order.oid = order_id
-                order.nonce = nonce
-
-                state = order.to_state(order_id, OrderStatus.NONE)
+                state = order.to_state(OrderStatus.NONE)
                 self.inflight_place(state)
 
         elif size_diff < 0 and target_size > 0:
@@ -437,7 +435,8 @@ class OrderStack:
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
         maxdepth: float = 2500.0,
-        tolerance: float = 0.1
+        tolerance: float = 0.1,
+        nonce: Optional[int] = None,
     ) -> Tuple[List[str], List[str], bool]:
         """
         Sync with reference book and execute order changes via WebSocket
@@ -451,6 +450,7 @@ class OrderStack:
             new_sizes: Array of sizes at each price level
             maxdepth: Max depth in bps to consider
             tolerance: Tolerance for size difference (fraction of chunk_size)
+            nonce: Optional nonce
 
         Returns:
             new order IDs, cancelled order IDs
@@ -462,7 +462,7 @@ class OrderStack:
         """
         # Determine actions
         orders_to_place, orders_to_cancel = self.plan(
-            new_prices, new_sizes, maxdepth, tolerance
+            new_prices, new_sizes, maxdepth, tolerance, nonce=nonce
         )
 
         # Execute actions
@@ -478,7 +478,8 @@ class OrderStack:
         new_prices: np.ndarray,
         new_sizes: np.ndarray,
         maxdepth: float = 2500.0,
-        tolerance: float = 0.1
+        tolerance: float = 0.1,
+        nonce: Optional[int] = None,
     ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
         """
         Plan order changes needed to sync with new sizes (without execution)
@@ -492,6 +493,7 @@ class OrderStack:
             new_sizes: Array of sizes at each price level
             maxdepth: Max depth in bps to consider
             tolerance: Tolerance for size difference (fraction of chunk_size)
+            nonce: Optional nonce
 
         Returns:
             Tuple of:
@@ -502,7 +504,9 @@ class OrderStack:
             orders, cancels = bid_side.plan(binance_prices, binance_sizes)
             print(f"Would place {len(orders)} and cancel {len(cancels)}")
         """
-        nonce = int(time.time_ns() / 1000)
+        if not nonce:
+            nonce = int(time.time_ns() / 1000)
+
         all_orders_to_place = []
         all_orders_to_cancel = []
 
@@ -798,9 +802,10 @@ async def example_usage():
         size=1.3,
         reduce_only=False,
         time_in_force=TimeInForce.GTC,
-        nonce=time.time_ns(),
+        nonce=int(time.time_ns() / 1000),
+        pubkey=signer.public_key,
     )
-    state = order.to_state(signer.public_key, OrderStatus.NONE)
+    state = order.to_state(OrderStatus.NONE)
     print(state)
 
     # Create a synthetic Binance book

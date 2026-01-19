@@ -319,18 +319,22 @@ class BinanceMarketMaker:
         ask_prices, ask_sizes = binance_book.aggregate_dual(
             Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
+        nonce = int(time.time_ns() / 1000)
+
         # Sync bid side
         bid_placed, bid_cancelled = self.bid_stack.plan(
             bid_prices,
             bid_sizes,
-            self.config.max_depth
+            self.config.max_depth,
+            nonce=nonce
         )
 
         # Sync ask side
         ask_placed, ask_cancelled = self.ask_stack.plan(
             ask_prices,
             ask_sizes,
-            self.config.max_depth
+            self.config.max_depth,
+            nonce=nonce
         )
 
         # Execute
@@ -343,9 +347,6 @@ class BinanceMarketMaker:
         if len(actions) > 0:
             responses = await self.bulk.place_orders(actions, nonce=actions[0].nonce)
             for i, response in enumerate(responses):
-                print(f"response: {response}, order: {actions[i]}")
-                if isinstance(actions[i], LimitOrder):
-                    assert response.order_id == actions[i].oid
                 if response.is_error():
                     self.logger.error(f"Error executing order: {actions[i]}: {response}")
 
@@ -467,8 +468,8 @@ class BinanceMarketMaker:
         else:
             self.ask_stack.update_order_state(order_state)
 
-        self.logger.debug(
-            f"Order {order_state.order_id[:8]}... "
+        self.logger.info(
+            f"Order {order_state.order_id} "
             f"{order_state.status.name} "
             f"{order_state.side.name} "
             f"{order_state.size:.4f} @ ${order_state.price:,.2f}"

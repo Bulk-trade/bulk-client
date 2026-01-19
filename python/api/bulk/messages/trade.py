@@ -10,9 +10,9 @@ from bulk.common.signer import TransactionSigner
 from bulk.messages import OrderState
 from numba.parfors.parfor_lowering import redtyp_to_redarraytype
 
-# ----------------------------------------------------------
-# Limit Order
-# ----------------------------------------------------------
+# =======================================================
+# Serialization related
+# =======================================================
 
 TIME_IN_FORCE_MAP = {
     TimeInForce.GTC: 0,
@@ -25,7 +25,46 @@ SIDE_MAP = {
     Side.SELL: 1,
 }
 
+# 8 decimals
 DECIMALS_MULTIPLIER = 100000000.0
+
+def _write_u64(value: int) -> bytes:
+    """Write a u64 in little-endian format"""
+    return struct.pack("<Q", value)
+
+def _write_string(value: str) -> bytes:
+    """Write a string in little-endian format"""
+    s_bytes = value.encode('utf-8')
+    return _write_u32(len(s_bytes)) + s_bytes
+
+def _write_bool(value: bool) -> bytes:
+    """Write a boolean as single byte"""
+    return bytes([1 if value else 0])
+
+def _write_f64(value: float) -> bytes:
+    """Write a f64 (double) in little-endian format"""
+    return struct.pack("<d", value)
+
+def _write_u32(value: int) -> bytes:
+    """Write a u32 in little-endian format"""
+    return struct.pack("<I", value)
+
+def _write_u8(value: int) -> bytes:
+    """Write a u8 in little-endian format"""
+    return struct.pack("B", value)
+
+def _write_pubkey(key: str) -> bytes:
+    """Decode a base58 public key"""
+    key_bytes = base58.b58decode(key)
+
+    if len(key_bytes) != 32:
+        raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
+    return key_bytes
+
+
+# =======================================================
+# Limit Order
+# =======================================================
 
 
 @dataclass
@@ -37,27 +76,34 @@ class LimitOrder:
     size: float
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
+
     nonce: Optional[int] = None
     oid: Optional[str] = None
+    pubkey: Optional[str] = None
 
-    def hash(self, pubkey: str, nonce: int) -> str:
+    def order_id(self) -> str:
         """
         Generate hash used as order ID
         """
+        if self.oid:
+            return self.oid
+        if not self.nonce and not self.pubkey:
+            raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
+
         ser = b''.join([
-            LimitOrder.write_u64(nonce),
-            LimitOrder.write_string(self.symbol),
-            LimitOrder.write_key(pubkey),
-            LimitOrder.write_u8(SIDE_MAP[self.side]),
-            LimitOrder.write_u64(round(self.size * DECIMALS_MULTIPLIER)),
-            LimitOrder.write_u64(round(self.price * DECIMALS_MULTIPLIER)),
-            LimitOrder.write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
-            LimitOrder.write_bool(self.reduce_only),
+            _write_u64(self.nonce),
+            _write_string(self.symbol),
+            _write_pubkey(self.pubkey),
+            _write_u8(SIDE_MAP[self.side]),
+            _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
+            _write_u64(round(self.price * DECIMALS_MULTIPLIER)),
+            _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
+            _write_bool(self.reduce_only),
         ])
 
         hash = hashlib.sha256(ser).digest()
-        b58 = base58.b58encode(hash).decode('utf-8')
-        return b58
+        self.oid = base58.b58encode(hash).decode('utf-8')
+        return self.oid
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -70,17 +116,18 @@ class LimitOrder:
                 'r': self.reduce_only,
                 't': {
                     'limit': {'tif': str(self.time_in_force)}
-                }
+                },
+                'oid': self.oid if self.oid else "unknown",
             }
         }
         return order
 
-    def to_state(self, oid: str, status: OrderStatus) -> OrderState:
+    def to_state(self, status: OrderStatus) -> OrderState:
         """Create state for this order"""
         return OrderState(
             timestamp=time.time_ns(),
             symbol=self.symbol,
-            order_id=oid,
+            order_id=self.order_id(),
             side=self.side,
             price=self.price,
             status=status,
@@ -105,51 +152,11 @@ class LimitOrder:
 
         return f"LimitOrder({', '.join(parts)})"
 
-    @staticmethod
-    def write_u64(value: int) -> bytes:
-        """Write a u64 in little-endian format"""
-        return struct.pack("<Q", value)
-
-    @staticmethod
-    def write_string(value: str) -> bytes:
-        """Write a string in little-endian format"""
-        s_bytes = value.encode('utf-8')
-        return LimitOrder.write_u32(len(s_bytes)) + s_bytes
-
-    @staticmethod
-    def write_bool(value: bool) -> bytes:
-        """Write a boolean as single byte"""
-        return bytes([1 if value else 0])
-
-    @staticmethod
-    def write_f64(value: float) -> bytes:
-        """Write a f64 (double) in little-endian format"""
-        return struct.pack("<d", value)
-
-    @staticmethod
-    def write_u32(value: int) -> bytes:
-        """Write a u32 in little-endian format"""
-        return struct.pack("<I", value)
-
-    @staticmethod
-    def write_u8(value: int) -> bytes:
-        """Write a u8 in little-endian format"""
-        return struct.pack("B", value)
-
-    @staticmethod
-    def write_key(key: str) -> bytes:
-        """Decode a base58 public key"""
-        key_bytes = base58.b58decode(key)
-
-        if len(key_bytes) != 32:
-            raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
-        return key_bytes
 
 
-
-# ----------------------------------------------------------
+# =======================================================
 # Market Order
-# ----------------------------------------------------------
+# =======================================================
 
 @dataclass
 class MarketOrder:
@@ -158,24 +165,32 @@ class MarketOrder:
     side: Side
     size: float
     reduce_only: bool = False
+
     nonce: Optional[int] = None
+    pubkey: Optional[str] = None
     oid: Optional[str] = None
 
-    def hash(self, pubkey: str, nonce: int) -> str:
+    def order_id(self) -> str:
         """
         Generate hash used as order ID
         """
+        if self.oid:
+            return self.oid
+        if not self.nonce and not self.pubkey:
+            raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
+
         ser = b''.join([
-            LimitOrder.write_u64(nonce),
-            LimitOrder.write_string(self.symbol),
-            LimitOrder.write_key(pubkey),
-            LimitOrder.write_u8(SIDE_MAP[self.side]),
-            LimitOrder.write_u64(round(self.size * DECIMALS_MULTIPLIER)),
-            LimitOrder.write_bool(self.reduce_only),
+            _write_u64(self.nonce),
+            _write_string(self.symbol),
+            _write_pubkey(self.pubkey),
+            _write_u8(SIDE_MAP[self.side]),
+            _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
+            _write_bool(self.reduce_only),
         ])
+
         hash = hashlib.sha256(ser).digest()
-        b58 = base58.b58encode(hash).decode('utf-8')
-        return b58
+        self.oid = base58.b58encode(hash).decode('utf-8')
+        return self.oid
 
 
     def to_api(self) -> Dict:
@@ -197,12 +212,12 @@ class MarketOrder:
         }
         return order
 
-    def to_state(self, oid: str, status: OrderStatus, price: float = 0.0) -> OrderState:
+    def to_state(self, status: OrderStatus, price: float = 0.0) -> OrderState:
         """Create state for this order"""
         return OrderState(
             timestamp=time.time_ns(),
             symbol=self.symbol,
-            order_id=oid,
+            order_id=self.order_id(),
             side=self.side,
             price=0.0,
             status=status,
@@ -226,9 +241,9 @@ class MarketOrder:
         return f"MarketOrder({', '.join(parts)})"
 
 
-# ----------------------------------------------------------
+# =======================================================
 # Order related
-# ----------------------------------------------------------
+# =======================================================
 
 @dataclass
 class CancelOrder:
@@ -262,9 +277,9 @@ class CancelAll:
         }
 
 
-# ----------------------------------------------------------
+# =======================================================
 # Order Responses
-# ----------------------------------------------------------
+# =======================================================
 
 @dataclass
 class Fill:
@@ -337,9 +352,10 @@ class OrderResponse:
                     ))
         return responses
 
-#
+
+# =======================================================
 # Tests
-#
+# =======================================================
 
 def test_limitorder_hash1():
     order = LimitOrder(
@@ -369,6 +385,47 @@ def test_limitorder_hash2():
     hash = order.hash(pubkey, nonce=order.nonce)
     assert hash == "HHrRQSycSTkQ3Aaw16UGwBxYVEy585gvvZF11pTYT3K7"
 
+def test_limitorder_hash3():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.SELL,
+        price=95323.5,
+        size=5.649,
+        nonce=1768652193232748,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+    )
+    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "EkeYuCxbuLuYtrc6uEZUj2G9SibE1nD4Q9JALVhgckrj"
+
+def test_limitorder_hash4a():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.SELL,
+        price=95204.75,
+        size=0.6704,
+        nonce=1768654732092639,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+    )
+    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "4WNdBm6EeWRupGGxyujv1pyJyj39XtRfiD2veL2FvQN9"
+
+def test_limitorder_hash5():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.SELL,
+        price=95247.0,
+        size=0.886599995,
+        nonce=1768669537637142,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+    )
+    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
+    hash = order.hash(pubkey, nonce=order.nonce)
+    assert hash == "8b6tCZdtjGZqhM4naJ1WaHbDvDcPD6vH7Ug3CZTDgrhf"
 
 def test_marketorder_hash():
     order = MarketOrder(
@@ -386,4 +443,7 @@ def test_marketorder_hash():
 if __name__ == "__main__":
     test_limitorder_hash1()
     test_limitorder_hash2()
+    test_limitorder_hash3()
+    test_limitorder_hash4a()
+    test_limitorder_hash5()
     test_marketorder_hash()
