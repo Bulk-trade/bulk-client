@@ -12,12 +12,11 @@ from enum import Enum
 import aiohttp
 
 import websockets
-from polars.io import delta
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 from bulk.common import Side
 from bulk.messages.md import L2Snapshot, L2Delta, OrderBookLevel, BBO
-from data.orderbook_jit import FastOrderBook
+from bulk import FastOrderBook
 
 
 class ConnectionState(Enum):
@@ -252,6 +251,7 @@ class BinanceFuturesWebSocketClient:
         }
 
         try:
+            data = None
             async with aiohttp.ClientSession() as session:
                 async with session.get(endpoint, params=params, timeout=5) as response:
                     response.raise_for_status()
@@ -417,18 +417,17 @@ class BinanceFuturesWebSocketClient:
         # Process update
         self._process_depth_update(data)
 
-    def _process_depth_update(self, data: Dict) -> bool:
+    def _process_depth_update(self, msg: Dict) -> bool:
         """
         Process a single depth update
 
         Returns:
             True if update was applied, False if dropped
         """
-        symbol = data.get("s", "").upper()
-
+        symbol = msg.get("s", "").upper()
         try:
             # Convert to delta and apply
-            delta = self._convert_delta(symbol, data)
+            delta = self._convert_delta(symbol, msg)
             self.order_books[symbol].apply_delta(delta)
 
             # Emit event
@@ -439,23 +438,23 @@ class BinanceFuturesWebSocketClient:
             self.logger.error(f"Error processing depth update for {symbol}: {e}")
             return False
 
-    async def _handle_bbo_message(self, data: Dict):
+    async def _handle_bbo_message(self, msg: Dict):
         """Handle book ticker (BBO) message"""
         try:
-            symbol = data.get("s", "").upper()
+            symbol = msg.get("s", "").upper()
             if symbol not in self.symbols:
                 return
 
-            best_bid = float(data.get("b", 0))
-            best_ask = float(data.get("a", 0))
-            bid_size = float(data.get("B", 0))
-            ask_size = float(data.get("A", 0))
+            best_bid = float(msg.get("b", 0))
+            best_ask = float(msg.get("a", 0))
+            bid_size = float(msg.get("B", 0))
+            ask_size = float(msg.get("A", 0))
 
             best_bid = OrderBookLevel(price=best_bid, size=bid_size)
             best_ask = OrderBookLevel(price=best_ask, size=ask_size)
 
             bbo = BBO(
-                timestamp=data.get("E", time.time_ns()),
+                timestamp=msg.get("E", time.time_ns()),
                 symbol=symbol,
                 bid=best_bid,
                 ask=best_ask,
@@ -486,7 +485,7 @@ class BinanceFuturesWebSocketClient:
 
     # ==================== PARSING, ETC ====================
 
-    def _convert_snapshot(self, symbol: str, data: Dict) -> L2Snapshot:
+    def _convert_snapshot(self, symbol: str, msg: Dict) -> L2Snapshot:
         """Convert Binance snapshot format to L2Snapshot"""
         bids = [
             OrderBookLevel(
@@ -494,7 +493,7 @@ class BinanceFuturesWebSocketClient:
                 size=float(size),
                 num_orders=0
             )
-            for price, size in data.get("bids", [])
+            for price, size in msg.get("bids", [])
         ]
 
         asks = [
@@ -503,7 +502,7 @@ class BinanceFuturesWebSocketClient:
                 size=float(size),
                 num_orders=0
             )
-            for price, size in data.get("asks", [])
+            for price, size in msg.get("asks", [])
         ]
 
         return L2Snapshot(
@@ -513,7 +512,7 @@ class BinanceFuturesWebSocketClient:
             timestamp=int(time.time() * 1000)
         )
 
-    def _convert_delta(self, symbol: str, data: Dict) -> L2Delta:
+    def _convert_delta(self, symbol: str, msg: Dict) -> L2Delta:
         """Convert Binance depth update to L2Delta"""
         bid_changes = [
             OrderBookLevel(
@@ -521,7 +520,7 @@ class BinanceFuturesWebSocketClient:
                 size=float(size),
                 num_orders=0
             )
-            for price, size in data.get("b", [])
+            for price, size in msg.get("b", [])
         ]
 
         ask_changes = [
@@ -530,14 +529,14 @@ class BinanceFuturesWebSocketClient:
                 size=float(size),
                 num_orders=0
             )
-            for price, size in data.get("a", [])
+            for price, size in msg.get("a", [])
         ]
 
         return L2Delta(
             symbol=symbol,
             bid_changes=bid_changes,
             ask_changes=ask_changes,
-            timestamp=data.get("E", int(time.time() * 1000))
+            timestamp=msg.get("E", int(time.time() * 1000))
         )
 
 

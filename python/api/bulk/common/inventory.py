@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .comparisons import *
+from bulk.common.comparisons import *
 
 def is_dollar_equiv(instrument: str) -> bool:
     """

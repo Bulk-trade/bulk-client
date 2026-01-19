@@ -20,23 +20,22 @@ import sys
 import signal
 import time
 from pathlib import Path
-from typing import Optional, Dict
-from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
 from bulk import SimulatedWebSocketClient
-from messages import LimitOrder, CancelOrder
 
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from bulk.api import BulkWebSocketClient, Topic as BulkTopic
+from bulk import BulkWebSocketClient, SimulatedWebSocketClient
+from bulk import Topic as BulkTopic
 from bulk.common import Side
 from bulk.common.inventory import Inventory
 from bulk.common.signer import TransactionSigner
-from bulk.messages import MarketOrder
+from bulk.messages import MarketOrder, LimitOrder, CancelOrder
 from bulk.messages import OrderState, Fill, PositionUpdate
 from bulk.messages import L2Delta
 
