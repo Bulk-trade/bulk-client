@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+"""
+Create a private & pub key
+"""
+
+import sys
+import time
+import argparse
+from typing import Optional
+
+sys.path.insert(0, '../api')
+from bulk.common import TransactionSigner
+
+
+def main():
+    """Main entry point for the application"""
+    signer = TransactionSigner.generate_account()
+    print(f"private key: {signer.private_key}")
+    print(f"public key: {signer.public_key}")
+
+if __name__ == "__main__":
+    main()
