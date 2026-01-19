@@ -425,6 +425,7 @@ class BulkWebSocketClient:
 
     async def cancel_order(
         self,
+        side: Side,
         symbol: str,
         order_id: str,
         timeout: Optional[float] = None,
@@ -449,7 +450,7 @@ class BulkWebSocketClient:
         timeout = timeout if timeout is not None else self.default_timeout
 
         # Create CancelOrder using your class
-        cancel_order = CancelOrder(symbol=symbol, oid=order_id)
+        cancel_order = CancelOrder(symbol=symbol, order_id=order_id, side=side)
         # Build transaction using CancelOrder.to_tx
         results = await self.place_orders([cancel_order], timeout=timeout, nonce=nonce)
         return results[0]
@@ -869,7 +870,7 @@ class BulkWebSocketClient:
         if fill.order_id in self.open_orders:
             order = self.open_orders[fill.order_id]
             order.size -= fill.size
-            order.filled_size = order.filled_size + fill.size
+            order.size_done = order.size_done + fill.size
 
             if order.size <= 0:
                 del self.open_orders[fill.order_id]

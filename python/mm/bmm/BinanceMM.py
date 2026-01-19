@@ -24,7 +24,7 @@ from typing import Optional, Dict
 from dataclasses import dataclass
 
 from bulk import SimulatedWebSocketClient
-from messages import LimitOrder
+from messages import LimitOrder, CancelOrder
 
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
@@ -349,6 +349,14 @@ class BinanceMarketMaker:
             for i, response in enumerate(responses):
                 if response.is_error():
                     self.logger.error(f"Error executing order: {actions[i]}: {response}")
+                    # handle termination that was not notified
+                    if isinstance(actions[i], CancelOrder):
+                        order_id = actions[i].order_id
+                        side = actions[i].side
+                        self.logger.debug(f"handling cancel failure for: {order_id}")
+                        stack = self.bid_stack if side == Side.BUY else self.ask_stack
+                        stack.terminated(order_id)
+
 
         # Update statistics
         self.sync_count += 1
