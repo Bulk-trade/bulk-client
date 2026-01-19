@@ -350,8 +350,8 @@ class BinanceMarketMaker:
                 if response.is_error():
                     self.logger.error(f"Error executing order: {actions[i]}: {response}")
                     # handle termination that was not notified
-                    if isinstance(actions[i], CancelOrder):
-                        order_id = actions[i].order_id
+                    if response.order_id and isinstance(actions[i], CancelOrder):
+                        order_id = response.order_id
                         side = actions[i].side
                         self.logger.debug(f"handling cancel failure for: {order_id}")
                         stack = self.bid_stack if side == Side.BUY else self.ask_stack
@@ -476,7 +476,7 @@ class BinanceMarketMaker:
         else:
             self.ask_stack.update_order_state(order_state)
 
-        self.logger.info(
+        self.logger.debug(
             f"Order {order_state.order_id} "
             f"{order_state.status.name} "
             f"{order_state.side.name} "
