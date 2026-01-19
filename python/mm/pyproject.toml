@@ -12,6 +12,7 @@ dependencies = [
     "bulk",
     "pandas>=2.3.0",
     "numpy>=2.2.0",
+    "numba>=0.60.0",
     "websockets>=14.0",
     "pynacl>=1.2.0",
     "base58>=2.1.0",
@@ -19,6 +20,9 @@ dependencies = [
     "aiohttp>=3.11",
     "json5>=0.13.0"
 ]
+
+[project.scripts]
+mm = "mm.bmm.BinanceMM:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
