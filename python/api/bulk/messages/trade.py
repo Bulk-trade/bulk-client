@@ -249,7 +249,8 @@ class MarketOrder:
 class CancelOrder:
     """Cancel order"""
     symbol: str
-    oid: str
+    order_id: str
+    side: Optional[Side] = None
     nonce: Optional[int] = None
 
     def to_api(self) -> Dict:
@@ -257,7 +258,7 @@ class CancelOrder:
         return {
             "cancel": {
                 'c': self.symbol,
-                'oid': self.oid
+                'oid': self.order_id
             }
         }
 

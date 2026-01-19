@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
 
 from more_itertools.more import side_effect
+from seaborn._stats import order
 
 from bulk import BulkWebSocketClient
 from bulk.common import Side, OrderStatus, TimeInForce, TransactionSigner
@@ -82,6 +83,7 @@ class PriceLevel:
             order_state: Order state to add
         """
         order_id = order_state.order_id
+        logger.debug(f"Adding in-flight order {order_id}")
         self.pending_placed += order_state.size
         self.orders[order_id] = OrderState(**vars(order_state))
         self.orders[order_id].status = OrderStatus.NONE
@@ -115,13 +117,14 @@ class PriceLevel:
         if order_id not in self.orders:
             self.orders[order_id] = order_state
 
-        state = self.orders[order_id]
-        if state.status == OrderStatus.NONE:
+        prior_state = self.orders[order_id]
+        if prior_state.status == OrderStatus.NONE:
             self.pending_placed -= order_state.size
-        if state.status == OrderStatus.CANCEL_PENDING:
+        if prior_state.status == OrderStatus.CANCEL_PENDING:
             self.pending_cancel -= order_state.size
 
         if order_state.status.is_terminal():
+            logger.debug(f"Order {order_id} is terminal, removing")
             self.current_size -= order_state.size
             self.orders.pop(order_id, None)
         else:
@@ -199,7 +202,8 @@ class PriceLevel:
             for oid in self._get_orders_to_cancel(target_size):
                 action = CancelOrder(
                     symbol=self.symbol,
-                    oid=oid,
+                    order_id=oid,
+                    side=self.side,
                     nonce=nonce
                 )
                 orders_to_cancel.append(action)
@@ -220,14 +224,16 @@ class PriceLevel:
         """
         actions = []
         for oid, order in self.orders.items():
-            action = CancelOrder(
-                symbol=self.symbol,
-                oid=oid,
-            )
-            actions.append(action)
+            if order.status != OrderStatus.CANCEL_PENDING:
+                action = CancelOrder(
+                    symbol=self.symbol,
+                    order_id=oid,
+                    side=self.side,
+                )
+                actions.append(action)
 
-            # placeholder for in-flight cancel
-            self.inflight_cancel(order)
+                # placeholder for in-flight cancel
+                self.inflight_cancel(order)
         return actions
 
     def _get_orders_to_cancel(self, target_size: float) -> List[str]:
@@ -259,8 +265,9 @@ class PriceLevel:
         for order in active_orders:
             if reduced >= size_to_reduce:
                 break
-            to_cancel.append(order.order_id)
-            reduced += order.size
+            if order.status != OrderStatus.CANCEL_PENDING:
+                to_cancel.append(order.order_id)
+                reduced += order.size
 
         return to_cancel
 
@@ -548,6 +555,9 @@ class OrderStack:
             all_orders_to_place.extend(orders_to_place)
             all_orders_to_cancel.extend(orders_to_cancel)
 
+            for order in orders_to_place:
+                self.orders[order.order_id()] = order.to_state(OrderStatus.NONE)
+
         # Cancel orders at levels no longer in Binance book
         nremoved = 0
         for key in list(self.levels.keys()):
@@ -560,6 +570,29 @@ class OrderStack:
         return all_orders_to_place, all_orders_to_cancel
 
     # State management
+
+    def terminated(self, order_id: str):
+        """
+        Notify that a given order has been terminated, in case was missed in state update
+        """
+        order = self.orders.get(order_id, None)
+        if not order:
+            return
+
+        logger.debug(f"Order {order_id} has been terminated")
+        order.status = OrderStatus.CANCELLED
+        self.orders.pop(order_id, None)
+
+        key = int(round(order.price * self.decimal_scale))
+        level = self.levels.get(key, None)
+
+        if not level:
+            return
+
+        level.update_order(order)
+        if len(level.orders) == 0:
+            self.levels.pop(key, None)
+
 
     def update_order_state(self, order_state: OrderState):
         """
@@ -588,6 +621,9 @@ class OrderStack:
         # Update level
         level = self.levels[key]
         level.update_order(order_state)
+
+        if len(level.orders) == 0:
+            self.levels.pop(key, None)
 
     def get_discrepancy(
         self,
