@@ -478,7 +478,7 @@ class BinanceMarketMaker:
         else:
             self.ask_stack.update_order_state(order_state)
 
-        self.logger.debug(
+        self.logger.info(
             f"Order {order_state.order_id} "
             f"{order_state.status.name} "
             f"{order_state.side.name} "
