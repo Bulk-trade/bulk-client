@@ -527,6 +527,11 @@ class BulkWebSocketClient:
         self.state = ConnectionState.RECONNECTING
         self.reconnect_attempts += 1
 
+        try:
+            await self.ws.close()
+        except Exception:
+            pass
+
         delay = min(
             self.reconnect_delay * (2 ** min(self.reconnect_attempts - 1, 5)),
             self.max_reconnect_delay
