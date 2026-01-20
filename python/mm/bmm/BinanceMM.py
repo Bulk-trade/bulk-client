@@ -322,12 +322,8 @@ class BinanceMarketMaker:
 
         nonce = int(time.time_ns() / 1000)
 
-        bidmax = np.max(bid_sizes)
-        askmax = np.max(ask_sizes)
-        self.logger.info(f"Max level sizes bid/ask: {bidmax} / {askmax}")
-
         # Sync bid side
-        bid_placed, bid_cancelled = self.bid_stack.plan(
+        bid_placed, bid_cancelled, bidx_added, bidx_deleted = self.bid_stack.plan(
             bid_prices,
             bid_sizes,
             self.config.max_depth,
@@ -335,7 +331,7 @@ class BinanceMarketMaker:
         )
 
         # Sync ask side
-        ask_placed, ask_cancelled = self.ask_stack.plan(
+        ask_placed, ask_cancelled, askx_added, askx_deleted = self.ask_stack.plan(
             ask_prices,
             ask_sizes,
             self.config.max_depth,
@@ -420,7 +416,8 @@ class BinanceMarketMaker:
                     symbol=self.config.bulk_symbol(),
                     side=side,
                     size=size_to_close,
-                    reduce_only=True
+                    reduce_only=True,
+                    nonce=int(time.time_ns() / 1000),
                 )
 
                 self.logger.warning(f"Closing position: {side} {size_to_close:.4f} @ MARKET")

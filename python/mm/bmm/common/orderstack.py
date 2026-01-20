@@ -462,7 +462,7 @@ class OrderStack:
             )
         """
         # Determine actions
-        orders_to_place, orders_to_cancel = self.plan(
+        orders_to_place, orders_to_cancel, _, _ = self.plan(
             new_prices, new_sizes, maxdepth, tolerance, nonce=nonce
         )
 
@@ -481,7 +481,7 @@ class OrderStack:
         maxdepth: float = 2500.0,
         tolerance: float = 0.1,
         nonce: Optional[int] = None,
-    ) -> Tuple[List[LimitOrder], List[CancelOrder]]:
+    ) -> Tuple[List[LimitOrder], List[CancelOrder], List[int], List[int]]:
         """
         Plan order changes needed to sync with new sizes (without execution)
 
@@ -511,6 +511,9 @@ class OrderStack:
         all_orders_to_place = []
         all_orders_to_cancel = []
 
+        levels_added = []
+        levels_deleted = []
+
         # Track which prices we've seen from Binance
         seen_prices = set()
 
@@ -537,6 +540,7 @@ class OrderStack:
             if key not in self.levels:
                 if target_size == 0:
                     continue
+                levels_added.append(key * 1e-8)
                 self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals)
                 level = self.levels[key]
             else:
@@ -553,15 +557,14 @@ class OrderStack:
                 self.orders[order.order_id()] = order.to_state(OrderStatus.NONE)
 
         # Cancel orders at levels no longer in Binance book
-        nremoved = 0
         for key in list(self.levels.keys()):
             if key not in seen_prices:
                 level = self.levels[key]
+                levels_deleted.append(key * 1e-8)
                 all_orders_to_cancel.extend(level.plan_cancel())
-                nremoved += 1
 
-        logger.info(f"{len(prices_current)} -> {len(prices_next)} added {len(all_orders_to_place)}, removed {nremoved} {self.side.name} levels")
-        return all_orders_to_place, all_orders_to_cancel
+        logger.info(f"{len(prices_current)} -> {len(prices_next)} added {len(all_orders_to_place)}, removed {len(all_orders_to_cancel)} {self.side.name}")
+        return all_orders_to_place, all_orders_to_cancel, levels_added, levels_deleted
 
     # State management
 

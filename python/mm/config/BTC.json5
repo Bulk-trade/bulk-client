@@ -23,7 +23,7 @@
     monitor_interval: 1.0,
 
     // Maximum inventory before squaring
-    max_inventory_notional: 1000000.0,
+    max_inventory_notional: 10000000.0,
     // Amount of inventory to close when above threshold
     inventory_close_fraction: 0.50,
 

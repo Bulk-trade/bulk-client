@@ -292,7 +292,7 @@ class BulkWebSocketClient:
             if actions[0].nonce:
                 nonce = actions[0].nonce
             else:
-                nonce = int(time.time_ns() / 1000 % 1000000000)
+                nonce = int(time.time_ns() / 1000)
 
         tx = tx = {
             "action": {
