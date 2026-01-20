@@ -478,27 +478,34 @@ class BinanceMarketMaker:
         else:
             self.ask_stack.update_order_state(order_state)
 
-        self.logger.info(
-            f"Order {order_state.order_id} "
-            f"{order_state.status.name} "
-            f"{order_state.side.name} "
-            f"{order_state.size:.4f} @ ${order_state.price:,.2f}"
-        )
+        if "STATE" in self.config.to_log:
+            self.logger.info(
+                f"Order {order_state.order_id} "
+                f"{order_state.status.name} "
+                f"{order_state.side.name} "
+                f"{order_state.size:.4f} @ ${order_state.price:,.2f}"
+            )
+        else:
+            pass
 
     def _handle_fill(self, fill: Fill):
         """Handle fill (trade execution)"""
-        self.logger.info(
-            f"FILL: {fill.symbol} "
-            f"{fill.side.name} {fill.size:.4f} @ ${fill.price:,.2f} "
-            f"{'MAKER' if fill.is_maker else 'TAKER'}"
-        )
+        if "FILL" in self.config.to_log:
+            self.logger.info(
+                f"FILL: {fill.symbol} "
+                f"{fill.side.name} {fill.size:.4f} @ ${fill.price:,.2f} "
+                f"{'MAKER' if fill.is_maker else 'TAKER'}"
+            )
+        else:
+            pass
 
     def _handle_position_update(self, position: PositionUpdate):
         """Handle position update"""
         self.current_position_size = position.size
         self.current_position_notional = position.notional
 
-        if abs(position.size) > 0.001:  # Only log if we have a position
+        # Only log if we have a position
+        if abs(position.size) > 0.001 and "POSITION" in self.config.to_log:
             self.logger.info(
                 f"POSITION: {position.symbol} "
                 f"Size={position.size:+.4f} "
