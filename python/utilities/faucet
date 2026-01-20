@@ -24,51 +24,9 @@ sys.path.insert(0, '../api')
 from bulk import BulkHttpClient
 
 
-def setup_whitelist(
-    auth_key: str,
-    target_key: str,
-    base_url: str,
-) -> dict:
-    """
-    Complete faucet setup workflow for a testnet account
-
-    Args:
-        auth_key: Base58 encoded admin private key (for whitelist/faucet operations)
-        target_key: Target account's public key to whitelist and fund
-        base_url: API base URL (default testnet)
-    """
-
-    # Initialize admin client with auth key
-    print(f"Initializing HTTP client with admin key...")
-    admin_client = BulkHttpClient(base_url=base_url, private_key=auth_key)
-
-    admin_pubkey = admin_client.signer.public_key
-    print(f"Admin public key: {admin_pubkey}")
-
-    # Step 1: Whitelist the account
-    print("=" * 70)
-    print("Whitelisting account for faucet access")
-    print("=" * 70)
-
-    try:
-        whitelist_response = admin_client.whitelist_faucet(
-            target_account=target_key,
-            whitelist=True
-        )
-        print(f"✓ Whitelist response: {whitelist_response}")
-    except Exception as e:
-        print(f"✗ Whitelist failed: {e}")
-        return {
-            "target_key": target_key,
-            "admin_key": admin_pubkey,
-            "error": f"Whitelist failed: {e}",
-            "step": "whitelist"
-        }
-
 
 def fund(
-    auth_key: str,
-    target_key: str,
+    private_key: str,
     base_url: str,
     amount: float = 1_000_000.0,
 ) -> dict:
@@ -76,15 +34,13 @@ def fund(
     Complete faucet setup workflow for a testnet account
 
     Args:
-        auth_key: Base58 encoded admin private key (for whitelist/faucet operations)
-        target_key: Target account's public key to whitelist and fund
+        private_key: Target account's private key to whitelist and fund
         amount: Amount of USDC to request (default $1M)
         base_url: API base URL (default testnet)
 
     Returns:
         Dictionary containing:
-        - target_key: The target account's public key
-        - admin_key: The admin public key used
+        - target_key: The target account's private key
         - whitelist_response: Response from whitelist operation
         - faucet_response: Response from faucet request
         - account_state: Full account state after funding
@@ -94,11 +50,10 @@ def fund(
 
     # Initialize admin client with auth key
     print(f"Initializing HTTP client with admin key...")
-    admin_client = BulkHttpClient(base_url=base_url, private_key=auth_key)
+    admin_client = BulkHttpClient(base_url=base_url, private_key=private_key)
 
-    admin_pubkey = admin_client.signer.public_key
-    print(f"Admin public key: {admin_pubkey}")
-    print(f"Target public key: {target_key}")
+    pubkey = admin_client.signer.public_key
+    print(f"Target public key: {pubkey}")
     print()
 
     # Step 2: Request faucet funds
@@ -108,15 +63,14 @@ def fund(
 
     try:
         faucet_response = admin_client.request_faucet(
-            user=target_key,
+            user=pubkey,
             amount=amount
         )
         print(f"✓ Faucet response: {faucet_response}")
     except Exception as e:
         print(f"✗ Faucet request failed: {e}")
         return {
-            "target_key": target_key,
-            "admin_key": admin_pubkey,
+            "target_key": pubkey,
             "error": f"Faucet request failed: {e}",
             "step": "faucet"
         }
@@ -132,7 +86,7 @@ def fund(
     print("=" * 70)
 
     try:
-        account_state = admin_client.get_full_account(target_key)
+        account_state = admin_client.get_full_account(pubkey)
 
         # Extract margin information
         margin_summary = account_state.get('fullAccount', {}).get('marginSummary', {})
@@ -170,8 +124,7 @@ def fund(
             print(f"  {key}: {value}")
 
         return {
-            "target_key": target_key,
-            "admin_key": admin_pubkey,
+            "target_key": pubkey,
             "faucet_response": faucet_response,
             "account_state": account_state,
             "margin_verified": margin_verified,
@@ -183,8 +136,7 @@ def fund(
     except Exception as e:
         print(f"✗ Account query failed: {e}")
         return {
-            "target_key": target_key,
-            "admin_key": admin_pubkey,
+            "target_key": pubkey,
             "faucet_response": faucet_response,
             "error": f"Account query failed: {e}",
             "step": "verification"
@@ -213,17 +165,10 @@ def main():
     )
 
     parser.add_argument(
-        '--auth',
-        type=str,
-        default=None,
-        help='Admin private key (base58) for whitelist operations. Can also use BULK_AUTH_KEY env variable.'
-    )
-
-    parser.add_argument(
         '--key',
         type=str,
         required=True,
-        help='Target public key (base58) to whitelist and fund'
+        help='Target private key (base58) to fund'
     )
 
     parser.add_argument(
@@ -244,22 +189,6 @@ def main():
     args = parser.parse_args()
 
     # Get auth key from args or environment
-    auth_key = args.auth
-    if not auth_key:
-        import os
-        auth_key = os.environ.get('BULK_AUTH_KEY')
-
-        if not auth_key:
-            print("Error: No admin authentication key provided!")
-            print()
-            print("Usage:")
-            print("  python faucet_setup_app.py --auth <admin_key> --key <target_key> [--amount AMOUNT]")
-            print()
-            print("Or set environment variable:")
-            print("  export BULK_AUTH_KEY='your_admin_private_key'")
-            print("  python faucet_setup_app.py --key <target_key> [--amount AMOUNT]")
-            sys.exit(1)
-
     print()
     print("=" * 70)
     print("BULK LABS TESTNET FAUCET SETUP")
@@ -268,8 +197,7 @@ def main():
 
     # Run the setup
     result = fund(
-        auth_key=auth_key,
-        target_key=args.key,
+        private_key=args.key,
         amount=args.amount,
         base_url=args.url
     )
