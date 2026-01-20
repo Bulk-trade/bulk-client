@@ -329,7 +329,12 @@ def _aggregate_dual_granularity(
             current_tick = coarse_tick
 
         # Determine bucket
-        bucket = np.floor(price / current_tick) * current_tick
+        if reverse:
+            # Bids - round DOWN to make them lower
+            bucket = np.floor(price / current_tick) * current_tick
+        else:
+            # Asks - round UP to make them higher
+            bucket = np.ceil(price / current_tick) * current_tick
 
         if i == 0:
             current_bucket = bucket
@@ -380,7 +385,13 @@ def _aggregate_single_granularity(
         price = -prices[i] if reverse else prices[i]
         size = sizes[i]
 
-        bucket = np.floor(price / tick_size) * tick_size
+        # Determine bucket
+        if reverse:
+            # Bids - round DOWN
+            bucket = np.floor(price / tick_size) * tick_size
+        else:
+            # Asks - round UP
+            bucket = np.ceil(price / tick_size) * tick_size
 
         if i == 0:
             current_bucket = bucket

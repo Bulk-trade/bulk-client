@@ -113,13 +113,14 @@ class PriceLevel:
 
         prior_state = self.orders[order_id]
         if prior_state.status == OrderStatus.NONE:
-            self.pending_placed = max(self.pending_placed + order_state.size, 0.0)
-        if prior_state.status == OrderStatus.CANCEL_PENDING:
-            self.pending_cancel = max(self.pending_cancel + order_state.size, 0.0)
+            self.pending_placed = max(self.pending_placed - order_state.size, 0.0)
+            self.current_size = self.current_size + order_state.size
+        elif prior_state.status == OrderStatus.CANCEL_PENDING:
+            self.pending_cancel = max(self.pending_cancel - order_state.size, 0.0)
 
         if order_state.status.is_terminal():
             logger.debug(f"Order {order_id} is terminal, removing")
-            self.current_size = order_state.size
+            self.current_size = max(self.current_size - order_state.size, 0.0)
             self.orders.pop(order_id, None)
         else:
             self.orders[order_id] = order_state
@@ -174,7 +175,7 @@ class PriceLevel:
                 order_size = self.chunk_size
 
             for i in range(num_orders):
-                jitter = 10.0 * i / self.decimal_scale
+                jitter = 10.0 * i / self.decimal_scale / 10.0
                 order = LimitOrder(
                     symbol=self.symbol,
                     side=self.side,
@@ -563,7 +564,7 @@ class OrderStack:
                 levels_deleted.append(key * 1e-8)
                 all_orders_to_cancel.extend(level.plan_cancel())
 
-        logger.info(f"{len(prices_current)} -> {len(prices_next)} added {len(all_orders_to_place)}, removed {len(all_orders_to_cancel)} {self.side.name}")
+        logger.info(f"{len(prices_current)} -> {len(prices_next)} added {len(all_orders_to_place)}, removed {len(levels_deleted)} / {len(all_orders_to_cancel)} {self.side.name}")
         return all_orders_to_place, all_orders_to_cancel, levels_added, levels_deleted
 
     # State management

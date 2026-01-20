@@ -1,3 +1,5 @@
+from typing import List, Set
+
 import json5
 import os
 from dataclasses import dataclass
@@ -41,6 +43,9 @@ class MMConfig:
 
     # Logging
     log_level: str
+    # what to log: ["STATE", "FILL", "POSITION"]
+    to_log: Set[str]
+
     # Indicate whether simulated or hitting bulk
     simulated: bool
 
@@ -75,5 +80,6 @@ class MMConfig:
                 inventory_close_fraction=config.get("inventory_close_fraction", 0.25),
                 binance_timeout=config.get("binance_timeout", 60.0),
                 log_level=config.get("log_level", "INFO"),
+                to_log=set(config.get("to_log", ["FILL", "POSITION"])),
                 simulated=config.get("simulated", True),
             )

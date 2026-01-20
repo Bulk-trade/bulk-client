@@ -32,6 +32,9 @@
 
     // logging
     log_level: "INFO",
+    // what to log: ["STATE", "FILL", "POSITION"]
+    to_log: ["FILL", "POSITION"],
+
     // indicate whether simulated or hitting bulk
     simulated: false,
 }
