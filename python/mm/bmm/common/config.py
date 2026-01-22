@@ -37,6 +37,7 @@ class MMConfig:
     # Risk management
     max_inventory_notional: float
     inventory_close_fraction: float
+    inventory_close_depth: float
 
     # Binance monitoring (seconds without update before reconnect)
     binance_timeout: float
@@ -78,6 +79,7 @@ class MMConfig:
                 monitor_interval=config.get("monitor_interval", 1.0),
                 max_inventory_notional=config.get("max_inventory_notional", 250000.0),
                 inventory_close_fraction=config.get("inventory_close_fraction", 0.25),
+                inventory_close_depth=config.get("inventory_close_depth", 50.0),
                 binance_timeout=config.get("binance_timeout", 60.0),
                 log_level=config.get("log_level", "INFO"),
                 to_log=set(config.get("to_log", ["FILL", "POSITION"])),
