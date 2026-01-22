@@ -25,6 +25,7 @@ from typing import Optional
 import numpy as np
 
 from bulk import SimulatedWebSocketClient
+from common import TimeInForce
 
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
@@ -201,12 +202,20 @@ class BinanceMarketMaker:
 
             self.logger.info(f"\n6. Closing all inventory, pos: {position}...")
             if position != 0:
+                mid = book.get_mid_price()
+                if side == Side.BUY:
+                    maxpx = mid * (1 + self.config.inventory_close_depth * 1e-4)
+                else:
+                    maxpx = mid * (1 - self.config.inventory_close_depth * 1e-4)
+
                 try:
-                    result = await self.bulk.place_market_order(
+                    result = await self.bulk.place_limit_order(
                         symbol = self.config.bulk_symbol(),
                         side = side,
                         size = abs(position),
+                        price = maxpx,
                         reduce_only=True,
+                        time_in_force=TimeInForce.IOC,
                     )
                     self.logger.info(f"   ✓ Close position status: {result}")
                 except Exception as e:
