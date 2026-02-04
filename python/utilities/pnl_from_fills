@@ -76,16 +76,17 @@ def calculate_incremental_pnl(fills: List[Dict[str, Any]]) -> Dict[str, Any]:
 def print_results(results: List[Dict[str, Any]], show_all: bool = True):
     """Print incremental P&L results"""
     print("Incremental P&L Calculation:")
-    print("=" * 110)
+    print("=" * 125)
 
     if show_all:
-        print(f"{'Time':<30} {'Symbol':<10} {'Side':<5} {'Amount':<12} {'Price':<10} {'Realized':<12} {'Unrealized':<12} {'Total':<12}")
-        print("-" * 110)
+        print(f"{'Time':<27} {'Symbol':<10} {'Side':<5} {'Amount':<12} {'Price':<10} {'Realized':>12} {'Unrealized':>12} {'Total':>12} {'Position':>13}")
+        print("-" * 125)
 
         for result in results:
             timestamp_str = result['timestamp'].strftime('%Y-%m-%d %H:%M:%S.%f')
-            print(f"{timestamp_str:<30} {result['symbol']:<10} {result['side']:<5} {result['amount']:<12.8f} {result['price']:<10} "
-                  f"{result['realized_pnl']:<12.6f} {result['unrealized_pnl']:<12.6f} {result['total_pnl']:<12.6f}")
+            position_quantity = result['position']['quantity']
+            print(f"{timestamp_str:<27} {result['symbol']:<10} {result['side']:<5} {result['amount']:<12.8f} {result['price']:<10} "
+                  f"{result['realized_pnl']:>12.4f} {result['unrealized_pnl']:>12.4f} {result['total_pnl']:>12.2f} {position_quantity:>13.8f}")
     else:
         # Show only final results
         final_result = results[-1]
