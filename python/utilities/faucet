@@ -182,7 +182,6 @@ def main():
         '--url',
         type=str,
         default='https://exchange-api2.bulk.trade/api/v1',
-        #default='http://bulkstar.tplinkdns.com:12000/api/v1',
         help='API base URL (default: testnet URL)'
     )
 
