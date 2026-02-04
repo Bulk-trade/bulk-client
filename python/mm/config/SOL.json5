@@ -1,8 +1,8 @@
 {
     // coin to be MM (will be rendered to proper bulk and binance perp symbol)
     coin: "SOL",
-
     bulk_ws_url: "wss://exchange-wss.bulk.trade",
+
     // order size increment
     chunk_size: 50.0,
     // Maximum number of new orders per level

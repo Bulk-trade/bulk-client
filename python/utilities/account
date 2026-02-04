@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+"""
+Pull account details for a specific pubkey
+
+Usage:
+    account --account <target_pubkey>
+
+    Or with environment variables:
+    export BULK_AUTH_KEY="your_admin_private_key"
+"""
+
+import sys
+import os
+import time
+import argparse
+from typing import Optional
+
+sys.path.insert(0, '../api')
+from bulk import BulkHttpClient
+
+
+
+def account_info(
+    auth: str,
+    account: str,
+    url: str,
+) -> dict:
+    """
+    Load account info
+    """
+    admin_client = BulkHttpClient(base_url=url, private_key=auth)
+    return admin_client.get_full_account(user=account)
+
+
+def main():
+    """Main entry point for the application"""
+    auth = os.environ.get("BULK_AUTH_KEY")
+    if not auth:
+        raise ValueError("BULK_AUTH_KEY must be set")
+
+    # Setup argument parser
+    parser = argparse.ArgumentParser(
+        description='Pull account details for a specific pubkey',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        '--account',
+        type=str,
+        required=True,
+        help='account to query (base58)'
+    )
+
+    parser.add_argument(
+        '--url',
+        type=str,
+        default='https://exchange-api2.bulk.trade/api/v1',
+        help='API base URL (default: testnet URL)'
+    )
+
+    args = parser.parse_args()
+
+    result = account_info(auth=auth, account=args.account, url=args.url)
+    print(result)
+
+
+if __name__ == "__main__":
+    main()
