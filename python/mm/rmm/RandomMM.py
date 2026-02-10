@@ -28,8 +28,6 @@ from typing import Optional, List
 
 import numpy as np
 
-from messages import OraclePrices
-
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -38,7 +36,7 @@ from bulk import Topic as BulkTopic
 from bulk.common import Side, TimeInForce
 from bulk.common.signer import TransactionSigner
 from bulk.messages import LimitOrder, CancelAll
-from bulk.messages import OrderState, Fill, PositionUpdate
+from bulk.messages import OrderState, Fill, PositionUpdate, OraclePrices
 
 from mm.rmm.common import RMMConfig
 
