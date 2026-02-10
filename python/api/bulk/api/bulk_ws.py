@@ -979,7 +979,7 @@ class BulkWebSocketClient:
         # Check if this is a pending request
         future = self.pending_requests.pop(request_id, None)
         if True:
-            future.set_result(None)
+            future.set_result([None])
             return
 
         if status != "ok":
