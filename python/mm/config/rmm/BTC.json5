@@ -23,5 +23,5 @@
     // frequenct of update (secs)
     frequency: 0.010,
     // dry run?
-    dryrun: true,
+    dryrun: false,
 }
