@@ -22,10 +22,11 @@ dependencies = [
 ]
 
 [project.scripts]
-mm = "mm.bmm.BinanceMM:main"
+bmm = "mm.bmm.BinanceMM:main"
+rmm = "mm.rmm.RandomMM:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["bmm"]
+packages = ["mm"]
