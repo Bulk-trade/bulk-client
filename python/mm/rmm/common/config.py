@@ -30,6 +30,8 @@ class RMMConfig:
     depth: int
     # orders per level (for example 20)
     order_per_level: int
+    # bundle chunking
+    chunksize: int
 
     # frequency in seconds (for example 0.010)
     frequency: float
@@ -58,6 +60,7 @@ class RMMConfig:
                 size=float(config.get("size", 0.5)),
                 depth=int(config.get("depth", 500)),
                 order_per_level=int(config.get("order_per_level", 20)),
+                chunksize=int(config.get("chunksize", 500)),
                 frequency=float(config.get("frequency", 0.010)),
                 dryrun=bool(config.get("dryrun", True)),
             )

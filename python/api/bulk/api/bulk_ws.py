@@ -375,12 +375,14 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
-            self.logger.debug(f"Sending request: {sjson}")
-            self.logger.info(f"Sending request of size: {len(sjson)}")
+            #self.logger.debug(f"Sending request: {sjson}")
+
+            self.t_request_start = time.perf_counter()
             await self.ws.send(sjson)
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
+
             return responses
         except asyncio.TimeoutError:
             self.logger.error(f"Order request {request_id} timed out")
@@ -971,7 +973,9 @@ class BulkWebSocketClient:
 
     async def _handle_post_response(self, data: Dict):
         """Handle response to order placement/cancellation"""
-        #print(f"order response: {data}")
+        t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
+        self.logger.info(f"Backend ms={t_backend_ms}")
+
         request_id = data.get("id")
         response_data = data.get("data", {})
         payload = response_data.get("payload", {})
