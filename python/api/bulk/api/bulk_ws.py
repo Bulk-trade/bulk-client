@@ -605,6 +605,11 @@ class BulkWebSocketClient:
         try:
             async for message in self.ws:
                 try:
+                    if self.t_backend_start:
+                        t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
+                        self.logger.info(f"Backend ms={t_backend_ms}")
+                        self.t_backend_start = None
+
                     data = json.loads(message)
                     await self._handle_message(data)
                 except json.JSONDecodeError as e:
@@ -976,11 +981,6 @@ class BulkWebSocketClient:
 
     async def _handle_post_response(self, data: Dict):
         """Handle response to order placement/cancellation"""
-        if self.t_backend_start:
-            t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
-            self.logger.info(f"Backend ms={t_backend_ms}")
-            self.t_backend_start = None
-
         request_id = data.get("id")
         response_data = data.get("data", {})
         payload = response_data.get("payload", {})
