@@ -235,17 +235,22 @@ class RandomMarketMaker:
 
         # 3. Build order list
         if not prelude:
+            t_compose_start = time.perf_counter()
             orders = self._build_book(mid, nonce)
             cancel = CancelAll(symbols=[], nonce=nonce)
             actions: list = [cancel] + orders
-            tasks.append(self.bulk.place_orders(actions, nonce=nonce))
+            t_compose_ms = (time.perf_counter() - t_compose_start) * 1000.0
 
+            tasks.append(self.bulk.place_orders(actions, nonce=nonce))
             if self.tick_count % 100 == 0:
                 self.logger.info(f"book update tick: {self.tick_count}, {len(orders)} orders")
 
         # now evaluate pending tx
         try:
+            t_backend_start = time.perf_counter()
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            t_backend_ms = (time.perf_counter() - t_backend_start) * 1000.0
+
             if not prelude:
                 responses = results[-1]
                 n_err = sum(1 for r in responses if r.is_error())
@@ -254,8 +259,13 @@ class RandomMarketMaker:
                 if n_err > 0:
                     self.logger.warning(f"Cycle {self.tick_count}: {n_err}/{len(responses)} errors")
 
-                if self.tick_count % 1000 == 0:
-                    self.logger.info(f"Cycle {self.tick_count}: mid=${mid:,.2f}  "f"orders={len(orders)}  total={self.total_orders}")
+                if self.tick_count % 100 == 0:
+                    self.logger.info(
+                        f"Cycle {self.tick_count}: mid=${mid:,.2f}  "
+                        f"orders={len(orders)}  total={self.total_orders}  "
+                        f"compose={t_compose_ms:.1f}ms  backend={t_backend_ms:.1f}ms  "
+                        f"ratio={t_compose_ms / max(t_backend_ms, 0.01):.2f}"
+                    )
         except Exception as e:
             self.logger.error(f"Tick execution error: {e}")
 
@@ -280,41 +290,44 @@ class RandomMarketMaker:
         growth = 0.01
 
         orders: List[LimitOrder] = []
+        jitter_bid = np.random.uniform(0.5, 1.5, size=cfg.depth)
+        jitter_ask = np.random.uniform(0.5, 1.5, size=cfg.depth)
+
+        level_idx = np.arange(n)
+        offsets = half_spread + level_idx * cfg.spread
+        bid_prices = np.round(mid - offsets, 2)
+        ask_prices = np.round(mid + offsets, 2)
 
         for level_idx in range(cfg.depth):
-            # Price offset from mid
-            offset = half_spread + level_idx * cfg.spread
-
-            bid_price = round(mid - offset, 2)
-            ask_price = round(mid + offset, 2)
-
-            if bid_price <= 0:
-                continue
+            bid = bid_prices[level_idx]
+            ask = ask_prices[level_idx]
 
             # Size increases with depth
-            level_size = base_size * (1.0 + level_idx * growth)
-            order_size = round(level_size / cfg.order_per_level, 6)
+            size = base_size * (1.0 + level_idx * growth)
+            bidsize = size * jitter_bid[level_idx]
+            asksize = size * jitter_ask[level_idx]
 
-            if order_size <= 0:
-                continue
+            order_size_bid = round(bidsize / cfg.order_per_level, 6)
+            order_size_ask = round(asksize / cfg.order_per_level, 6)
 
             for i in range(cfg.order_per_level):
-                size = order_size + i * 1e-5
+                bidsize = order_size_bid + (i+1) * 1e-5
                 orders.append(LimitOrder(
                     symbol=cfg.bulk_symbol(),
                     side=Side.BUY,
-                    price=bid_price,
-                    size=size,
+                    price=bid,
+                    size=bidsize,
                     reduce_only=False,
                     time_in_force=TimeInForce.GTC,
                     pubkey=self.signer.public_key,
                     nonce=nonce,
                 ))
+                asksize = order_size_ask + (i+1) * 1e-5
                 orders.append(LimitOrder(
                     symbol=cfg.bulk_symbol(),
                     side=Side.SELL,
-                    price=ask_price,
-                    size=size,
+                    price=ask,
+                    size=asksize,
                     reduce_only=False,
                     time_in_force=TimeInForce.GTC,
                     pubkey=self.signer.public_key,
