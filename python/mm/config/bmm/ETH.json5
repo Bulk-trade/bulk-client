@@ -1,8 +1,9 @@
 {
     // coin to be MM (will be rendered to proper bulk and binance perp symbol)
     coin: "ETH",
-
+    // API (for bulkstar: "ws://localhost:12001")
     bulk_ws_url: "wss://exchange-wss.bulk.trade",
+
     // order size increment
     chunk_size: 10.0,
     // Maximum number of new orders per level

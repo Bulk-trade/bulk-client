@@ -1,6 +1,7 @@
 {
     // coin to be MM (will be rendered to proper bulk and binance perp symbol)
     coin: "SOL",
+    // API (for bulkstar: "ws://localhost:12001")
     bulk_ws_url: "wss://exchange-wss.bulk.trade",
 
     // order size increment
