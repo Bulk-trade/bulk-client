@@ -231,8 +231,6 @@ class RandomMarketMaker:
         if prelude or self.tick_count % 50 == 0:
             oracle = OraclePrices(timestamp=timestamp, prices={self.config.coin: mid}, nonce=nonce)
             tasks.append(self.bulk.update_oracle(oracle, nonce=nonce))
-
-        if prelude:
             self.logger.info(f"oracle tick: {self.tick_count}")
 
         # 3. Build order list
@@ -241,6 +239,9 @@ class RandomMarketMaker:
             cancel = CancelAll(symbols=[], nonce=nonce)
             actions: list = [cancel] + orders
             tasks.append(self.bulk.place_orders(actions, nonce=nonce))
+
+            if self.tick_count % 100 == 0:
+                self.logger.info(f"book update (tick: {self.tick_count}: {len(orders)} orders")
 
         # now evaluate pending tx
         try:
