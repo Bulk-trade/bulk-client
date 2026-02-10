@@ -18,7 +18,7 @@
     max_depth: 1000.0,
 
     // Update frequency (seconds between syncs)
-    sync_interval: 0.5,
+    sync_interval: 0.250,
     // Seconds between monitoring checks
     monitor_interval: 1.0,
 
