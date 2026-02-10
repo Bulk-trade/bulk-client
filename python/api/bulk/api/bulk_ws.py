@@ -376,6 +376,7 @@ class BulkWebSocketClient:
         try:
             sjson = json.dumps(request)
             self.logger.debug(f"Sending request: {sjson}")
+            self.logger.info(f"Sending request of size: {len(sjson)}")
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -978,9 +979,6 @@ class BulkWebSocketClient:
 
         # Check if this is a pending request
         future = self.pending_requests.pop(request_id, None)
-        if True:
-            future.set_result([None])
-            return
 
         if status != "ok":
             self.logger.error(f"Order request failed: {response_data}")
