@@ -672,24 +672,25 @@ class BulkWebSocketClient:
     async def _handle_message(self, data: Dict):
         """Route incoming messages to appropriate handlers"""
         msg_type = data.get("type")
-        if msg_type == "subscriptionResponse":
-            self._handle_subscription_response(data)
-        elif msg_type == "ticker":
-            await self._handle_ticker(data)
-        elif msg_type == "trades":
-            await self._handle_trades(data)
-        elif msg_type == "l2Snapshot":
-            await self._handle_l2_snapshot(data)
-        elif msg_type == "l2Delta":
-            await self._handle_l2_delta(data)
-        elif msg_type == "candle":
-            await self._handle_candle(data)
-        elif msg_type == "account":
-            await self._handle_account_update(data)
-        elif msg_type == "post":
-            await self._handle_post_response(data)
-        else:
-            self.logger.debug(f"Unhandled message type: {msg_type}")
+        match msg_type:
+            case "subscriptionResponse":
+                self._handle_subscription_response(data)
+            case "ticker":
+                await self._handle_ticker(data)
+            case "trades":
+                await self._handle_trades(data)
+            case "l2Snapshot":
+                await self._handle_l2_snapshot(data)
+            case "l2Delta":
+                await self._handle_l2_delta(data)
+            case "candle":
+                await self._handle_candle(data)
+            case "account":
+                await self._handle_account_update(data)
+            case "post":
+                await self._handle_post_response(data)
+            case _:
+                self.logger.debug(f"Unhandled message type: {msg_type}")
 
     def _handle_subscription_response(self, data: Dict):
         """Handle subscription confirmation"""
