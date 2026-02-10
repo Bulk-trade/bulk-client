@@ -1,0 +1,27 @@
+{
+    // coin to be MM (will be rendered to proper bulk symbol)
+    coin: "BTC",
+    // API url
+    bulk_ws_url: "wss://exchange-wss.bulk.trade",
+
+    // base price
+    price: 100000.0,
+    // mean reversion constant (for example 0.0001)
+    kappa: 0.0001,
+    // standard deviation (for example 0.01)
+    sigma: 0.01,
+
+    // spread to offer at
+    spread: 0.10,
+    // base size of inner level
+    size: 0.5,
+    // depth of book on each side (for example 500)
+    depth: 500,
+    // orders per level (for example 20)
+    orders_per_level: 20,
+
+    // frequenct of update (secs)
+    frequency: 0.010,
+    // dry run?
+    dryrun: true,
+}

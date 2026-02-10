@@ -286,7 +286,7 @@ class SimulatedWebSocketClient:
         """Handle order placement without latency (called from place_orders)"""
 
         # Generate order ID
-        order_id = order.hash(self.signer.public_key)
+        order_id = order.order_id()
 
         # Create initial order state
         state = OrderState(
