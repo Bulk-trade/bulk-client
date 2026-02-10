@@ -1,4 +1,5 @@
 import hashlib
+import json
 import struct
 import time
 from dataclasses import dataclass
@@ -59,6 +60,34 @@ def _write_pubkey(key: str) -> bytes:
     if len(key_bytes) != 32:
         raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
     return key_bytes
+
+
+# =======================================================
+# Oracle Prices
+# =======================================================
+
+@dataclass
+class OraclePrices:
+    """oracle price container"""
+    timestamp: int
+    prices: Dict[str, float]
+    nonce: Optional[int] = None
+    pubkey: Optional[str] = None
+
+    def to_api(self) -> List[Dict]:
+        """Convert to API format with compact field names"""
+        return [
+            {
+                't': self.timestamp,
+                'c': symbol,
+                'px': float(px)
+            }
+            for symbol, px in self.prices.items()
+        ]
+
+    def __str__(self) -> str:
+        return json.dumps(self.to_api())
+
 
 
 # =======================================================

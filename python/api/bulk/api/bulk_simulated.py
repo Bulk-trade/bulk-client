@@ -19,7 +19,7 @@ from bulk.messages import SubscriptionRequest
 from bulk.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle, OrderBookLevel
-from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder
+from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrices
 from bulk.data import OrderBook, FastOrderBook
 from bulk.common import Topic
 
@@ -165,6 +165,38 @@ class SimulatedWebSocketClient:
     async def subscribe_candles(self, symbol: str, interval: str):
         """No-op in simulation"""
         pass
+
+    # ==================== ORACLE ====================
+
+    async def update_oracle(
+        self,
+        action: OraclePrices,
+        nonce: Optional[int] = None,
+    ):
+        if nonce:
+            action.nonce = nonce
+
+        tx = {
+            "action": {
+                "type": "oracle",
+                "oracles": action.to_api(),
+                "nonce": nonce,
+            },
+            "account": self.signer.public_key,
+            "signer": self.signer.public_key,
+        }
+        tx = self.signer.sign_transaction(tx)
+
+        # Build WebSocket request
+        request = {
+            "method": "post",
+            "request": {
+                "type": "action",
+                "payload": tx
+            },
+            "id": 1
+        }
+        self.logger.info(f"sending oracle request: {request}")
 
     # ==================== ORDERS ====================
 

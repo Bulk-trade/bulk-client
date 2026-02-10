@@ -21,7 +21,7 @@ from bulk.messages import SubscriptionRequest
 from bulk.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder
+from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrices
 from bulk.data import OrderBook
 from bulk.common import Topic
 
@@ -261,6 +261,60 @@ class BulkWebSocketClient:
         """Subscribe to candle updates"""
         sub = SubscriptionRequest("candle", {"symbol": symbol, "interval": interval})
         await self._subscribe([sub])
+
+
+    # ==================== ORACLE ====================
+
+    async def update_oracle(
+        self,
+        action: OraclePrices,
+        timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
+    ):
+        """
+        Update oracle prices
+        """
+        if not self.signer:
+            raise RuntimeError("Signer not configured")
+        if not self.is_connected:
+            raise RuntimeError("Not connected to WebSocket")
+
+        if nonce:
+            action.nonce = nonce
+
+        tx = {
+            "action": {
+                "type": "oracle",
+                "oracles": action.to_api(),
+                "nonce": nonce,
+            },
+            "account": self.signer.public_key,
+            "signer": self.signer.public_key,
+        }
+        tx = self.signer.sign_transaction(tx)
+
+        # Build WebSocket request
+        request = {
+            "method": "post",
+            "request": {
+                "type": "action",
+                "payload": tx
+            },
+            "id": self.request_id
+        }
+
+        # Create future for this request
+        try:
+            sjson = json.dumps(request)
+            self.logger.debug(f"Sending request: {sjson}")
+            await self.ws.send(sjson)
+        except asyncio.TimeoutError:
+            self.logger.error(f"Oracle post request timed out")
+            raise
+        except Exception as e:
+            self.logger.error(f"Oracle placement error: {e}")
+            raise
+
 
     # ==================== ORDERS ====================
 
