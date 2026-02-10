@@ -241,7 +241,7 @@ class RandomMarketMaker:
             tasks.append(self.bulk.place_orders(actions, nonce=nonce))
 
             if self.tick_count % 100 == 0:
-                self.logger.info(f"book update (tick: {self.tick_count}: {len(orders)} orders")
+                self.logger.info(f"book update tick: {self.tick_count}, {len(orders)} orders")
 
         # now evaluate pending tx
         try:
@@ -335,7 +335,7 @@ class RandomMarketMaker:
 
     def _handle_position_update(self, position: PositionUpdate):
         if abs(position.size) > 1e-6:
-            self.logger.info(
+            self.logger.debug(
                 f"POS: {position.size:+.6f}  "
                 f"notional=${position.notional:,.2f}  "
                 f"uPnL=${position.unrealized_pnl:+,.2f}"
