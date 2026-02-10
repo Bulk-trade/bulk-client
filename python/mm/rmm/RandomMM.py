@@ -239,7 +239,12 @@ class RandomMarketMaker:
             cancel = CancelAll(symbols=[], nonce=nonce)
             actions: list = [cancel] + orders
 
-            tasks.append(self.bulk.place_orders(actions, nonce=nonce))
+            n = len(orders)
+            for si in range(0,n,self.config.chunksize):
+                ei = min(si+self.config.chunksize, n)
+                tasks.append(self.bulk.place_orders(actions[si:ei], nonce=nonce))
+                nonce += 1
+
             if self.tick_count % 100 == 0:
                 self.logger.info(f"book update tick: {self.tick_count}, {len(orders)} orders")
 
