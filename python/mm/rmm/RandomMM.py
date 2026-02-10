@@ -293,7 +293,7 @@ class RandomMarketMaker:
         jitter_bid = np.random.uniform(0.5, 1.5, size=cfg.depth)
         jitter_ask = np.random.uniform(0.5, 1.5, size=cfg.depth)
 
-        level_idx = np.arange(n)
+        level_idx = np.arange(cfg.depth)
         offsets = half_spread + level_idx * cfg.spread
         bid_prices = np.round(mid - offsets, 2)
         ask_prices = np.round(mid + offsets, 2)
@@ -307,8 +307,8 @@ class RandomMarketMaker:
             bidsize = size * jitter_bid[level_idx]
             asksize = size * jitter_ask[level_idx]
 
-            order_size_bid = round(bidsize / cfg.order_per_level, 6)
-            order_size_ask = round(asksize / cfg.order_per_level, 6)
+            order_size_bid = np.round(bidsize / cfg.order_per_level, 6)
+            order_size_ask = np.round(asksize / cfg.order_per_level, 6)
 
             for i in range(cfg.order_per_level):
                 bidsize = order_size_bid + (i+1) * 1e-5
