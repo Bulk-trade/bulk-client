@@ -28,6 +28,8 @@ from typing import Optional, List
 
 import numpy as np
 
+from messages import OraclePrices
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -100,6 +102,7 @@ class RandomMarketMaker:
         self.running = False
         self.cycle_count = 0
         self.total_orders = 0
+        self.tick_count = 0
 
     # ==================== LIFECYCLE ====================
 
@@ -174,6 +177,7 @@ class RandomMarketMaker:
     async def run(self):
         """Main loop: evolve price, rebuild book each tick."""
         self.running = True
+        self.tick_count = 0
         self.logger.info("Starting random MM loop …")
 
         try:
@@ -210,37 +214,49 @@ class RandomMarketMaker:
     # ==================== CORE TICK ====================
 
     async def _tick(self):
-        """Single cycle: evolve mid, cancel all, place full book."""
+        """
+        Single cycle:
+        - evolve mid
+        - oracle price updaye
+        - cancel all
+        - place full book.
+        """
+        timestamp = int(time.time_ns())
+        nonce = int(timestamp / 1000)
+        self.tick_count += 1
+
         # 1. Evolve mid price
         mid = self.ou.step(self.config.frequency)
 
-        # 2. Build order list
-        nonce = int(time.time_ns() / 1000)
-        orders = self._build_book(mid, nonce)
+        # 2. periodically send oracle updates
+        tasks = []
+        if self.tick_count <= 2000 or self.tick_count % 50 == 0:
+            oracle = OraclePrices(timestamp=timestamp, prices={self.config.coin: mid}, nonce=nonce)
+            tasks.append(self.bulk.update_oracle(oracle, nonce=nonce))
 
-        # 3. Send cancel-all + new orders as one batch
-        cancel = CancelAll(symbols=[], nonce=nonce)
-        actions: list = [cancel] + orders
+        # 3. Build order list
+        if self.tick_count > 2000:
+            orders = self._build_book(mid, nonce)
+            cancel = CancelAll(symbols=[], nonce=nonce)
+            actions: list = [cancel] + orders
+            tasks.append(self.bulk.place_orders(actions, nonce=nonce))
 
+        # now evaluate pending tx
         try:
-            responses = await self.bulk.place_orders(actions, nonce=nonce)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            if len(tasks) == 2:
+                responses = results[-1]
+                n_err = sum(1 for r in responses if r.is_error())
+                self.total_orders += len(orders)
 
-            n_err = sum(1 for r in responses if r.is_error())
-            if n_err > 0:
-                self.logger.warning(
-                    f"Cycle {self.cycle_count}: {n_err}/{len(responses)} errors"
-                )
+                if n_err > 0:
+                    self.logger.warning(f"Cycle {self.cycle_count}: {n_err}/{len(responses)} errors")
+
+                if self.tick_count % 1000 == 0:
+                    self.logger.info(f"Cycle {self.cycle_count}: mid=${mid:,.2f}  "f"orders={len(orders)}  total={self.total_orders}")
         except Exception as e:
             self.logger.error(f"Tick execution error: {e}")
 
-        self.cycle_count += 1
-        self.total_orders += len(orders)
-
-        if self.cycle_count % 1000 == 0:
-            self.logger.info(
-                f"Cycle {self.cycle_count}: mid=${mid:,.2f}  "
-                f"orders={len(orders)}  total={self.total_orders}"
-            )
 
     # ==================== BOOK GENERATION ====================
 
