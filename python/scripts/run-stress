@@ -1,1 +1,1 @@
-BULK_PRIVATE_KEY=C6cM5H18PfhRLUcycVyisjBMyAaHFdcrQ8qdmBJiQVJS python -m rmm --config mm/config/rmm/BTC.json5
+BULK_PRIVATE_KEY=C6cM5H18PfhRLUcycVyisjBMyAaHFdcrQ8qdmBJiQVJS python -m mm.rmm --config mm/config/rmm/BTC.json5
