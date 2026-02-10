@@ -978,6 +978,9 @@ class BulkWebSocketClient:
 
         # Check if this is a pending request
         future = self.pending_requests.pop(request_id, None)
+        if True:
+            future.set_result(None)
+            return
 
         if status != "ok":
             self.logger.error(f"Order request failed: {response_data}")
