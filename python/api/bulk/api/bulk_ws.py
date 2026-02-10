@@ -607,8 +607,10 @@ class BulkWebSocketClient:
                 try:
                     if self.t_backend_start:
                         t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
-                        self.logger.info(f"Backend ms={t_backend_ms}, msg len: {len(message)}")
-                        self.t_backend_start = None
+                        data = json.loads(message)
+                        if data["type"] == "post":
+                            self.logger.info(f"Backend ms={t_backend_ms}, msg len: {len(message)}, msg: {message}")
+                            self.t_backend_start = None
 
                     data = json.loads(message)
                     await self._handle_message(data)
