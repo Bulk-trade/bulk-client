@@ -98,7 +98,6 @@ class RandomMarketMaker:
 
         # State
         self.running = False
-        self.cycle_count = 0
         self.total_orders = 0
         self.tick_count = 0
 
@@ -206,7 +205,7 @@ class RandomMarketMaker:
             await self.bulk.disconnect()
 
         self.logger.info(
-            f"Done. Cycles={self.cycle_count}  TotalOrders={self.total_orders}"
+            f"Done. Ticks={self.tick_count}  TotalOrders={self.total_orders}"
         )
 
     # ==================== CORE TICK ====================
@@ -248,10 +247,10 @@ class RandomMarketMaker:
                 self.total_orders += len(orders)
 
                 if n_err > 0:
-                    self.logger.warning(f"Cycle {self.cycle_count}: {n_err}/{len(responses)} errors")
+                    self.logger.warning(f"Cycle {self.tick_count}: {n_err}/{len(responses)} errors")
 
                 if self.tick_count % 1000 == 0:
-                    self.logger.info(f"Cycle {self.cycle_count}: mid=${mid:,.2f}  "f"orders={len(orders)}  total={self.total_orders}")
+                    self.logger.info(f"Cycle {self.tick_count}: mid=${mid:,.2f}  "f"orders={len(orders)}  total={self.total_orders}")
         except Exception as e:
             self.logger.error(f"Tick execution error: {e}")
 
