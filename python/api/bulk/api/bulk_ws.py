@@ -77,6 +77,7 @@ class BulkWebSocketClient:
 
         # Connection management
         self.debug = debug
+        self.t_backend_start = None
         self.ws: Optional[ClientConnection] = None
         self.state = ConnectionState.DISCONNECTED
         self.reconnect_delay = 1.0
@@ -145,6 +146,7 @@ class BulkWebSocketClient:
             else:
                 self.ws = ws
 
+            self.t_backend_start = None
             self.state = ConnectionState.CONNECTED
             self.reconnect_delay = 1.0
             self.reconnect_attempts = 0
@@ -377,7 +379,7 @@ class BulkWebSocketClient:
             sjson = json.dumps(request)
             #self.logger.debug(f"Sending request: {sjson}")
 
-            self.t_request_start = time.perf_counter()
+            self.t_backend_start = time.perf_counter()
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -973,8 +975,10 @@ class BulkWebSocketClient:
 
     async def _handle_post_response(self, data: Dict):
         """Handle response to order placement/cancellation"""
-        t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
-        self.logger.info(f"Backend ms={t_backend_ms}")
+        if self.t_backend_start:
+            t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
+            self.logger.info(f"Backend ms={t_backend_ms}")
+            self.t_backend_start = None
 
         request_id = data.get("id")
         response_data = data.get("data", {})
