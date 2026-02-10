@@ -35,6 +35,8 @@ class RMMConfig:
 
     # frequency in seconds (for example 0.010)
     frequency: float
+    # priming period before adding orders
+    priming: int
     # dryrun or live?
     dryrun: bool
 
@@ -62,5 +64,6 @@ class RMMConfig:
                 order_per_level=int(config.get("order_per_level", 20)),
                 chunksize=int(config.get("chunksize", 500)),
                 frequency=float(config.get("frequency", 0.010)),
+                priming=int(config.get("priming", 100)),
                 dryrun=bool(config.get("dryrun", True)),
             )
