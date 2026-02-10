@@ -227,7 +227,7 @@ class RandomMarketMaker:
 
         # 2. periodically send oracle updates
         tasks = []
-        prelude = self.tick_count <= 2000
+        prelude = self.tick_count <= self.config.priming
         if prelude or self.tick_count % 50 == 0:
             oracle = OraclePrices(timestamp=timestamp, prices={self.config.coin: mid}, nonce=nonce)
             tasks.append(self.bulk.update_oracle(oracle, nonce=nonce))

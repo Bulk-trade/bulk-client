@@ -20,10 +20,13 @@
     // orders per level (for example 20)
     orders_per_level: 20,
     // chunk size
-    chunksize: 500,
+    chunksize: 200,
 
     // frequenct of update (secs)
-    frequency: 0.010,
+    frequency: 0.250,
+    // priming period
+    prime: 50,
+
     // dry run?
     dryrun: false,
 }
