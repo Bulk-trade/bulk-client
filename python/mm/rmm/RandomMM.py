@@ -227,12 +227,16 @@ class RandomMarketMaker:
 
         # 2. periodically send oracle updates
         tasks = []
-        if self.tick_count <= 2000 or self.tick_count % 50 == 0:
+        prelude = self.tick_count <= 2000
+        if prelude or self.tick_count % 50 == 0:
             oracle = OraclePrices(timestamp=timestamp, prices={self.config.coin: mid}, nonce=nonce)
             tasks.append(self.bulk.update_oracle(oracle, nonce=nonce))
 
+        if prelude:
+            self.logger.info(f"oracle tick: {self.tick_count}")
+
         # 3. Build order list
-        if self.tick_count > 2000:
+        if not prelude:
             orders = self._build_book(mid, nonce)
             cancel = CancelAll(symbols=[], nonce=nonce)
             actions: list = [cancel] + orders
@@ -241,7 +245,7 @@ class RandomMarketMaker:
         # now evaluate pending tx
         try:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            if len(tasks) == 2:
+            if not prelude:
                 responses = results[-1]
                 n_err = sum(1 for r in responses if r.is_error())
                 self.total_orders += len(orders)
