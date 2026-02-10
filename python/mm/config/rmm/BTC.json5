@@ -19,6 +19,8 @@
     depth: 500,
     // orders per level (for example 20)
     orders_per_level: 20,
+    // chunk size
+    chunksize: 500,
 
     // frequenct of update (secs)
     frequency: 0.010,

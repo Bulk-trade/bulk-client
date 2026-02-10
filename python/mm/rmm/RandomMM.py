@@ -235,11 +235,9 @@ class RandomMarketMaker:
 
         # 3. Build order list
         if not prelude:
-            t_compose_start = time.perf_counter()
             orders = self._build_book(mid, nonce)
             cancel = CancelAll(symbols=[], nonce=nonce)
             actions: list = [cancel] + orders
-            t_compose_ms = (time.perf_counter() - t_compose_start) * 1000.0
 
             tasks.append(self.bulk.place_orders(actions, nonce=nonce))
             if self.tick_count % 100 == 0:
@@ -247,9 +245,7 @@ class RandomMarketMaker:
 
         # now evaluate pending tx
         try:
-            t_backend_start = time.perf_counter()
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            t_backend_ms = (time.perf_counter() - t_backend_start) * 1000.0
 
             if not prelude:
                 responses = results[-1]
@@ -257,14 +253,12 @@ class RandomMarketMaker:
                 self.total_orders += len(orders)
 
                 if n_err > 0:
-                    self.logger.warning(f"Cycle {self.tick_count}: {n_err}/{len(responses)} errors")
+                    self.logger.warning(f"Tick {self.tick_count}: {n_err}/{len(responses)} errors")
 
                 if self.tick_count % 100 == 0:
                     self.logger.info(
-                        f"Cycle {self.tick_count}: mid=${mid:,.2f}  "
-                        f"orders={len(orders)}  total={self.total_orders}  "
-                        f"compose={t_compose_ms:1.3f}ms  backend={t_backend_ms:1.3f}ms  "
-                        f"ratio={t_compose_ms / max(t_backend_ms, 0.01):1.3f}"
+                        f"Tick {self.tick_count}: mid=${mid:,.2f}  "
+                        f"orders={len(orders)}  total={self.total_orders}"
                     )
         except Exception as e:
             self.logger.error(f"Tick execution error: {e}")
