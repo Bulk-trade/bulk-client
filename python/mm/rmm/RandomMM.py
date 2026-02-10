@@ -263,8 +263,8 @@ class RandomMarketMaker:
                     self.logger.info(
                         f"Cycle {self.tick_count}: mid=${mid:,.2f}  "
                         f"orders={len(orders)}  total={self.total_orders}  "
-                        f"compose={t_compose_ms:.1f}ms  backend={t_backend_ms:.1f}ms  "
-                        f"ratio={t_compose_ms / max(t_backend_ms, 0.01):.2f}"
+                        f"compose={t_compose_ms:1.3f}ms  backend={t_backend_ms:1.3f}ms  "
+                        f"ratio={t_compose_ms / max(t_backend_ms, 0.01):1.3f}"
                     )
         except Exception as e:
             self.logger.error(f"Tick execution error: {e}")
