@@ -323,7 +323,7 @@ class BulkWebSocketClient:
         try:
             sjson = json.dumps(request)
             self.logger.debug(f"Sending request: {sjson}")
-            self.ws.send(WSMsgType.TEXT, sjson)
+            self.ws.send(WSMsgType.TEXT, sjson.encode())
         except asyncio.TimeoutError:
             self.logger.error(f"Oracle post request timed out")
             raise
@@ -394,7 +394,7 @@ class BulkWebSocketClient:
             #self.logger.debug(f"Sending request: {sjson}")
 
             self.t_backend_start = time.perf_counter()
-            await self.ws.send(WSMsgType.TEXT, sjson)
+            await self.ws.send(WSMsgType.TEXT, sjson.encode())
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
@@ -656,7 +656,7 @@ class BulkWebSocketClient:
             "subscription": [sub.to_dict() for sub in subscriptions]
         }
 
-        await self.ws.send(WSMsgType.TEXT, json.dumps(request))
+        await self.ws.send(WSMsgType.TEXT, json.dumps(request).encode())
 
         # Store subscriptions for reconnection
         if not resubscription:
@@ -675,7 +675,7 @@ class BulkWebSocketClient:
             "topic": topic
         }
 
-        await self.ws.send(WSMsgType.TEXT, json.dumps(request))
+        await self.ws.send(WSMsgType.TEXT, json.dumps(request).encode())
         self.active_topics.discard(topic)
         self.logger.info(f"Unsubscribed from {topic}")
 
