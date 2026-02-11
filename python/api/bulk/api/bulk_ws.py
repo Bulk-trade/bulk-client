@@ -377,9 +377,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
-            #self.logger.debug(f"Sending request: {sjson}")
-
-            self.t_backend_start = time.perf_counter()
+            self.logger.debug(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
             # Wait for response with timeout
@@ -605,13 +603,6 @@ class BulkWebSocketClient:
         try:
             async for message in self.ws:
                 try:
-                    if self.t_backend_start:
-                        t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
-                        data = json.loads(message)
-                        if data["type"] == "post":
-                            self.logger.info(f"Backend ms={t_backend_ms}, msg len: {len(message)}")
-                            self.t_backend_start = None
-
                     data = json.loads(message)
                     await self._handle_message(data)
                 except json.JSONDecodeError as e:
