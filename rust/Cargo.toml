@@ -1,0 +1,22 @@
+[workspace]
+members =  [ "lib" ]
+
+[workspace.package]
+authors = ["Bulk"]
+repository = "https://github.com/Bulk-trade/bulk-api"
+license = "Apache-2.0"
+edition = "2021"
+
+[workspace.metadata.release]
+pre-release-commit-message = "Publish {{crate_name}} v{{version}}"
+tag-message = "Publish {{crate_name}} v{{version}}"
+consolidate-commits = false
+
+[workspace.dependencies]
+bulk-risklib = { path = "lib" }
+clap = { version = "4.5.47", features = ["derive"] }
+serde = "1.0.217" # must match the serde_derive version, see https://github.com/serde-rs/serde/issues/2584#issuecomment-1685252251
+
+[profile.release]
+debug = false
+opt-level = 3  # or "z"/"s" for size optimization
