@@ -212,7 +212,7 @@ class BulkWebSocketClient:
     @property
     def is_connected(self) -> bool:
         """Check if WebSocket is connected"""
-        return self.state == ConnectionState.CONNECTED and self.ws and not self.ws.is_closing
+        return self.state == ConnectionState.CONNECTED and self.ws is not None
 
     # ==================== ACCESS METHODS ====================
 
