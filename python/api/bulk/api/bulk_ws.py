@@ -11,8 +11,8 @@ from argparse import Action
 from typing import Dict, List, Optional, Callable, Any, Set, Union
 from enum import Enum
 
-import websockets
-from websockets.asyncio.client import ClientConnection, connect as ws_connect
+import picows
+from picows import WSFrame, WSTransport, WSListener, ws_connect, WSMsgType
 
 from bulk.common import Side, TimeInForce, LoggingWebSocket
 from bulk.common.inventory import Inventory, Pnl
@@ -32,6 +32,30 @@ class ConnectionState(Enum):
     CONNECTING = 1
     CONNECTED = 2
     RECONNECTING = 3
+
+
+class BulkWSListener(WSListener):
+    def __init__(self, client: 'BulkWebSocketClient'):
+        self.client = client
+        self.transport: Optional[WSTransport] = None
+
+    def on_ws_connected(self, transport: WSTransport):
+        self.transport = transport
+        self.client.logger.info("picows connected")
+
+    def on_ws_frame(self, transport: WSTransport, frame: WSFrame):
+        if frame.msg_type == WSMsgType.TEXT:
+            message = frame.get_payload_as_ascii_text()
+            # Schedule handling on the event loop
+            asyncio.get_event_loop().create_task(
+                self.client._handle_raw_message(message)
+            )
+        elif frame.msg_type == WSMsgType.CLOSE:
+            self.client.logger.warning("WebSocket close frame received")
+
+    def on_ws_disconnected(self, transport: WSTransport):
+        self.client.logger.warning("picows disconnected")
+        asyncio.get_event_loop().create_task(self.client._reconnect())
 
 
 class BulkWebSocketClient:
@@ -78,7 +102,8 @@ class BulkWebSocketClient:
         # Connection management
         self.debug = debug
         self.t_backend_start = None
-        self.ws: Optional[ClientConnection] = None
+        self.ws: Optional[WSTransport] = None
+        self.protocol: Optional[BulkWSListener] = None
         self.state = ConnectionState.DISCONNECTED
         self.reconnect_delay = 1.0
         self.max_reconnect_delay = 30.0
@@ -133,18 +158,11 @@ class BulkWebSocketClient:
             self.state = ConnectionState.CONNECTING
             self.logger.info(f"Connecting to {self.url}")
 
-            ws = await ws_connect(
+            (self.ws, self.protocol) = await ws_connect(
+                lambda: BulkWSListener(self),  # factory function
                 self.url,
-                ping_interval=20,
-                ping_timeout=10,
-                close_timeout=10,
-                max_size=2**24,    # 16MB max receive size
-                write_limit=2**24,
+                disconnect_on_exception=True,
             )
-            if self.debug:
-                self.ws = LoggingWebSocket(ws, logger=self.logger)
-            else:
-                self.ws = ws
 
             self.t_backend_start = None
             self.state = ConnectionState.CONNECTED
@@ -187,18 +205,17 @@ class BulkWebSocketClient:
                 pass
 
         if self.ws:
-            await self.ws.close()
+            self.ws.send_close(1000)
+            self.ws.disconnect()
 
         self.state = ConnectionState.DISCONNECTED
         self.ws = None
+        self.protocol = None
 
     @property
     def is_connected(self) -> bool:
         """Check if WebSocket is connected"""
-        return (
-                self.state == ConnectionState.CONNECTED and
-                self.ws
-        )
+        return self.state == ConnectionState.CONNECTED and self.ws and not self.ws.is_closing
 
     # ==================== ACCESS METHODS ====================
 
@@ -309,7 +326,7 @@ class BulkWebSocketClient:
         try:
             sjson = json.dumps(request)
             self.logger.debug(f"Sending request: {sjson}")
-            await self.ws.send(sjson)
+            self.ws.send(WSMsgType.TEXT, sjson)
         except asyncio.TimeoutError:
             self.logger.error(f"Oracle post request timed out")
             raise
@@ -380,7 +397,7 @@ class BulkWebSocketClient:
             #self.logger.debug(f"Sending request: {sjson}")
 
             self.t_backend_start = time.perf_counter()
-            await self.ws.send(sjson)
+            await self.ws.send(WSMsgType.TEXT, sjson)
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
@@ -600,31 +617,22 @@ class BulkWebSocketClient:
         await asyncio.sleep(delay)
         await self.connect()
 
-    async def _receive_loop(self):
-        """Main message receive loop"""
+    async def _handle_raw_message(self, message: str):
+        """Called from listener's on_ws_frame"""
         try:
-            async for message in self.ws:
-                try:
-                    if self.t_backend_start:
-                        t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
-                        data = json.loads(message)
-                        if data["type"] == "post":
-                            self.logger.info(f"Backend ms={t_backend_ms}, msg len: {len(message)}")
-                            self.t_backend_start = None
+            if self.t_backend_start:
+                t_backend_ms = (time.perf_counter() - self.t_backend_start) * 1000.0
+                data = json.loads(message)
+                if data["type"] == "post":
+                    self.logger.info(f"Backend ms={t_backend_ms}, msg len: {len(message)}")
+                    self.t_backend_start = None
 
-                    data = json.loads(message)
-                    await self._handle_message(data)
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"JSON decode error: {e}")
-                except Exception as e:
-                    self.logger.error(f"Message handling error: {e}", exc_info=True)
-
-        except websockets.exceptions.ConnectionClosed:
-            self.logger.warning("WebSocket connection closed")
-            await self._reconnect()
+            data = json.loads(message)
+            await self._handle_message(data)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON decode error: {e}")
         except Exception as e:
-            self.logger.error(f"Receive loop error: {e}", exc_info=True)
-            await self._reconnect()
+            self.logger.error(f"Message handling error: {e}", exc_info=True)
 
     # ==================== SUBSCRIPTION MANAGEMENT ====================
 
@@ -651,7 +659,7 @@ class BulkWebSocketClient:
             "subscription": [sub.to_dict() for sub in subscriptions]
         }
 
-        await self.ws.send(json.dumps(request))
+        await self.ws.send(WSMsgType.TEXT, json.dumps(request))
 
         # Store subscriptions for reconnection
         if not resubscription:
@@ -670,7 +678,7 @@ class BulkWebSocketClient:
             "topic": topic
         }
 
-        await self.ws.send(json.dumps(request))
+        await self.ws.send(WSMsgType.TEXT, json.dumps(request))
         self.active_topics.discard(topic)
         self.logger.info(f"Unsubscribed from {topic}")
 
