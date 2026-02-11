@@ -23,7 +23,7 @@
     chunksize: 200,
 
     // frequenct of update (secs)
-    frequency: 0.250,
+    frequency: 0.010,
     // priming period
     prime: 50,
 
