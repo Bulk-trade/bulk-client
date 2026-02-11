@@ -15,7 +15,7 @@ dependencies = [
     "base58>=2.1.0",
     "sortedcontainers>=2.4.0",
     "aiohttp>=3.11",
-    "picows>=6.7.0"
+    "picows>=1.11.1"
 ]
 
 [tool.hatch.build.targets.wheel]
