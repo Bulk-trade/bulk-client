@@ -170,9 +170,6 @@ class BulkWebSocketClient:
             self.reconnect_attempts = 0
             self.logger.info("Connected to Bulk Exchange WebSocket")
 
-            # Start receive loop
-            self.receive_task = asyncio.create_task(self._receive_loop())
-
             # Resubscribe to previous subscriptions
             if self.subscriptions:
                 self.logger.info(f"Resubscribing to {len(self.subscriptions)} topics")
