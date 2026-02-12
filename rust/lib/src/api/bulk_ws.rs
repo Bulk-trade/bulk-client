@@ -647,6 +647,8 @@ struct Actor {
 
 impl Actor {
     async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
+        let len = text.len();
+        debug!("sending msg len: {}", len);
         self.ws_write
             .send(Message::Text(text.into()))
             .await
