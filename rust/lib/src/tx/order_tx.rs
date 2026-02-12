@@ -30,6 +30,25 @@ impl OrderAction {
         }
     }
 
+    /// Set nonce and pubkey context for the message
+    ///
+    /// # Arguments
+    /// - `nonce`: nonce to be used
+    /// - `account`: the account to be used
+    pub fn set_context(&mut self, nonce: u64, account: Pubkey) {
+        match self {
+            OrderAction::Limit(o) => {
+                o.nonce = Some(nonce);
+                o.pubkey = Some(account);
+            }
+            OrderAction::Market(o) => {
+                o.nonce = Some(nonce);
+                o.pubkey = Some(account);
+            },
+            _ => {}
+        }
+    }
+
     /// Append the binary serialization (transaction / signing format) to `buf`.
     pub fn serialize_for_tx(&self, buf: &mut Vec<u8>) -> eyre::Result<()> {
         match self {
@@ -143,6 +162,15 @@ impl OrderTransaction {
         account: Pubkey,
         signer: Pubkey,
     ) -> Self {
+        // attach nonce and account to tx
+        let actions = actions.iter()
+            .map(|a| {
+                let mut o = a.clone();
+                o.set_context(nonce, account.clone());
+                o
+            })
+            .collect();
+
         Self {
             actions,
             nonce,
@@ -154,8 +182,14 @@ impl OrderTransaction {
 
     /// Push an additional action into the bundle.
     pub fn push(&mut self, action: impl Into<OrderAction>) {
-        self.signature = None; // invalidate any existing signature
-        self.actions.push(action.into());
+        // invalidate any existing signature
+        self.signature = None;
+
+        // attach nonce and account to tx
+        let mut action = action.into();
+        action.set_context(self.nonce, self.account.clone());
+
+        self.actions.push(action);
     }
 
     /// Number of actions in the bundle.
