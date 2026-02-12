@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use crate::common::{write_string_u64, write_u32, write_u64};
 
@@ -20,12 +21,13 @@ impl CancelAll {
     }
 
     /// Produce the compact JSON payload expected by the exchange API.
-    pub fn to_api(&self) -> serde_json::Value {
-        serde_json::json!({
-            "cancelAll": {
-                "c": self.symbols,
-            }
-        })
+    pub fn write_api(&self, buf: &mut String) {
+        buf.push_str(r#"{"cancelAll":{"c":["#);
+        for (i, sym) in self.symbols.iter().enumerate() {
+            if i > 0 { buf.push(','); }
+            write!(buf, r#""{}""#, sym).unwrap();
+        }
+        buf.push_str("]}}");
     }
 
     /// Serialize for inclusion in a **transaction** (signing context).

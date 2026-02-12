@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
@@ -77,8 +78,7 @@ impl LimitOrder {
 
     }
 
-    /// Produce the compact JSON payload expected by the exchange API.
-    ///
+    /// Write compact JSON directly into a buffer — no intermediate allocations.
     /// ```json
     /// {
     ///   "order": {
@@ -91,28 +91,20 @@ impl LimitOrder {
     ///   }
     /// }
     /// ```
-    pub fn to_api(&self) -> serde_json::Value {
+    pub fn write_api(&self, buf: &mut String) {
         let tif = match self.time_in_force {
             TimeInForce::GTC => "GTC",
             TimeInForce::IOC => "IOC",
             TimeInForce::ALO => "ALO",
         };
-        serde_json::json!({
-            "order": {
-                "c": self.symbol,
-                "b": self.side == Side::Buy,
-                "px": self.price,
-                "sz": self.size,
-                "r": self.reduce_only,
-                "t": {
-                    "limit": {
-                        "tif": tif
-                    }
-                }
-            }
-        })
+        let b = self.side == Side::Buy;
+        write!(
+            buf,
+            r#"{{"order":{{"c":"{}","b":{},"px":{},"sz":{},"r":{},"t":{{"limit":{{"tif":"{}"}}}}}}}}"#,
+            self.symbol, b, self.price, self.size, self.reduce_only, tif
+        ).unwrap();
     }
-
+    
     /// Serialize for inclusion in a **transaction** (signing context).
     ///
     /// Uses the `u64` string-length prefix convention.

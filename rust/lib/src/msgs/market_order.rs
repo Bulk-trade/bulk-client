@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
@@ -84,21 +85,13 @@ impl MarketOrder {
     ///   }
     /// }
     /// ```
-    pub fn to_api(&self) -> serde_json::Value {
-        serde_json::json!({
-            "order": {
-                "c": self.symbol,
-                "b": self.side == Side::Buy,
-                "sz": self.size,
-                "r": self.reduce_only,
-                "t": {
-                    "trigger": {
-                        "is_market": true,
-                        "triggerPx": 0.0
-                    }
-                }
-            }
-        })
+    pub fn write_api(&self, buf: &mut String) {
+        let b = self.side == Side::Buy;
+        write!(
+            buf,
+            r#"{{"order":{{"c":"{}","b":{},"sz":{},"r":{},"t":{{"trigger":{{"is_market":true,"triggerPx":0.0}}}}}}}}"#,
+            self.symbol, b, self.size, self.reduce_only
+        ).unwrap();
     }
 
     /// Serialize for inclusion in a **transaction** (signing context).

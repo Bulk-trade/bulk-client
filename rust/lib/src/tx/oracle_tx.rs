@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use solana_pubkey::Pubkey;
 use crate::common::{write_f64, write_pubkey_bytes, write_string_u64, write_u32, write_u64, Signable};
@@ -108,38 +109,43 @@ impl OracleTransaction {
     ///   "signature": "..."
     /// }
     /// ```
-    pub fn to_api(&self) -> eyre::Result<serde_json::Value> {
+    pub fn to_api_string(&self) -> eyre::Result<String> {
         let sig = self.signature_b58()
             .ok_or_else(|| eyre::eyre!("Missing signature"))?;
-
         let saccount = bs58::encode(&self.account).into_string();
         let ssigner = bs58::encode(&self.signer).into_string();
 
-        let oracles: Vec<_> = self.prices.iter().map(|p| p.to_api()).collect();
+        let mut buf = String::with_capacity(self.prices.len() * 60 + 256);
 
-        Ok(serde_json::json!({
-            "action": {
-                "type": "oracle",
-                "oracles": oracles,
-                "nonce": self.nonce,
-            },
-            "account": saccount,
-            "signer": ssigner,
-            "signature": sig,
-        }))
+        write!(buf,
+               r#"{{"action":{{"type":"oracle","oracles":["#
+        ).unwrap();
+
+        for (i, price) in self.prices.iter().enumerate() {
+            if i > 0 { buf.push(','); }
+            price.write_api(&mut buf);
+        }
+
+        write!(buf,
+               r#"],"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
+               self.nonce, saccount, ssigner, sig
+        ).unwrap();
+
+        Ok(buf)
     }
 
     /// Wrap the signed bundle in the WebSocket request envelope.
-    pub fn to_ws_request(&self, request_id: u64) -> eyre::Result<serde_json::Value> {
-        let payload = self.to_api()?;
-        Ok(serde_json::json!({
-            "method": "post",
-            "request": {
-                "type": "action",
-                "payload": payload,
-            },
-            "id": request_id,
-        }))
+    pub fn to_ws_request_string(&self, request_id: u64) -> eyre::Result<String> {
+        let payload = self.to_api_string()?;
+
+        let mut buf = String::with_capacity(payload.len() + 80);
+        write!(
+            buf,
+            r#"{{"method":"post","request":{{"type":"action","payload":{}}},"id":{}}}"#,
+            payload, request_id
+        ).unwrap();
+
+        Ok(buf)
     }
 }
 

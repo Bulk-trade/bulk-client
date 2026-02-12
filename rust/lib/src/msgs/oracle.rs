@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use crate::common::{write_f64, write_string_u64, write_u64};
 
@@ -26,12 +27,12 @@ impl OraclePrice {
     }
 
     /// Produce the compact JSON payload expected by the exchange API.
-    pub fn to_api(&self) -> serde_json::Value {
-        serde_json::json!({
-            "t": self.timestamp,
-            "c": self.symbol,
-            "px": self.price,
-        })
+    pub fn write_api(&self, buf: &mut String) {
+        write!(
+            buf,
+            r#"{{"t":{},"c":"{}","px":{}}}"#,
+            self.timestamp, self.symbol, self.price
+        ).unwrap();
     }
 
     /// Serialize for inclusion in a **transaction** (signing context).

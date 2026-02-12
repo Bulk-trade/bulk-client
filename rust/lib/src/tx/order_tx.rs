@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use solana_pubkey::Pubkey;
 use crate::common::{write_pubkey_bytes, write_u32, write_u64, Signable};
@@ -21,12 +22,12 @@ pub enum OrderAction {
 
 impl OrderAction {
     /// Produce the JSON fragment for this action.
-    pub fn to_api(&self) -> serde_json::Value {
+    pub fn write_api(&self, buf: &mut String) {
         match self {
-            OrderAction::Limit(o) => o.to_api(),
-            OrderAction::Market(o) => o.to_api(),
-            OrderAction::Cancel(o) => o.to_api(),
-            OrderAction::CancelAll(o) => o.to_api(),
+            OrderAction::Limit(o) => o.write_api(buf),
+            OrderAction::Market(o) => o.write_api(buf),
+            OrderAction::Cancel(o) => o.write_api(buf),
+            OrderAction::CancelAll(o) => o.write_api(buf),
         }
     }
 
@@ -226,25 +227,31 @@ impl OrderTransaction {
     ///   "signature": "..."
     /// }
     /// ```
-    pub fn to_api(&self) -> eyre::Result<serde_json::Value> {
+    pub fn to_api_string(&self) -> eyre::Result<String> {
         let sig = self.signature_b58()
             .ok_or_else(|| eyre::eyre!("Missing signature"))?;
-
-        let orders: Vec<_> = self.actions.iter().map(|a| a.to_api()).collect();
 
         let saccount = bs58::encode(&self.account).into_string();
         let ssigner = bs58::encode(&self.signer).into_string();
 
-        Ok(serde_json::json!({
-            "action": {
-                "type": "order",
-                "orders": orders,
-                "nonce": self.nonce,
-            },
-            "account": saccount,
-            "signer": ssigner,
-            "signature": sig,
-        }))
+        // Pre-size: ~80 bytes per order + envelope overhead
+        let mut buf = String::with_capacity(self.actions.len() * 100 + 256);
+
+        write!(buf,
+               r#"{{"action":{{"type":"order","orders":["#
+        ).unwrap();
+
+        for (i, action) in self.actions.iter().enumerate() {
+            if i > 0 { buf.push(','); }
+            action.write_api(&mut buf);
+        }
+
+        write!(buf,
+               r#"],"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
+               self.nonce, saccount, ssigner, sig
+        ).unwrap();
+
+        Ok(buf)
     }
 
     /// Wrap the signed bundle in the WebSocket request envelope.
@@ -256,16 +263,17 @@ impl OrderTransaction {
     ///   "id": 1
     /// }
     /// ```
-    pub fn to_ws_request(&self, request_id: u64) -> eyre::Result<serde_json::Value> {
-        let payload = self.to_api()?;
-        Ok(serde_json::json!({
-            "method": "post",
-            "request": {
-                "type": "action",
-                "payload": payload,
-            },
-            "id": request_id,
-        }))
+    pub fn to_ws_request(&self, request_id: u64) -> eyre::Result<String> {
+        let payload = self.to_api_string()?;
+
+        let mut buf = String::with_capacity(payload.len() + 80);
+        write!(
+            buf,
+            r#"{{"method":"post","request":{{"type":"action","payload":{}}},"id":{}}}"#,
+            payload, request_id
+        ).unwrap();
+
+        Ok(buf)
     }
 }
 

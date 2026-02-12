@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt;
 use crate::common::{write_string_u64, write_u32};
 
@@ -23,13 +24,12 @@ impl CancelOrder {
     }
 
     /// Produce the compact JSON payload expected by the exchange API.
-    pub fn to_api(&self) -> serde_json::Value {
-        serde_json::json!({
-            "cancel": {
-                "c": self.symbol,
-                "oid": self.oid
-            }
-        })
+    pub fn write_api(&self, buf: &mut String) {
+        write!(
+            buf,
+            r#"{{"cancel":{{"c":"{}","oid":"{}"}}}}"#,
+            self.symbol, self.oid
+        ).unwrap();
     }
 
     /// Serialize for inclusion in a **transaction** (signing context).
