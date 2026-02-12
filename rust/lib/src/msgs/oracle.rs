@@ -1,11 +1,5 @@
 use std::fmt;
-use sha2::{Digest, Sha256};
-use bulk_sdk_core::Side;
-use bulk_sdk_core::trade::TimeInForce;
-use crate::common::{write_bool, write_f64, write_pubkey, write_string_u32, write_string_u64, write_u32, write_u64, write_u8};
-
-/// 8-decimal fixed-point multiplier used for order-ID hashing.
-const DECIMALS_MULTIPLIER: f64 = 100_000_000.0;
+use crate::common::{write_f64, write_string_u64, write_u64};
 
 
 /// A market order.
@@ -17,6 +11,7 @@ pub struct OraclePrice {
     pub price: f64,
 }
 
+#[allow(unused)]
 impl OraclePrice {
     pub fn new(
         timestamp: u64,

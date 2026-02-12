@@ -1,8 +1,5 @@
 use std::fmt;
-use sha2::{Digest, Sha256};
-use bulk_sdk_core::Side;
-use bulk_sdk_core::trade::TimeInForce;
-use crate::common::{write_bool, write_f64, write_pubkey, write_string_u32, write_string_u64, write_u32, write_u64, write_u8};
+use crate::common::{write_string_u64, write_u32, write_u64};
 
 
 /// Cancel All.
@@ -12,6 +9,7 @@ pub struct CancelAll {
     pub symbols: Vec<String>,
 }
 
+#[allow(unused)]
 impl CancelAll {
     pub fn new(
         symbols: Vec<String>,
