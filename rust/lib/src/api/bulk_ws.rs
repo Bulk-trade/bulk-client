@@ -10,13 +10,13 @@
 //! - **`oneshot`** for request/response flows (order placement).
 //!
 //! ```text
-//!  ┌──────────────┐         mpsc::channel          ┌───────────────┐
+//!  ┌──────────────┐         mpsc::channel           ┌───────────────┐
 //!  │ BulkWsClient │ ───── Command ────────────────▶ │     Actor     │
-//!  │   (handle)   │ ◀──── watch::Receiver ──────── │  (owns state) │
+//!  │   (handle)   │ ◀──── watch::Receiver ────────  │  (owns state) │
 //!  └──────────────┘                                 └───────┬───────┘
 //!        │                                                  │
-//!        │ oneshot for order responses                       │ tokio::select!
-//!        └──────────────────────────────────────────────────▶│◀── ws_read
+//!        │ oneshot for order responses                      │ tokio::select!
+//!        └─────────────────────────────────────────────────▶│◀── ws_read
 //! ```
 //!
 //! # Example
@@ -375,21 +375,14 @@ impl BulkWsClient {
             .next_request_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let ws_json = json!({
-            "method": "post",
-            "request": {
-                "type": "action",
-                "payload": bundle.to_api()?,
-            },
-            "id": request_id,
-        });
+        let json = bundle.to_ws_request(request_id)?;
 
         let (resp_tx, resp_rx) = oneshot::channel();
 
         self.cmd_tx
             .send(Command::PlaceOrders {
                 request_id,
-                ws_json,
+                json,
                 respond: resp_tx,
             })
             .await
@@ -423,17 +416,14 @@ impl BulkWsClient {
         let mut bundle = OracleTransaction::new(prices, nonce, pk, pk);
         signer.sign(&mut bundle)?;
 
-        let ws_json = json!({
-            "method": "post",
-            "request": {
-                "type": "action",
-                "payload": bundle.to_api()?,
-            },
-            "id": self.next_request_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        });
+        let request_id = self
+            .next_request_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let ws_text = bundle.to_ws_request_string(request_id)?;
 
         self.cmd_tx
-            .send(Command::SendRaw(ws_json))
+            .send(Command::SendRaw(ws_text))
             .await
             .map_err(|_| eyre::eyre!("actor gone"))?;
         Ok(())
@@ -656,6 +646,14 @@ struct Actor {
 }
 
 impl Actor {
+    async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
+        self.ws_write
+            .send(Message::Text(text.into()))
+            .await
+            .map_err(|e| eyre::eyre!("ws write: {e}"))?;
+        Ok(())
+    }
+
     async fn run(
         mut self,
         mut ws_read: WsReader,
@@ -707,9 +705,9 @@ impl Actor {
                             self.subscriptions.extend(subs);
                         }
 
-                        Some(Command::PlaceOrders { request_id, ws_json, respond }) => {
+                        Some(Command::PlaceOrders { request_id, json, respond }) => {
                             self.pending.insert(request_id, respond);
-                            if let Err(e) = self.ws_send_json(&ws_json).await {
+                            if let Err(e) = self.ws_send_text(&json).await {
                                 error!("Order send error: {e}");
                                 if let Some(tx) = self.pending.remove(&request_id) {
                                     let _ = tx.send(Err(e));
@@ -718,7 +716,7 @@ impl Actor {
                         }
 
                         Some(Command::SendRaw(json)) => {
-                            if let Err(e) = self.ws_send_json(&json).await {
+                            if let Err(e) = self.ws_send_text(&json).await {
                                 error!("Raw send error: {e}");
                             }
                         }

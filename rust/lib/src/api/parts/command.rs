@@ -21,12 +21,12 @@ pub(crate) enum Command {
     /// and wait for the post response.
     PlaceOrders {
         request_id: u64,
-        ws_json: Value,
+        json: String,
         respond: oneshot::Sender<eyre::Result<Vec<OrderResponse>>>,
     },
 
     /// Send a raw JSON message (e.g. oracle update, fire-and-forget).
-    SendRaw(Value),
+    SendRaw(String),
 
     /// Register an event handler.
     On {
