@@ -6,6 +6,9 @@ repository.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[[example]]
+name = "md_listener"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -29,7 +32,8 @@ solana-keypair = "3.0.0"
 ed25519-dalek = "2.2.0"
 tungstenite = "0.28.0"
 tracing = "0.1.44"
-
+clap = { version = "4.5.58", features = ["derive"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 
 [build]
 incremental = true
