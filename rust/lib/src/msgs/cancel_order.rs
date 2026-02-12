@@ -1,8 +1,5 @@
 use std::fmt;
-use sha2::{Digest, Sha256};
-use bulk_sdk_core::Side;
-use bulk_sdk_core::trade::TimeInForce;
-use crate::common::{write_bool, write_f64, write_pubkey, write_string_u32, write_string_u64, write_u32, write_u64, write_u8};
+use crate::common::{write_string_u64, write_u32};
 
 
 /// Cancel order.
@@ -13,6 +10,7 @@ pub struct CancelOrder {
     pub oid: String,
 }
 
+#[allow(unused)]
 impl CancelOrder {
     pub fn new(
         symbol: impl Into<String>,

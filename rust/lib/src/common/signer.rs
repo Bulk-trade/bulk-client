@@ -10,6 +10,7 @@ use eyre::bail;
 /// Implement this for each specialized bundle type (e.g. `OrderBundle`,
 /// a future `OracleBundle`, etc.) so the [`TransactionSigner`](crate::TransactionSigner)
 /// can sign them uniformly.
+#[allow(unused)]
 pub trait Signable {
     /// Serialize to the binary format that gets signed with Ed25519.
     fn serialize(&self) -> eyre::Result<Vec<u8>>;
@@ -42,11 +43,13 @@ pub trait Signable {
 /// let ws_json = bundle.to_ws_request(1).unwrap();
 /// ```
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct TransactionSigner {
     signing_key: SigningKey,
     public_key: VerifyingKey,
 }
 
+#[allow(unused)]
 impl TransactionSigner {
 
     /// Create a signer from a base58-encoded private key (32-byte seed).
@@ -83,5 +86,15 @@ impl TransactionSigner {
         let signature = self.signing_key.sign(&message);
         tx.set_signature(signature.to_bytes());
         Ok(())
+    }
+
+    /// Get pubkey
+    pub fn public_key(&self) -> Pubkey {
+        Pubkey::from(self.public_key.to_bytes())
+    }
+
+    /// Get pubkey as b58 encoding
+    pub fn public_key_b58(&self) -> String {
+        bs58::encode(self.public_key.to_bytes()).into_string()
     }
 }

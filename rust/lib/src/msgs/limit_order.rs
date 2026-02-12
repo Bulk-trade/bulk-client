@@ -1,12 +1,10 @@
 use std::fmt;
 use sha2::{Digest, Sha256};
-use bulk_sdk_core::Side;
-use bulk_sdk_core::trade::TimeInForce;
-use crate::common::{write_bool, write_f64, write_pubkey, write_string_u32, write_string_u64, write_u32, write_u64, write_u8};
-
-/// 8-decimal fixed-point multiplier used for order-ID hashing.
-const DECIMALS_MULTIPLIER: f64 = 100_000_000.0;
-
+use solana_pubkey::Pubkey;
+use crate::common::{write_bool, write_f64, write_pubkey_bytes, write_string_u32, write_string_u64, write_u32, write_u64, write_u8};
+use crate::common::side::Side;
+use crate::common::tif::TimeInForce;
+use crate::msgs::DECIMALS_MULTIPLIER;
 
 /// A limit order.
 #[derive(Debug, Clone)]
@@ -23,9 +21,10 @@ pub struct LimitOrder {
     /// Pre-computed order ID (base58). If `None`, call [`order_id`].
     pub oid: Option<String>,
     /// Account public key (base58). Required for order-ID generation.
-    pub pubkey: Option<String>,
+    pub pubkey: Option<Pubkey>,
 }
 
+#[allow(unused)]
 impl LimitOrder {
     pub fn new(
         symbol: impl Into<String>,
@@ -56,14 +55,14 @@ impl LimitOrder {
         } else {
             let nonce = self.nonce
                 .ok_or_else(|| eyre::eyre!("order_id: nonce missing"))?;
-            let pubkey = self.pubkey.as_deref()
+            let pubkey = self.pubkey
                 .ok_or_else(|| eyre::eyre!("order_id: pubkey missing"))?;
 
             // Serialize with u32 string-length prefix (order-ID format)
             let mut buf = Vec::with_capacity(128);
             write_u64(&mut buf, nonce);
             write_string_u32(&mut buf, &self.symbol);
-            write_pubkey(&mut buf, pubkey)?;
+            write_pubkey_bytes(&mut buf, &pubkey);
             write_u8(&mut buf, self.side.into());
             write_u64(&mut buf, (self.size * DECIMALS_MULTIPLIER).round() as u64);
             write_u64(&mut buf, (self.price * DECIMALS_MULTIPLIER).round() as u64);
@@ -96,7 +95,7 @@ impl LimitOrder {
         let tif = match self.time_in_force {
             TimeInForce::GTC => "GTC",
             TimeInForce::IOC => "IOC",
-            TimeInForce::PostOnly => "ALO",
+            TimeInForce::ALO => "ALO",
         };
         serde_json::json!({
             "order": {
