@@ -86,11 +86,16 @@ impl TryFrom<&str> for OrderStatus {
             "modified" => Ok(OrderStatus::Modified),
             "filled" => Ok(OrderStatus::Filled),
             "partiallyFilled" => Ok(OrderStatus::PartiallyFilled),
+            "cancelled" => Ok(OrderStatus::Cancelled),
             "canceled" => Ok(OrderStatus::Cancelled),
             "canceledRiskLimit" => Ok(OrderStatus::CancelledRiskLimit),
+            "cancelledRiskLimit" => Ok(OrderStatus::CancelledRiskLimit),
             "canceledSelfCrossing" => Ok(OrderStatus::CancelledSelfCrossing),
+            "cancelledSelfCrossing" => Ok(OrderStatus::CancelledSelfCrossing),
             "canceledReduceOnly" => Ok(OrderStatus::CancelledReduceOnly),
+            "cancelledReduceOnly" => Ok(OrderStatus::CancelledReduceOnly),
             "canceledIOC" => Ok(OrderStatus::CancelledIOC),
+            "cancelledIOC" => Ok(OrderStatus::CancelledIOC),
             "rejectedInvalid" => Ok(OrderStatus::RejectedInvalid),
             "rejectedRiskLimit" => Ok(OrderStatus::RejectedRiskLimit),
             "rejectedCrossing" => Ok(OrderStatus::RejectedCrossing),
@@ -113,7 +118,7 @@ impl<'de> Deserialize<'de> for OrderStatus {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = <&str>::deserialize(deserializer)?;
+        let s = String::deserialize(deserializer)?;
         OrderStatus::try_from(s).map_err(serde::de::Error::custom)
     }
 }

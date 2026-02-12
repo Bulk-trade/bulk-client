@@ -3,7 +3,7 @@
 //! These structs are deserialized from the WebSocket JSON feed and correspond
 //! to the Python definitions in `md.py`.
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use crate::common::side::Side;
 // ============================================================================
 // Summary-level Data
@@ -17,16 +17,27 @@ use crate::common::side::Side;
 #[allow(unused)]
 pub struct Ticker {
     pub symbol: String,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub last_price: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub mark_price: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub oracle_price: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub price_change: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub price_change_percent: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub high_price: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub low_price: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub volume: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub quote_volume: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub open_interest: f64,
+    #[serde(deserialize_with = "f64_or_nan")]
     pub funding_rate: f64,
 }
 
@@ -128,6 +139,19 @@ pub struct L2Snapshot {
     pub levels: (Vec<OrderBookLevel>, Vec<OrderBookLevel>),
 }
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Deserialize an `f64` that may be `null` in JSON, mapping `null` → `NaN`.
+pub fn f64_or_nan<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(f64::NAN))
+}
+
+
 //
 // Unit Tests
 //
@@ -135,6 +159,67 @@ pub struct L2Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ticker_deserialize_with_nulls() {
+        let json = r#"{
+            "symbol": "BTC-USD",
+            "priceChange": 0.0,
+            "priceChangePercent": 0.0,
+            "lastPrice": 100000.1824189499,
+            "highPrice": 100000.52095557356,
+            "lowPrice": 99999.62809703613,
+            "volume": 0.0,
+            "quoteVolume": 0.0,
+            "markPrice": null,
+            "oraclePrice": null,
+            "openInterest": 0.0,
+            "fundingRate": 0.0
+        }"#;
+
+        let ticker: Ticker = serde_json::from_str(json).unwrap();
+
+        assert_eq!(ticker.symbol, "BTC-USD");
+        assert!((ticker.last_price - 100000.1824189499).abs() < 1e-6);
+        assert!((ticker.high_price - 100000.52095557356).abs() < 1e-6);
+        assert!((ticker.low_price - 99999.62809703613).abs() < 1e-6);
+        assert_eq!(ticker.price_change, 0.0);
+        assert_eq!(ticker.price_change_percent, 0.0);
+        assert_eq!(ticker.volume, 0.0);
+        assert_eq!(ticker.quote_volume, 0.0);
+        assert_eq!(ticker.open_interest, 0.0);
+        assert_eq!(ticker.funding_rate, 0.0);
+
+        // null → NaN
+        assert!(ticker.mark_price.is_nan());
+        assert!(ticker.oracle_price.is_nan());
+    }
+
+    #[test]
+    fn test_ticker_deserialize_with_values() {
+        let json = r#"{
+            "symbol": "ETH-USD",
+            "priceChange": 10.5,
+            "priceChangePercent": 0.33,
+            "lastPrice": 3200.0,
+            "highPrice": 3250.0,
+            "lowPrice": 3150.0,
+            "volume": 1234.56,
+            "quoteVolume": 3950000.0,
+            "markPrice": 3201.5,
+            "oraclePrice": 3200.8,
+            "openInterest": 50000.0,
+            "fundingRate": 0.0001
+        }"#;
+
+        let ticker: Ticker = serde_json::from_str(json).unwrap();
+
+        assert_eq!(ticker.symbol, "ETH-USD");
+        assert!((ticker.mark_price - 3201.5).abs() < 1e-6);
+        assert!((ticker.oracle_price - 3200.8).abs() < 1e-6);
+        assert!(!ticker.mark_price.is_nan());
+        assert!(!ticker.oracle_price.is_nan());
+    }
 
     #[test]
     fn test_l2_snapshot_deserialize() {
