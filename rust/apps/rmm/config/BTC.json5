@@ -16,14 +16,14 @@
     // base size of inner level
     size: 0.5,
     // depth of book on each side (for example 500)
-    depth: 500,
+    depth: 100,
     // orders per level (for example 20)
-    orders_per_level: 20,
+    orders_per_level: 5,
     // chunk size
-    chunksize: 20000,
+    chunksize: 1000,
 
     // frequency of update (secs)
-    frequency: 0.250,
+    frequency: 0.010,
     // priming period
     prime: 50,
 }

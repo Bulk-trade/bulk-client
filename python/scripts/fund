@@ -1,0 +1,4 @@
+./utilities/faucet --url http://localhost:12000/api/v1 --key 5BkyJozwQDSrs261gZc176uRfrXRvr9ec4RcfQhqnavj  --amount 100000000.0
+./utilities/faucet --url http://localhost:12000/api/v1 --key ErYXDr1QMBH67aMt87F2EUYfHZXy31AKhHTJb1Es2GUB  --amount 100000000.0
+./utilities/faucet --url http://localhost:12000/api/v1 --key C6cM5H18PfhRLUcycVyisjBMyAaHFdcrQ8qdmBJiQVJS --amount 100000000.0 
+

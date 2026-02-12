@@ -105,3 +105,136 @@ pub struct LeverageSetting {
     pub symbol: String,
     pub leverage: f64,
 }
+
+//
+// Unit tests
+//
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_order_state_rejected_risk_limit() {
+        let json = r#"{
+            "status": "rejectedRiskLimit",
+            "symbol": "BTC-USD",
+            "orderId": "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ",
+            "price": 100001.37,
+            "originalSize": 0.02474,
+            "size": 0.02474,
+            "filledSize": 0.0,
+            "vwap": 0.0,
+            "isBuy": false,
+            "maker": true,
+            "tif": "gtc",
+            "timestamp": 1770918312787284000,
+            "reason": "no oracle / fair price reference yet for: BTC-USD"
+        }"#;
+
+        let order: OrderState = serde_json::from_str(json).unwrap();
+
+        assert_eq!(order.symbol, "BTC-USD");
+        assert_eq!(order.order_id, "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ");
+        assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
+        assert_eq!(order.side, Side::Sell);
+        assert!((order.price - 100001.37).abs() < 1e-6);
+        assert!((order.original_size - 0.02474).abs() < 1e-8);
+        assert!((order.size - 0.02474).abs() < 1e-8);
+        assert_eq!(order.filled_size, 0.0);
+        assert!(order.is_maker);
+        assert_eq!(order.timestamp, 1770918312787284000);
+        assert_eq!(
+            order.error.as_deref(),
+            Some("no oracle / fair price reference yet for: BTC-USD")
+        );
+
+        // status helpers
+        assert!(order.status.is_terminal());
+        assert!(order.status.is_rejected());
+    }
+
+    #[test]
+    fn test_order_state_from_ws_envelope() {
+        let json = r#"{
+            "type": "account",
+            "data": {
+                "type": "orderUpdate",
+                "status": "rejectedRiskLimit",
+                "symbol": "BTC-USD",
+                "orderId": "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ",
+                "price": 100001.37,
+                "originalSize": 0.02474,
+                "size": 0.02474,
+                "filledSize": 0.0,
+                "vwap": 0.0,
+                "isBuy": false,
+                "maker": true,
+                "tif": "gtc",
+                "timestamp": 1770918312787284000,
+                "reason": "no oracle / fair price reference yet for: BTC-USD"
+            },
+            "topic": "account.2bZfxVQtWdd8qAWJ4Xyq43cnej9zqMNyuh7HHxTNan8j"
+        }"#;
+
+        // Parse the same way the actor does: from data["data"]
+        let envelope: serde_json::Value = serde_json::from_str(json).unwrap();
+        let order: OrderState =
+            serde_json::from_value(envelope["data"].clone()).unwrap();
+
+        assert_eq!(order.symbol, "BTC-USD");
+        assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
+        assert_eq!(order.side, Side::Sell);
+        assert!(order.error.is_some());
+    }
+
+    #[test]
+    fn test_order_state_resting_no_reason() {
+        let json = r#"{
+            "status": "resting",
+            "symbol": "ETH-USD",
+            "orderId": "abc123",
+            "price": 3200.0,
+            "originalSize": 1.0,
+            "size": 1.0,
+            "filledSize": 0.0,
+            "isBuy": true,
+            "maker": true,
+            "timestamp": 1770918312787284000
+        }"#;
+
+        let order: OrderState = serde_json::from_str(json).unwrap();
+
+        assert_eq!(order.status, OrderStatus::Resting);
+        assert_eq!(order.side, Side::Buy);
+        assert!(order.error.is_none());
+
+        assert!(!order.status.is_terminal());
+        assert!(!order.status.is_rejected());
+    }
+
+    #[test]
+    fn test_order_state_filled() {
+        let json = r#"{
+            "status": "filled",
+            "symbol": "BTC-USD",
+            "orderId": "xyz789",
+            "price": 98000.0,
+            "originalSize": 0.5,
+            "size": 0.0,
+            "filledSize": 0.5,
+            "isBuy": true,
+            "maker": false,
+            "timestamp": 1770918312787284000
+        }"#;
+
+        let order: OrderState = serde_json::from_str(json).unwrap();
+
+        assert_eq!(order.status, OrderStatus::Filled);
+        assert!(order.status.is_terminal());
+        assert!(!order.status.is_rejected());
+        assert!(!order.is_maker);
+        assert_eq!(order.filled_size, 0.5);
+        assert_eq!(order.size, 0.0);
+    }
+}
