@@ -30,8 +30,13 @@ impl OrderResponse {
 
     /// Parse the list of statuses from a post response (same logic as Python).
     pub(crate) fn parse_responses(data: &Value) -> Vec<Self> {
-        let statuses = &data["data"]["payload"]["response"]["data"]["statuses"];
-        let Some(arr) = statuses.as_array() else {
+        // WS: data.data.payload.response.data.statuses
+        // HTTP: data.response.data.statuses
+        let statuses = data["data"]["payload"]["response"]["data"]["statuses"]
+            .as_array()
+            .or_else(|| data["response"]["data"]["statuses"].as_array());
+
+        let Some(arr) = statuses else {
             return vec![];
         };
 
