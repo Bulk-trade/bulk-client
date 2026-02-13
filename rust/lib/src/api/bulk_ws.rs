@@ -75,7 +75,7 @@ use tokio_tungstenite::{
 use tracing::{debug, error, info, warn};
 use crate::api::parts::command::Command;
 use crate::api::parts::config::WSConfig;
-use crate::api::parts::{Event, Topic};
+use crate::api::parts::{make_nonce, Event, Topic};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::common::TransactionSigner;
@@ -646,16 +646,7 @@ struct Actor {
 }
 
 impl Actor {
-    async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
-        let len = text.len();
-        debug!("sending msg len: {}", len);
-        self.ws_write
-            .send(Message::Text(text.into()))
-            .await
-            .map_err(|e| eyre::eyre!("ws write: {e}"))?;
-        Ok(())
-    }
-
+    /// Run loop
     async fn run(
         mut self,
         mut ws_read: WsReader,
@@ -756,6 +747,17 @@ impl Actor {
         // Close write half
         let _ = self.ws_write.close().await;
         info!("Actor stopped");
+    }
+
+    /// WS send
+    async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
+        let len = text.len();
+        debug!("sending msg len: {}", len);
+        self.ws_write
+            .send(Message::Text(text.into()))
+            .await
+            .map_err(|e| eyre::eyre!("ws write: {e}"))?;
+        Ok(())
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1019,15 +1021,4 @@ impl Actor {
         info!("Subscribed to {} topics", subs.len());
         Ok(())
     }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Helpers
-// ═════════════════════════════════════════════════════════════════════════════
-
-fn make_nonce() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64
 }

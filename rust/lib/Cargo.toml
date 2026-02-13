@@ -9,6 +9,12 @@ edition.workspace = true
 [[example]]
 name = "md_listener"
 
+[[example]]
+name = "account_query"
+
+[[example]]
+name = "md_query"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -34,6 +40,7 @@ tungstenite = "0.28.0"
 tracing = "0.1.44"
 clap = { version = "4.5.58", features = ["derive"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+reqwest = { version = "0.13.2", features = ["json", "query"] }
 
 [build]
 incremental = true

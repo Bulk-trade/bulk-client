@@ -6,20 +6,20 @@ use crate::common::side::Side;
 // Margin
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Account margin information
+/// Account margin information (from WebSocket `marginUpdate` / `accountSnapshot`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[allow(unused)]
 pub struct Margin {
-    #[serde(rename="totalBalance")]
+    #[serde(rename = "totalBalance")]
     pub total_balance: f64,
-    #[serde(rename="availableBalance")]
+    #[serde(rename = "availableBalance")]
     pub available_balance: f64,
-    #[serde(rename="marginUsed")]
+    #[serde(rename = "marginUsed")]
     pub margin_used: f64,
     pub notional: f64,
-    #[serde(rename="realizedPnl")]
+    #[serde(rename = "realizedPnl")]
     pub realized_pnl: f64,
-    #[serde(rename="unrealizedPnl")]
+    #[serde(rename = "unrealizedPnl")]
     pub unrealized_pnl: f64,
     pub fees: f64,
     pub funding: f64,
@@ -29,24 +29,31 @@ pub struct Margin {
 // Positions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Information for a position
+/// Position information.
+///
+/// Deserializes from both WebSocket and HTTP payloads:
+/// - WS uses `"symbol"`, HTTP uses `"coin"` → `#[serde(alias)]`
+/// - Fields only present on WS default to `0.0` when absent (HTTP).
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct PositionInfo {
+    #[serde(alias = "coin")]
     pub symbol: String,
     pub size: f64,
     pub price: f64,
-    #[serde(rename="fairPrice")]
+    #[serde(rename = "fairPrice", default)]
     pub fair_price: f64,
+    #[serde(default)]
     pub notional: f64,
-    #[serde(rename="realizedPnl")]
+    #[serde(rename = "realizedPnl", default)]
     pub realized_pnl: f64,
-    #[serde(rename="unrealizedPnl")]
+    #[serde(rename = "unrealizedPnl", default)]
     pub unrealized_pnl: f64,
+    #[serde(default)]
     pub leverage: f64,
-    #[serde(rename="liquidationPrice")]
+    #[serde(rename = "liquidationPrice", default)]
     pub liquidation_price: f64,
-    #[serde(rename="maintenanceMargin")]
+    #[serde(rename = "maintenanceMargin", default)]
     pub maintenance_margin: f64,
 }
 
@@ -54,9 +61,15 @@ pub struct PositionInfo {
 // Order State
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone,Deserialize)]
+/// Resting or historical order state.
+///
+/// Deserializes from both WebSocket and HTTP payloads:
+/// - `vwap`, `reduce_only`, `tif` are HTTP-only (default when absent).
+/// - `error` / `reason` is WS-only (default when absent).
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct OrderState {
+    #[serde(default)]
     pub timestamp: u64,
     pub symbol: String,
     #[serde(rename = "orderId")]
@@ -66,14 +79,23 @@ pub struct OrderState {
     pub side: Side,
     pub price: f64,
     pub size: f64,
-    #[serde(rename = "filledSize")]
+    #[serde(rename = "filledSize", default)]
     pub filled_size: f64,
-    #[serde(rename = "originalSize")]
+    #[serde(rename = "originalSize", default)]
     pub original_size: f64,
-    #[serde(rename = "maker")]
+    #[serde(rename = "maker", default)]
     pub is_maker: bool,
     #[serde(rename = "reason", default)]
     pub error: Option<String>,
+    /// Volume-weighted average fill price (HTTP only).
+    #[serde(default)]
+    pub vwap: f64,
+    /// Whether this is a reduce-only order (HTTP only).
+    #[serde(rename = "reduceOnly", default)]
+    pub reduce_only: bool,
+    /// Time-in-force as a string, e.g. "gtc" (HTTP only).
+    #[serde(default)]
+    pub tif: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,14 +106,15 @@ pub struct OrderState {
 #[allow(unused)]
 pub struct Fill {
     pub timestamp: u64,
+    #[serde(alias = "coin")]
     pub symbol: String,
-    #[serde(rename="orderId")]
+    #[serde(rename = "orderId")]
     pub order_id: String,
     pub price: f64,
     pub size: f64,
-    #[serde(rename="isBuy")]
+    #[serde(rename = "isBuy")]
     pub side: Side,
-    #[serde(rename="maker")]
+    #[serde(rename = "maker", default)]
     pub is_maker: bool,
 }
 
@@ -102,9 +125,30 @@ pub struct Fill {
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct LeverageSetting {
+    #[serde(alias = "coin")]
     pub symbol: String,
     pub leverage: f64,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Full Account (HTTP response)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The inner payload of a `fullAccount` HTTP response.
+///
+/// Reuses the shared [`PositionInfo`] and [`OrderState`] types from
+/// `account.rs`, which accept both WS and HTTP field names via
+/// `#[serde(alias)]` and `#[serde(default)]`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(unused)]
+pub struct AccountData {
+    pub positions: Vec<PositionInfo>,
+    pub open_orders: Vec<OrderState>,
+    pub margin: Margin,
+    pub leverage_settings: Vec<LeverageSetting>,
+}
+
 
 //
 // Unit tests
