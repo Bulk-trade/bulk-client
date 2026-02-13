@@ -38,7 +38,7 @@ use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::common::TransactionSigner;
-use crate::msgs::{AccountData, CancelAll, CancelOrder, Candle, Fill, L2Snapshot, LimitOrder, MarketInfo, MarketOrder, OrderState, PositionInfo, Ticker};
+use crate::msgs::{AccountData, CancelAll, CancelOrder, Candle, Fill, L2Snapshot, LimitOrder, MarketInfo, MarketOrder, OrderResponse, OrderState, PositionInfo, Ticker};
 use crate::tx::order_tx::{OrderAction, OrderTransaction};
 
 /// HTTP REST API client for Bulk Labs exchange.
@@ -285,7 +285,7 @@ impl BulkHttpClient {
         &self,
         actions: Vec<OrderAction>,
         nonce: Option<u64>,
-    ) -> eyre::Result<Value> {
+    ) -> eyre::Result<Vec<OrderResponse>> {
         let signer = self
             .config
             .signer
@@ -327,7 +327,9 @@ impl BulkHttpClient {
             .send()
             .await?
             .error_for_status()?;
-        Ok(resp.json().await?)
+
+        let data: Value = resp.json().await?;
+        Ok(OrderResponse::parse_responses(&data))
     }
 
     /// Place a single limit order.
@@ -339,10 +341,12 @@ impl BulkHttpClient {
         size: f64,
         tif: TimeInForce,
         reduce_only: bool,
-    ) -> eyre::Result<Value> {
+    ) -> eyre::Result<OrderResponse> {
         let mut order = LimitOrder::new(symbol, side, price, size, tif);
         order.reduce_only = reduce_only;
-        self.place_orders(vec![order.into()], None).await
+
+        let results = self.place_orders(vec![order.into()], None).await?;
+        Ok(results[0].clone())
     }
 
     /// Place a single market order.
@@ -352,10 +356,12 @@ impl BulkHttpClient {
         side: Side,
         size: f64,
         reduce_only: bool,
-    ) -> eyre::Result<Value> {
+    ) -> eyre::Result<OrderResponse> {
         let mut order = MarketOrder::new(symbol, side, size);
         order.reduce_only = reduce_only;
-        self.place_orders(vec![order.into()], None).await
+
+        let results = self.place_orders(vec![order.into()], None).await?;
+        Ok(results[0].clone())
     }
 
     /// Cancel a single order by ID.
@@ -363,15 +369,19 @@ impl BulkHttpClient {
         &self,
         symbol: &str,
         order_id: &str,
-    ) -> eyre::Result<Value> {
+    ) -> eyre::Result<OrderResponse> {
         let cancel = CancelOrder::new(symbol, order_id);
-        self.place_orders(vec![cancel.into()], None).await
+
+        let results = self.place_orders(vec![cancel.into()], None).await?;
+        Ok(results[0].clone())
     }
 
     /// Cancel all orders, optionally filtered by symbols.
-    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<Value> {
+    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<OrderResponse> {
         let cancel = CancelAll::new(symbols);
-        self.place_orders(vec![cancel.into()], None).await
+
+        let results = self.place_orders(vec![cancel.into()], None).await?;
+        Ok(results[0].clone())
     }
 
     // =====================================================================

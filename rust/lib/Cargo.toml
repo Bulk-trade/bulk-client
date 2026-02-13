@@ -15,6 +15,9 @@ name = "account_query"
 [[example]]
 name = "md_query"
 
+[[example]]
+name = "execute"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }

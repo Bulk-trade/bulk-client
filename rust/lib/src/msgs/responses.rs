@@ -1,15 +1,17 @@
+use serde::{Deserialize};
 use serde_json::Value;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Order responses (mirrors trade.py OrderResponse)
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct OrderResponse {
     pub order_id: Option<String>,
     pub status: String,
     pub message: Option<String>,
+    #[serde(skip)]
     pub raw: Value,
 }
 
