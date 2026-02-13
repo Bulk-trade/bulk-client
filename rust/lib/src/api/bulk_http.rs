@@ -315,7 +315,7 @@ impl BulkHttpClient {
 
         // Assemble full transaction JSON string
         let body = format!(
-            r#"#{{"action":{{"type":"order","orders":{},"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
+            r#"{{"action":{{"type":"order","orders":{},"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
             orders_buf, nonce, pk_b58, pk_b58, sig,
         );
 
