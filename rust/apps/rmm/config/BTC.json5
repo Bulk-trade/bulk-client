@@ -2,7 +2,7 @@
     // coin to be MM (will be rendered to proper bulk symbol)
     coin: "BTC",
     // API (for testnet: "wss://exchange-wss.bulk.trade")
-    bulk_ws_url: "ws://localhost:12001",
+    bulk_ws_url: "ws://localhost:9090",
 
     // base price
     price: 100000.0,
@@ -18,12 +18,12 @@
     // depth of book on each side (for example 500)
     depth: 500,
     // orders per level (for example 20)
-    orders_per_level: 5,
+    orders_per_level: 20,
     // chunk size
-    chunksize: 8000,
+    chunksize: 25000,
 
     // frequency of update (secs)
-    frequency: 0.010,
+    frequency: 0.005,
     // priming period
     prime: 50,
 }

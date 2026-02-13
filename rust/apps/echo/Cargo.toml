@@ -1,0 +1,20 @@
+[package]
+name = "echo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "echo"
+path = "src/main.rs"
+
+[dependencies]
+bulk_api = { path = "../../lib" }   # adjust to your actual SDK path
+eyre = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.5.58", features = ["derive"] }
+futures-util = "0.3.31"
+tokio-tungstenite = "0.24.0"
