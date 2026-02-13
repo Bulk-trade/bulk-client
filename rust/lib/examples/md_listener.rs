@@ -18,7 +18,7 @@ use bulk_api::api::parts::config::WSConfig;
 #[command(name = "md_listener", about = "Listen to ticker and L2 book updates")]
 struct Args {
     /// WebSocket URL
-    #[arg(long, default_value = "wss://exchange-wss.bulk.trade")]
+    #[arg(long, default_value = "https://exchange-api2.bulk.trade/api/v1")]
     url: String,
 
     /// Comma-separated symbols

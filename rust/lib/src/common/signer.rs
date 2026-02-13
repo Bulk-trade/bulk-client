@@ -88,6 +88,16 @@ impl TransactionSigner {
         Ok(())
     }
 
+    /// Sign an arbitrary byte slice and return the raw 64-byte signature.
+    ///
+    /// Used by [`BulkHttpClient`] for generic (non-`Signable`) payloads
+    /// such as leverage updates, agent wallet management, and faucet requests,
+    /// where the exchange expects a signature over the canonical JSON string.
+    pub fn sign_bytes(&self, message: &[u8]) -> [u8; 64] {
+        use ed25519_dalek::Signer as _;
+        self.signing_key.sign(message).to_bytes()
+    }
+
     /// Get pubkey
     pub fn public_key(&self) -> Pubkey {
         Pubkey::from(self.public_key.to_bytes())
