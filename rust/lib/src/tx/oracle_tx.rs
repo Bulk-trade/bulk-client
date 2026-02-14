@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::fmt;
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 use crate::common::{write_f64, write_pubkey_bytes, write_string_u64, write_u32, write_u64, Signable};
 use crate::msgs::oracle::OraclePrice;
 
@@ -48,7 +49,7 @@ pub struct OracleTransaction {
     pub nonce: u64,
     pub account: Pubkey,
     pub signer: Pubkey,
-    pub signature: Option<[u8; 64]>,
+    pub signature: Option<Signature>,
 }
 
 #[allow(unused)]
@@ -92,7 +93,7 @@ impl OracleTransaction {
 
     /// Base58-encoded signature string, or `None` if unsigned.
     pub fn signature_b58(&self) -> Option<String> {
-        self.signature.map(|s| bs58::encode(s).into_string())
+        self.signature.map(|s| s.to_string())
     }
 
     /// Build the full JSON payload for the signed transaction.
@@ -177,11 +178,11 @@ impl Signable for OracleTransaction {
         Ok(buf)
     }
 
-    fn set_signature(&mut self, sig: [u8; 64]) {
+    fn set_signature(&mut self, sig: Signature) {
         self.signature = Some(sig);
     }
 
-    fn get_signature(&self) -> Option<&[u8; 64]> {
+    fn get_signature(&self) -> Option<&Signature> {
         self.signature.as_ref()
     }
 }

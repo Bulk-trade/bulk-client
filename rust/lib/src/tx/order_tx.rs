@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::fmt;
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 use crate::common::{write_pubkey_bytes, write_u32, write_u64, Signable};
 use crate::msgs::cancel_all::CancelAll;
 use crate::msgs::cancel_order::CancelOrder;
@@ -151,7 +152,7 @@ pub struct OrderTransaction {
     pub nonce: u64,
     pub account: Pubkey,
     pub signer: Pubkey,
-    pub signature: Option<[u8; 64]>,
+    pub signature: Option<Signature>,
 }
 
 #[allow(unused)]
@@ -303,11 +304,11 @@ impl Signable for OrderTransaction {
         Ok(buf)
     }
 
-    fn set_signature(&mut self, sig: [u8; 64]) {
+    fn set_signature(&mut self, sig: Signature) {
         self.signature = Some(sig);
     }
 
-    fn get_signature(&self) -> Option<&[u8; 64]> {
+    fn get_signature(&self) -> Option<&Signature> {
         self.signature.as_ref()
     }
 }
