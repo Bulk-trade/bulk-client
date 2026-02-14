@@ -16,7 +16,7 @@
     // base size of inner level
     size: 0.5,
     // depth of book on each side (for example 500)
-    depth: 500,
+    depth: 100,
     // orders per level (for example 20)
     orders_per_level: 20,
     // chunk size
