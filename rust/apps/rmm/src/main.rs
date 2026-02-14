@@ -2,7 +2,8 @@ use clap::Parser;
 use tokio::signal;
 use tracing::info;
 use crate::parts::config::RmmConfig;
-use crate::parts::mm::RandomMarketMaker;
+use crate::parts::mm_http::RandomHttpMarketMaker;
+use crate::parts::mm_ws::RandomWsMarketMaker;
 
 mod parts;
 
@@ -43,15 +44,33 @@ async fn main() -> eyre::Result<()> {
     let private_key = std::env::var("BULK_PRIVATE_KEY")
         .map_err(|_| eyre::eyre!("Set BULK_PRIVATE_KEY env var"))?;
 
-    let mut mm = RandomMarketMaker::initialize(config, &private_key).await?;
+    if config.url.starts_with("ws") {
+        // Websocket version of MM
+        let mut mm = RandomWsMarketMaker::initialize(config, &private_key).await?;
 
-    // Graceful shutdown on Ctrl-C / SIGTERM
-    let stop = mm.stop_handle();
-    tokio::spawn(async move {
-        let _ = signal::ctrl_c().await;
-        info!("Signal received, stopping …");
-        let _ = stop.send(false);
-    });
+        // Graceful shutdown on Ctrl-C / SIGTERM
+        let stop = mm.stop_handle();
+        tokio::spawn(async move {
+            let _ = signal::ctrl_c().await;
+            info!("Signal received, stopping …");
+            let _ = stop.send(false);
+        });
 
-    mm.run().await
+        mm.run().await
+    } else {
+        // HTTP version of MM
+        let mut mm = RandomHttpMarketMaker::initialize(config, &private_key).await?;
+
+        // Graceful shutdown on Ctrl-C / SIGTERM
+        let stop = mm.stop_handle();
+        tokio::spawn(async move {
+            let _ = signal::ctrl_c().await;
+            info!("Signal received, stopping …");
+            let _ = stop.send(false);
+        });
+
+        mm.run().await
+
+    }
+
 }
