@@ -30,7 +30,7 @@
 //! ```
 
 use std::time::Duration;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
@@ -51,6 +51,7 @@ use crate::tx::order_tx::{OrderAction, OrderTransaction};
 pub struct BulkHttpClient {
     config: HttpConfig,
     client: Client,
+    is_localhost: bool,
 }
 
 #[allow(unused)]
@@ -64,9 +65,12 @@ impl BulkHttpClient {
             .timeout(config.default_timeout)
             .build()?;
 
+        let is_localhost = Self::is_localhost(&config.base_url);
+
         Ok(Self {
             config: config.clone(),
-            client
+            client,
+            is_localhost,
         })
     }
 
@@ -555,6 +559,15 @@ impl BulkHttpClient {
     // =====================================================================
     // Internal helpers
     // =====================================================================
+
+    /// determine if is localhost URL
+    fn is_localhost(url_str: &str) -> bool {
+        let Ok(url) = Url::parse(url_str) else { return false };
+        match url.host_str() {
+            Some("localhost" | "127.0.0.1" | "::1") => true,
+            _ => false,
+        }
+    }
 
     /// Build a signed transaction envelope from a partial JSON body.
     ///
