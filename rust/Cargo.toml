@@ -1,5 +1,5 @@
 [workspace]
-members =  [ "lib", "apps/rmm", "apps/echo" ]
+members =  [ "lib", "apps/random_mm", "apps/echo" ]
 
 [workspace.package]
 authors = ["Bulk"]
