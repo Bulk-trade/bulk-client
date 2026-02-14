@@ -30,6 +30,7 @@ pub struct RandomHttpMarketMaker {
     tick_count: u64,
 }
 
+#[allow(unused)]
 impl RandomHttpMarketMaker {
     // ── Construction ──────────────────────────────────────────────────────
 

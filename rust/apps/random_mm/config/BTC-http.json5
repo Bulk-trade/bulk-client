@@ -2,7 +2,7 @@
     // coin to be MM (will be rendered to proper bulk symbol)
     coin: "BTC",
     // API (for testnet: "wss://exchange-wss.bulk.trade")
-    url: "http://localhost:12000",
+    url: "http://localhost:12000/api/v1",
 
     // base price
     price: 100000.0,
@@ -16,9 +16,9 @@
     // base size of inner level
     size: 0.5,
     // depth of book on each side (for example 500)
-    depth: 100,
+    depth: 500,
     // orders per level (for example 20)
-    orders_per_level: 5,
+    orders_per_level: 20,
     // chunk size
     chunksize: 25000,
 
