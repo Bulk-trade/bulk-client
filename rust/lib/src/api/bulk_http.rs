@@ -322,6 +322,7 @@ impl BulkHttpClient {
             r#"{{"action":{{"type":"order","orders":{},"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
             orders_buf, nonce, pk_b58, pk_b58, sig,
         );
+        eprintln!("{}", body);
 
         let resp = self
             .client

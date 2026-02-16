@@ -188,18 +188,22 @@ impl BulkWsClient {
 
         // Default subscriptions (same as Python __init__)
         let mut initial_subs = Vec::new();
-        if let Some(ref signer) = config.signer {
-            let pk_str = signer.public_key_b58();
-            initial_subs.push(SubscriptionRequest::new(
-                "account",
-                json!({ "user": pk_str }),
-            ));
+        if config.track_account {
+            if let Some(ref signer) = config.signer {
+                let pk_str = signer.public_key_b58();
+                initial_subs.push(SubscriptionRequest::new(
+                    "account",
+                    json!({ "user": pk_str }),
+                ));
+            }
         }
-        for sym in &config.symbols {
-            initial_subs.push(SubscriptionRequest::new(
-                "ticker",
-                json!({ "symbol": sym }),
-            ));
+        if config.track_ticker {
+            for sym in &config.symbols {
+                initial_subs.push(SubscriptionRequest::new(
+                    "ticker",
+                    json!({ "symbol": sym }),
+                ));
+            }
         }
 
         // Spawn actor
@@ -667,6 +671,7 @@ impl Actor {
                 msg = ws_read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
+                            debug!("msg {}: {}", text.len(), &text[0..512.min(text.len())]);
                             match serde_json::from_str::<Value>(&text) {
                                 Ok(data) => self.handle_message(data).await,
                                 Err(e) => error!("JSON decode error: {e}"),
