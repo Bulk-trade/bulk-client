@@ -11,6 +11,8 @@ pub struct RmmConfig {
     /// WebSocket URL
     #[serde(default = "default_url")]
     pub url: String,
+    #[serde(default = "default_track_orders")]
+    pub track_orders: bool,
 
     /// Base price / long-run mean for OU process
     #[serde(default = "default_price")]
@@ -78,6 +80,7 @@ impl RmmConfig {
 // ─────────────────────────────────────────────────────────────────────
 
 fn default_url() -> String { "ws://localhost:12001".into() }
+fn default_track_orders() -> bool { true }
 fn default_price() -> f64 { 100_000.0 }
 fn default_kappa() -> f64 { 0.0001 }
 fn default_sigma() -> f64 { 0.01 }

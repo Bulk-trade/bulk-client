@@ -52,6 +52,8 @@ impl RandomWsMarketMaker {
             symbols: vec![symbol.clone()],
             signer: Some(signer),
             default_timeout: Duration::from_secs(10),
+            track_ticker: true,
+            track_account: config.track_orders,
         };
 
         let client = BulkWsClient::connect(ws_config).await?;

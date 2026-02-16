@@ -136,9 +136,6 @@ pub struct LeverageSetting {
 
 /// The inner payload of a `fullAccount` HTTP response.
 ///
-/// Reuses the shared [`PositionInfo`] and [`OrderState`] types from
-/// `account.rs`, which accept both WS and HTTP field names via
-/// `#[serde(alias)]` and `#[serde(default)]`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(unused)]

@@ -8,6 +8,8 @@ pub struct WSConfig {
     pub symbols: Vec<String>,
     pub signer: Option<TransactionSigner>,
     pub default_timeout: Duration,
+    pub track_account: bool,
+    pub track_ticker: bool,
 }
 
 /// Bulk HTTP API configuration
@@ -25,6 +27,8 @@ impl Default for WSConfig {
             symbols: vec!["BTC-USD".into(), "ETH-USD".into(), "SOL-USD".into()],
             signer: None,
             default_timeout: Duration::from_secs(10),
+            track_ticker: true,
+            track_account: true,
         }
     }
 }
