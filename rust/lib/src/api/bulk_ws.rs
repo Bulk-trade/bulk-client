@@ -56,6 +56,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use eyre::bail;
 use serde_json::{json, Value};
@@ -67,7 +68,7 @@ use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
 use serde::Deserialize;
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time;
 use tokio_tungstenite::{
     connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
@@ -117,7 +118,7 @@ type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
 // BulkWsClient  —  the public handle (cheap clone, no locks)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Cloneable client handle. All methods are lock-free.
+/// Cloneable client handle.
 ///
 /// - **Hot reads** (ticker, price, margin): `watch::Receiver::borrow()` — zero
 ///   async overhead, just a ref-counted pointer swap.
@@ -125,11 +126,13 @@ type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
 ///   channel to the actor, which serializes all mutations.
 /// - **Cold reads** (open orders list): round-trip through the actor via
 ///   `oneshot` — still fast, but async.
-#[derive(Clone)]
 #[allow(unused)]
+#[derive(Clone)]
 pub struct BulkWsClient {
     // Command channel to the actor
     cmd_tx: mpsc::Sender<Command>,
+    // Event handlers
+    handlers: Arc<Mutex<HashMap<Topic, Vec<EventHandler>>>>,
 
     // ── Watch receivers (hot-path, lock-free) ──────────────────────────
     /// Per-symbol ticker snapshots.
@@ -172,16 +175,32 @@ impl BulkWsClient {
         // Command channel (bounded — back-pressure if actor falls behind)
         let (cmd_tx, cmd_rx) = mpsc::channel::<Command>(512);
 
+        // Shared handler map between the dispatch task and BulkWsClient (for on() registration)
+        let handlers: Arc<Mutex<HashMap<Topic, Vec<EventHandler>>>> = Arc::default();
+        let handlers_task = Arc::clone(&handlers);
+        let (event_tx, mut event_rx) = mpsc::channel::<(Topic, Event)>(32768);
+
+        tokio::spawn(async move {
+            while let Some((topic, event)) = event_rx.recv().await {
+                let map = handlers_task.lock().unwrap();
+                if let Some(hs) = map.get(&topic) {
+                    for h in hs {
+                        h(&event);
+                    }
+                }
+            }
+        });
+
         // Build actor
         let actor = Actor {
             ws_write,
+            event_tx,
             cmd_rx,
             ticker_tx,
             account_tx,
             tickers: HashMap::new(),
             prices: HashMap::new(),
             account_state: AccountState::default(),
-            handlers: HashMap::new(),
             pending: HashMap::new(),
             subscriptions: Vec::new(),
         };
@@ -211,6 +230,7 @@ impl BulkWsClient {
 
         Ok(Self {
             cmd_tx,
+            handlers,
             ticker_rx,
             account_rx,
             signer: config.signer,
@@ -604,19 +624,8 @@ impl BulkWsClient {
     /// # Argument
     /// - `topic`: topic to subscribe to
     /// - `handler`: callback for topic
-    pub async fn on(
-        &self,
-        topic: Topic,
-        handler: impl Fn(&Event) + Send + Sync + 'static,
-    ) -> eyre::Result<()> {
-        self.cmd_tx
-            .send(Command::On {
-                topic,
-                handler: Box::new(handler),
-            })
-            .await
-            .map_err(|_| eyre::eyre!("actor gone"))?;
-        Ok(())
+    pub async fn on(&self, topic: Topic, handler: impl Fn(&Event) + Send + Sync + 'static) {
+        self.handlers.lock().unwrap().entry(topic).or_default().push(Box::new(handler));
     }
 }
 
@@ -630,6 +639,8 @@ type WsReader = futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream
 struct Actor {
     // WebSocket write half
     ws_write: WsWriter,
+    // Event sender
+    event_tx: mpsc::Sender<(Topic,Event)>,
 
     // Inbound commands from the client handle
     cmd_rx: mpsc::Receiver<Command>,
@@ -642,7 +653,6 @@ struct Actor {
     tickers: HashMap<String, Ticker>,
     prices: HashMap<String, f64>,
     account_state: AccountState,
-    handlers: HashMap<Topic, Vec<EventHandler>>,
     pending: HashMap<u64, oneshot::Sender<eyre::Result<Vec<OrderResponse>>>>,
 
     // Subscription log (for reconnection replay)
@@ -717,10 +727,6 @@ impl Actor {
                             if let Err(e) = self.ws_send_text(&json).await {
                                 error!("Raw send error: {e}");
                             }
-                        }
-
-                        Some(Command::On { topic, handler }) => {
-                            self.handlers.entry(topic).or_default().push(handler);
                         }
 
                         Some(Command::GetOrders { symbol, respond }) => {
@@ -900,7 +906,6 @@ impl Actor {
                         self.account_state.open_orders.insert(oid, order.clone());
                     }
                     self.emit(Topic::Order, &Event::Order(order));
-                    self.publish_account();
                 } else {
                     error!("Could not parse order event: {:?}", data);
                 }
@@ -999,11 +1004,7 @@ impl Actor {
 
     /// Fire all handlers registered for `topic`.
     fn emit(&self, topic: Topic, data: &Event) {
-        if let Some(handlers) = self.handlers.get(&topic) {
-            for h in handlers {
-                h(data);
-            }
-        }
+        let _ = self.event_tx.try_send((topic, data.clone()));
     }
 
     /// Send a JSON value over the WebSocket.
