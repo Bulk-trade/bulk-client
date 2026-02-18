@@ -18,7 +18,7 @@ use bulk_api::api::parts::config::WSConfig;
 #[command(name = "md_listener", about = "Listen to ticker and L2 book updates")]
 struct Args {
     /// WebSocket URL
-    #[arg(long, default_value = "https://exchange-api2.bulk.trade/api/v1")]
+    #[arg(long, default_value = "wss://exchange-wss.bulk.trade")]
     url: String,
 
     /// Comma-separated symbols
@@ -68,7 +68,7 @@ async fn main() -> eyre::Result<()> {
                 );
             }
         })
-        .await?;
+        .await;
 
     client
         .on(Topic::L2Snapshot, |event| {
@@ -88,7 +88,7 @@ async fn main() -> eyre::Result<()> {
                 );
             }
         })
-        .await?;
+        .await;
 
     client
         .on(Topic::Error, |event| {
@@ -96,7 +96,7 @@ async fn main() -> eyre::Result<()> {
                 error!("[ERROR] {e}");
             }
         })
-        .await?;
+        .await;
 
     // ── Wait for Ctrl-C ─────────────────────────────────────────────────
     info!("Listening... press Ctrl-C to stop.");

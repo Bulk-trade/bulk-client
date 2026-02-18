@@ -27,12 +27,6 @@ pub(crate) enum Command {
     /// Send a raw JSON message (e.g. oracle update, fire-and-forget).
     SendRaw(String),
 
-    /// Register an event handler.
-    On {
-        topic: Topic,
-        handler: EventHandler,
-    },
-
     /// Query open orders (cold path — goes through actor).
     GetOrders {
         symbol: Option<String>,

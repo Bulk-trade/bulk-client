@@ -243,6 +243,10 @@ fn handle_post(
         "order" => {
             let orders = payload["action"]["orders"].as_array();
             let n_actions = orders.map(|a| a.len()).unwrap_or(0);
+            if n_actions == 0 {
+                return Ok(())
+            }
+
             state.order_count += n_actions as u64;
 
             // Build one status entry per action
@@ -253,8 +257,15 @@ fn handle_post(
                 })
                 .collect();
 
+            // ── 1. Build status list (one entry per action) ───────────────
             let response = make_post_response(request_id, &statuses);
             out_tx.send(Message::Text(response.to_string().into()))?;
+
+            // ── 2. Send the post response ─────────────────────────────────
+            let reponsess = make_order_states(orders.unwrap());
+            for x in reponsess {
+                out_tx.send(Message::Text(response.to_string().into()))?;
+            }
 
             if state.order_count % 500 == 0 {
                 info!(
@@ -331,6 +342,51 @@ fn make_post_response(request_id: u64, statuses: &[Value]) -> Value {
             }
         }
     })
+}
+
+
+/// Generate fake order state updates
+fn make_order_states(orders: &Vec<Value>) -> Vec<String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+
+    orders
+        .iter()
+        .filter_map(|action| {
+            // Only process entries that carry a real order (not cancel / cancelAll)
+            let ord = action.get("order")?;
+
+            let oid    = next_fake_oid();
+            let symbol = ord["c"].as_str().unwrap_or("BTC-USD");
+            let is_buy = ord["b"].as_bool().unwrap_or(true);
+            let price  = ord["px"].as_f64().unwrap_or(0.0);
+            let size   = ord["sz"].as_f64().unwrap_or(0.0);
+
+            let event = json!({
+                "type": "account",
+                "data": {
+                    "type": "orderUpdate",
+                    "status": "resting",
+                    "orderId": oid,
+                    "symbol": symbol,
+                    "isBuy": is_buy,
+                    "price": price,
+                    "size": size,
+                    "originalSize": size,
+                    "filledSize": 0.0,
+                    "maker": true,
+                    "timestamp": ts,
+                },
+                "topic": "account.mock"
+            });
+
+            Some(event.to_string())
+        })
+        .collect()
 }
 
 /// Build an account snapshot that satisfies the client's `handle_account` parser.
