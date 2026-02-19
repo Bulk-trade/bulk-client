@@ -16,16 +16,18 @@
     // spread to offer at
     spread: 0.10,
     // base size of inner level
-    size: 0.5,
+    size: 500,
     // depth of book on each side (for example 500)
-    depth: 500,
+    depth: 20,
     // orders per level (for example 20)
-    orders_per_level: 20,
+    orders_per_level: 1,
     // chunk size
     chunksize: 25000,
 
     // frequency of update (secs)
     frequency: 0.005,
     // priming period
-    prime: 50,
+    priming: 20,
+    // timeout period in seconds (change this to adjust amount of time a query can take)
+    timeout: 10
 }
