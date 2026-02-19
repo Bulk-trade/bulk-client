@@ -57,6 +57,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use eyre::bail;
 use serde_json::{json, Value};
@@ -149,6 +150,15 @@ pub struct BulkWsClient {
 
     // Actor join handle (held in Arc so Clone works)
     actor_handle: std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+
+    /// `true` while the WebSocket actor is running.  Flipped to `false` the
+    /// moment the actor begins disconnect teardown.  Cheap sync check, no await.
+    connected: Arc<AtomicBool>,
+
+    /// Fires once (with the disconnect reason) when the actor exits.
+    /// Clone a receiver via [`BulkWsClient::subscribe_disconnect`] so that
+    /// any spawned task can unblock immediately on connection loss.
+    disconnect_tx: broadcast::Sender<String>,
 }
 
 #[allow(unused)]
@@ -192,6 +202,9 @@ impl BulkWsClient {
         });
 
         // Build actor
+        let connected = Arc::new(AtomicBool::new(true));
+        let (disconnect_tx, _) = broadcast::channel::<String>(4);
+
         let actor = Actor {
             ws_write,
             event_tx,
@@ -203,6 +216,8 @@ impl BulkWsClient {
             account_state: AccountState::default(),
             pending: HashMap::new(),
             subscriptions: Vec::new(),
+            connected: Arc::clone(&connected),
+            disconnect_tx: disconnect_tx.clone(),
         };
 
         // Default subscriptions (same as Python __init__)
@@ -237,6 +252,8 @@ impl BulkWsClient {
             default_timeout: config.default_timeout,
             next_request_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             actor_handle: std::sync::Arc::new(tokio::sync::Mutex::new(Some(actor_handle))),
+            connected,
+            disconnect_tx,
         })
     }
 
@@ -254,6 +271,16 @@ impl BulkWsClient {
             let _ = h.await;
         }
     }
+
+    /// Returns `true` if the WebSocket actor is still running.
+    ///
+    /// This is a cheap, lock-free check — safe to call in hot loops.
+    /// Once it returns `false` you must call [`BulkWsClient::connect`] again
+    /// to establish a new connection.
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Relaxed)
+    }
+
 
     // ─────────────────────────────────────────────────────────────────────
     // Hot-path reads (zero-cost — no async, no lock)
@@ -410,7 +437,7 @@ impl BulkWsClient {
                 respond: resp_tx,
             })
             .await
-            .map_err(|_| eyre::eyre!("actor gone"))?;
+            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))?;
 
         match time::timeout(self.default_timeout, resp_rx).await {
             Ok(Ok(result)) => result,
@@ -541,6 +568,26 @@ impl BulkWsClient {
     // Subscriptions
     // ─────────────────────────────────────────────────────────────────────
 
+    /// Subscribe to disconnect notifications.
+    ///
+    /// The returned receiver fires exactly once, carrying the human-readable
+    /// disconnect reason, when the actor exits for any reason (server close,
+    /// network error, or explicit [`shutdown`]).
+    ///
+    /// Use this as a *poison pill* for any tasks you spawned that should stop
+    /// when the connection is lost:
+    ///
+    /// ```rust,no_run
+    /// let mut rx = client.subscribe_disconnect();
+    /// tokio::spawn(async move {
+    ///     let _ = rx.recv().await; // blocks until disconnect
+    ///     // clean up your task here
+    /// });
+    /// ```
+    pub fn subscribe_disconnect(&self) -> broadcast::Receiver<String> {
+        self.disconnect_tx.subscribe()
+    }
+
     /// Subscribe to ticker for `symbol`.
     ///
     /// # Arguments
@@ -657,6 +704,12 @@ struct Actor {
 
     // Subscription log (for reconnection replay)
     subscriptions: Vec<SubscriptionRequest>,
+
+    // ── Disconnect signalling ─────────────────────────────────────────────
+    /// Shared flag — flipped to `false` before the `Disconnected` event fires.
+    connected: Arc<AtomicBool>,
+    /// Broadcast once with the disconnect reason when the actor exits.
+    disconnect_tx: broadcast::Sender<String>,
 }
 
 impl Actor {
@@ -675,9 +728,13 @@ impl Actor {
             self.subscriptions = initial_subs;
         }
 
-        loop {
+        // Emit Connected so handlers can react immediately.
+        self.emit(Topic::Status, &Event::Connected);
+
+        // Use a labelled loop so every exit path carries an explicit reason.
+        let disconnect_reason: String = 'actor: loop {
             tokio::select! {
-                // ── Inbound WebSocket message ──────────────────────────
+                // Inbound WebSocket message
                 msg = ws_read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
@@ -689,21 +746,21 @@ impl Actor {
                         }
                         Some(Ok(Message::Close(_))) => {
                             warn!("WebSocket closed by server");
-                            break;
+                            break 'actor "server closed the connection".into();
                         }
                         Some(Err(e)) => {
                             error!("WebSocket read error: {e}");
-                            break;
+                            break 'actor format!("WebSocket read error: {e}");
                         }
                         None => {
                             warn!("WebSocket stream ended");
-                            break;
+                            break 'actor "WebSocket stream ended".into();
                         }
                         _ => {} // Ping/Pong handled by tungstenite
                     }
                 }
 
-                // ── Command from client handle ─────────────────────────
+                // Command from client handle
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
                         Some(Command::Subscribe(subs)) => {
@@ -742,22 +799,46 @@ impl Actor {
                         }
 
                         Some(Command::Shutdown) | None => {
-                            info!("Actor shutting down");
-                            break;
+                            info!("Actor shutting down (requested)");
+                            break 'actor "shutdown requested".into();
                         }
                     }
                 }
             }
-        }
+        }; // end 'actor loop
 
-        // Fail any pending requests
+        self.handle_disconnect(disconnect_reason).await;
+    }
+
+    /// Shared teardown called from every exit path in `run()`.
+    ///
+    /// Order of operations:
+    /// 1. Flip `connected` flag so callers see `is_connected() == false` immediately.
+    /// 2. Fail every in-progress `place_orders` that is waiting on a oneshot response.
+    /// 3. Emit `Event::Disconnected` on `Topic::Status` so registered handlers fire.
+    /// 4. Broadcast the reason string to all `subscribe_disconnect()` receivers
+    ///    — this is the poison pill for any other spawned tasks.
+    /// 5. Close the WebSocket write half.
+    async fn handle_disconnect(&mut self, reason: String) {
+        // 1. Mark disconnected — visible to all handles immediately.
+        self.connected.store(false, Ordering::Release);
+
+        // 2. Fail every pending order response.
+        let err_msg = format!("disconnected: {reason}");
         for (_, tx) in self.pending.drain() {
-            let _ = tx.send(Err(eyre::eyre!("connection closed")));
+            let _ = tx.send(Err(eyre::eyre!("{}", err_msg)));
         }
 
-        // Close write half
+        // 3. Emit the Disconnected event to registered handlers.
+        self.emit(Topic::Status, &Event::Disconnected(reason.clone()));
+
+        // 4. Broadcast reason as poison pill (best-effort; ignore no-receivers).
+        let _ = self.disconnect_tx.send(reason.clone());
+
+        // 5. Close WS write half (ignore error — connection may already be gone).
         let _ = self.ws_write.close().await;
-        info!("Actor stopped");
+
+        info!("Actor stopped: {reason}");
     }
 
     /// WS send
