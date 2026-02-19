@@ -16,11 +16,11 @@
     // spread to offer at
     spread: 0.10,
     // base size of inner level
-    size: 500,
+    size: 0.1,
     // depth of book on each side (for example 500)
-    depth: 20,
+    depth: 500,
     // orders per level (for example 20)
-    orders_per_level: 1,
+    orders_per_level: 20,
     // chunk size
     chunksize: 25000,
 
