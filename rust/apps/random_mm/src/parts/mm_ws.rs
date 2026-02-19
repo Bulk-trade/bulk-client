@@ -51,7 +51,7 @@ impl RandomWsMarketMaker {
             url: config.url.clone(),
             symbols: vec![symbol.clone()],
             signer: Some(signer),
-            default_timeout: Duration::from_secs(10),
+            default_timeout: Duration::from_secs(config.timeout),
             track_ticker: true,
             track_account: config.track_orders,
         };
@@ -78,7 +78,7 @@ impl RandomWsMarketMaker {
         );
         info!(
             "  depth={}  orders/level={}  freq={}s",
-            config.depth, config.order_per_level, config.frequency
+            config.depth, config.orders_per_level, config.frequency
         );
         info!("{}", "=".repeat(70));
 
@@ -260,7 +260,7 @@ impl RandomWsMarketMaker {
         let mut rng = rand::rng();
         let jitter = Uniform::new(0.5_f64, 1.5).unwrap();
 
-        let mut orders = Vec::with_capacity(cfg.depth * cfg.order_per_level * 2);
+        let mut orders = Vec::with_capacity(cfg.depth * cfg.orders_per_level * 2);
 
         for level in 0..cfg.depth {
             let offset = half_spread + (level as f64) * cfg.spread;
@@ -271,10 +271,10 @@ impl RandomWsMarketMaker {
             let jitter_bid: f64 = jitter.sample(&mut rng);
             let jitter_ask: f64 = jitter.sample(&mut rng);
 
-            let order_size_bid = round6(level_size * jitter_bid / cfg.order_per_level as f64);
-            let order_size_ask = round6(level_size * jitter_ask / cfg.order_per_level as f64);
+            let order_size_bid = round6(level_size * jitter_bid / cfg.orders_per_level as f64);
+            let order_size_ask = round6(level_size * jitter_ask / cfg.orders_per_level as f64);
 
-            for i in 0..cfg.order_per_level {
+            for i in 0..cfg.orders_per_level {
                 let bid_sz = order_size_bid + (i + 1) as f64 * 1e-5;
                 let bid_order = LimitOrder::new(
                     &symbol,

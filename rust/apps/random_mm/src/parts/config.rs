@@ -40,7 +40,7 @@ pub struct RmmConfig {
 
     /// Orders per price level
     #[serde(default = "default_order_per_level")]
-    pub order_per_level: usize,
+    pub orders_per_level: usize,
 
     /// Max actions per bundle chunk
     #[serde(default = "default_chunksize")]
@@ -53,6 +53,10 @@ pub struct RmmConfig {
     /// Priming ticks (oracle-only, no orders)
     #[serde(default = "default_priming")]
     pub priming: u64,
+
+    /// Post timeout (seconds)
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
 }
 
 impl RmmConfig {
@@ -91,3 +95,4 @@ fn default_order_per_level() -> usize { 20 }
 fn default_chunksize() -> usize { 500 }
 fn default_frequency() -> f64 { 0.010 }
 fn default_priming() -> u64 { 100 }
+fn default_timeout() -> u64 { 10 }
