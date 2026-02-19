@@ -24,6 +24,8 @@ pub enum Topic {
     Leverage,
     Order,
     Error,
+    /// Connection lifecycle events (connected, disconnected).
+    Status
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +47,12 @@ pub enum Event {
     Fill(Fill),
     Leverage(Vec<LeverageSetting>),
     Error(Value),
+    /// Emitted on the [`Topic::Status`] channel when the WebSocket connection
+    /// is cleanly established (after the actor sends initial subscriptions).
+    Connected,
+    /// Emitted on the [`Topic::Status`] channel when the WebSocket connection
+    /// is lost for any reason.  The string contains a human-readable cause.
+    Disconnected(String),
 }
 
 #[allow(unused)]
@@ -62,6 +70,7 @@ impl Event {
             Event::Fill(_) => Topic::Fill,
             Event::Leverage(_) => Topic::Leverage,
             Event::Error(_) => Topic::Error,
+            Event::Connected | Event::Disconnected(_) => Topic::Status,
         }
     }
 }
