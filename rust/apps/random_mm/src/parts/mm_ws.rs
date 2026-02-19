@@ -193,8 +193,11 @@ impl RandomWsMarketMaker {
                 .collect();
 
             let chunk_size = self.config.chunksize;
-            let mut chunk_start = 0;
+
+            // Build all (nonce, actions) pairs up front
+            let mut chunks: Vec<(u64, Vec<OrderAction>)> = Vec::new();
             let mut first = true;
+            let mut chunk_start = 0;
 
             while chunk_start < order_actions.len() || first {
                 let chunk_end = (chunk_start + chunk_size).min(order_actions.len());
@@ -206,27 +209,35 @@ impl RandomWsMarketMaker {
                 }
 
                 actions.extend(order_actions[chunk_start..chunk_end].to_vec());
+                chunks.push((nonce, actions));
 
-                // place orders
-                match self.client.place_orders(actions, Some(nonce)).await {
+                nonce += 1;
+                chunk_start = chunk_end;
+            }
+
+            // Fire all chunks concurrently and await as a group
+            let futures: Vec<_> = chunks
+                .into_iter()
+                .map(|(n, actions)| self.client.place_orders(actions, Some(n)))
+                .collect();
+
+            let results = futures::future::join_all(futures).await;
+
+            for (idx, result) in results.into_iter().enumerate() {
+                match result {
                     Ok(responses) => {
                         let n_err = responses.iter().filter(|r| r.is_error()).count();
                         if n_err > 1 {
                             warn!(
-                                "Tick {}: {}/{} errors",
-                                self.tick_count,
-                                n_err,
-                                responses.len()
-                            );
+                    "Tick {}: chunk {} — {}/{} errors",
+                    self.tick_count, idx, n_err, responses.len()
+                );
                         }
                     }
                     Err(e) => {
-                        error!("Tick {} chunk send error: {e}", self.tick_count);
+                        error!("Tick {} chunk {} send error: {e}", self.tick_count, idx);
                     }
                 }
-
-                nonce += 1;
-                chunk_start = chunk_end;
             }
 
             self.total_orders += n_orders as u64;
