@@ -98,7 +98,9 @@ class OrderIDTest:
                 price=90000.0,
                 size=0.001,
                 reduce_only=False,
-                time_in_force=TimeInForce.ALO  # Post-only to avoid immediate fill
+                time_in_force=TimeInForce.ALO,
+                nonce=test_nonce,
+                pubkey=self.signer.public_key
             )
 
             logger.info(f"✓ Order created:")
@@ -112,7 +114,7 @@ class OrderIDTest:
             # Step 3: Pre-compute order ID
             logger.info("\n[Step 3] Pre-computing order ID...")
 
-            self.computed_order_id = order.hash(self.signer.public_key, test_nonce)
+            self.computed_order_id = order.order_id()
             logger.info(f"✓ Computed order ID: {self.computed_order_id}")
 
             # Step 4: Place the order
