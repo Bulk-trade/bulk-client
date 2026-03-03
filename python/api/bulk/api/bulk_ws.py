@@ -371,6 +371,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
+            print(f'Sending request: {sjson}')
             self.logger.debug(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
