@@ -423,55 +423,13 @@ class BulkHttpClient:
                     order_objects.append(tx.to_api())
                 case CancelAll():
                     order_objects.append(tx.to_api())
-                case dict():
-                    match tx.get("type"):
-                        case "order":
-                            order = {
-                                "c": tx["symbol"],
-                                "b": tx["is_buy"],
-                                "px": tx["price"],
-                                "sz": tx["size"],
-                                "r": tx.get("reduce_only", False)
-                            }
-
-                            if tx.get("order_type", "limit") == "market":
-                                order["t"] = {
-                                    "trigger": {
-                                        "is_market": True,
-                                        "triggerPx": 0.0
-                                    }
-                                }
-                            else:
-                                order["t"] = {
-                                    "limit": {
-                                        "tif": tx.get("time_in_force", "GTC")
-                                    }
-                                }
-                            order_objects.append({"order": order})
-
-                        case "cancel":
-                            cancel = {
-                                "c": tx["symbol"],
-                                "oid": tx["order_id"]
-                            }
-                            order_objects.append({"cancel": cancel})
-
-                        case "cancelAll":
-                            cancelall = {
-                                "c": tx["symbols"]
-                            }
-                            order_objects.append({"cancelAll": cancelall})
-                        case _:
-                            raise ValueError(f"Invalid order type: {tx.get('type')}")
                 case _:
                     raise ValueError("Invalid txn type: {}".format(tx))
 
         # package into a transaction
         transaction = {
-            "action": {
-                "type": "order",
-                "orders": order_objects
-            },
+            "actions": order_objects,
+            "nonce": order_objects[0].nonce,
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -510,13 +468,12 @@ class BulkHttpClient:
 
         # Build transaction
         transaction = {
-            "action": {
-                "type": "updateUserSettings",
-                "settings": {
+            "actions": [{
+                "updateUserSettings": {
                     "m": leverage_settings
                 },
-                "nonce": 1
-            },
+            }],
+            "nonce": int(time.time_ns() / 1000),
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -562,13 +519,13 @@ class BulkHttpClient:
 
         # Build transaction
         transaction = {
-            "action": {
-                "type": "agentWalletCreation",
-                "agent": {
+            "actions": [{
+                "agentWalletCreation": {
                     "a": agent_pubkey,
                     "d": delete
                 }
-            },
+            }],
+            "nonce": int(time.time_ns() / 1000),
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -630,18 +587,13 @@ class BulkHttpClient:
 
         # Build transaction
         transaction = {
-            "action": {
-                "type": "testnetAdmin",
-                "actions": [
-                    {
-                        "whitelistFaucet": {
-                            "account": target_account,
-                            "whitelist": whitelist
-                        }
-                    }
-                ],
-                "nonce": nonce
-            },
+            "actions": [{
+                "whitelistFaucet": {
+                    "account": target_account,
+                    "whitelist": whitelist
+                }
+            }],
+            "nonce": nonce,
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -687,26 +639,24 @@ class BulkHttpClient:
         # Build transaction
         if amount is None:
             transaction = {
-                "action": {
-                    "type": "faucet",
+                "actions": [{
                     "faucet": {
                         "u": target_user
                     },
-                    "nonce": nonce
-                },
+                }],
+                "nonce": nonce,
                 "account": target_user,
                 "signer": self.signer.public_key
             }
         else:
             transaction = {
-                "action": {
-                    "type": "faucet",
+                "actions": [{
                     "faucet": {
                         "u": target_user,
                         "amount": amount
                     },
-                    "nonce": nonce
-                },
+                }],
+                "nonce": nonce,
                 "account": target_user,
                 "signer": self.signer.public_key
             }

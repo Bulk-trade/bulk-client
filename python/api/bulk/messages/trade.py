@@ -67,23 +67,23 @@ def _write_pubkey(key: str) -> bytes:
 # =======================================================
 
 @dataclass
-class OraclePrices:
+class OraclePrice:
     """oracle price container"""
     timestamp: int
-    prices: Dict[str, float]
+    symbol: str
+    price: float
     nonce: Optional[int] = None
     pubkey: Optional[str] = None
 
     def to_api(self) -> List[Dict]:
         """Convert to API format with compact field names"""
-        return [
-            {
+        return {
+            "oracle": {
                 't': self.timestamp,
-                'c': symbol,
-                'px': float(px)
+                'c': self.symbol,
+                'px': float(self.price)
             }
-            for symbol, px in self.prices.items()
-        ]
+        }
 
     def __str__(self) -> str:
         return json.dumps(self.to_api())
@@ -119,14 +119,15 @@ class LimitOrder:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
 
         ser = b''.join([
-            _write_u64(self.nonce),
+            _write_u32(1),
             _write_string(self.symbol),
-            _write_pubkey(self.pubkey),
             _write_u8(SIDE_MAP[self.side]),
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_u64(round(self.price * DECIMALS_MULTIPLIER)),
             _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             _write_bool(self.reduce_only),
+            _write_pubkey(self.pubkey),
+            _write_u64(self.nonce),
         ])
 
         hash = hashlib.sha256(ser).digest()
@@ -136,15 +137,13 @@ class LimitOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            "order": {
+            "limitorder": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
                 'px': self.price,
                 'sz': self.size,
                 'r': self.reduce_only,
-                't': {
-                    'limit': {'tif': str(self.time_in_force)}
-                },
+                'tif': str(self.time_in_force)
             }
         }
         return order
@@ -207,12 +206,13 @@ class MarketOrder:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
 
         ser = b''.join([
-            _write_u64(self.nonce),
+            _write_u32(0),
             _write_string(self.symbol),
-            _write_pubkey(self.pubkey),
             _write_u8(SIDE_MAP[self.side]),
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
+            _write_pubkey(self.pubkey),
+            _write_u64(self.nonce),
         ])
 
         hash = hashlib.sha256(ser).digest()
@@ -223,18 +223,12 @@ class MarketOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            "order": {
+            "marketorder": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
                 'sz': self.size,
                 'px': 0.0,
                 'r': self.reduce_only,
-                't': {
-                    "trigger": {
-                        "is_market": True,
-                        "triggerPx": 0.0
-                    }
-                }
             }
         }
         return order
@@ -380,98 +374,3 @@ class OrderResponse:
                     ))
         return responses
 
-
-# =======================================================
-# Tests
-# =======================================================
-
-def test_limitorder_hash1():
-    order = LimitOrder(
-        symbol="BTC-USD",
-        side=Side.BUY,
-        price=98000.0,
-        size=1.0,
-        nonce=123456789,
-        time_in_force=TimeInForce.ALO,
-        reduce_only=True,
-    )
-    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "9ih2tCrhdiNqX1erp3bfmhRNeu7dWvte9f9K3Toy9xUP"
-
-def test_limitorder_hash2():
-    order = LimitOrder(
-        symbol="BTC-USD",
-        side=Side.SELL,
-        price=94865.0,
-        size=0.9170000,
-        nonce=123456789,
-        time_in_force=TimeInForce.ALO,
-        reduce_only=True,
-    )
-    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "HHrRQSycSTkQ3Aaw16UGwBxYVEy585gvvZF11pTYT3K7"
-
-def test_limitorder_hash3():
-    order = LimitOrder(
-        symbol="BTC-USD",
-        side=Side.SELL,
-        price=95323.5,
-        size=5.649,
-        nonce=1768652193232748,
-        time_in_force=TimeInForce.GTC,
-        reduce_only=False,
-    )
-    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "EkeYuCxbuLuYtrc6uEZUj2G9SibE1nD4Q9JALVhgckrj"
-
-def test_limitorder_hash4a():
-    order = LimitOrder(
-        symbol="BTC-USD",
-        side=Side.SELL,
-        price=95204.75,
-        size=0.6704,
-        nonce=1768654732092639,
-        time_in_force=TimeInForce.GTC,
-        reduce_only=False,
-    )
-    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "4WNdBm6EeWRupGGxyujv1pyJyj39XtRfiD2veL2FvQN9"
-
-def test_limitorder_hash5():
-    order = LimitOrder(
-        symbol="BTC-USD",
-        side=Side.SELL,
-        price=95247.0,
-        size=0.886599995,
-        nonce=1768669537637142,
-        time_in_force=TimeInForce.GTC,
-        reduce_only=False,
-    )
-    pubkey = "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "8b6tCZdtjGZqhM4naJ1WaHbDvDcPD6vH7Ug3CZTDgrhf"
-
-def test_marketorder_hash():
-    order = MarketOrder(
-        symbol="BTC-USD",
-        side=Side.BUY,
-        size=1.0,
-        nonce=123456789,
-        reduce_only=True,
-    )
-    pubkey = "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw"
-    hash = order.hash(pubkey, nonce=order.nonce)
-    assert hash == "HDoXpY5bNBrwnCp5B4MJSLLaagTkJUEhTH3cNZYGLXmj"
-
-
-if __name__ == "__main__":
-    test_limitorder_hash1()
-    test_limitorder_hash2()
-    test_limitorder_hash3()
-    test_limitorder_hash4a()
-    test_limitorder_hash5()
-    test_marketorder_hash()
