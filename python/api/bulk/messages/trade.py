@@ -213,8 +213,8 @@ class MarketOrder:
             _write_u8(SIDE_MAP[self.side]),
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
-            _write_u64(self.nonce),
             _write_pubkey(self.pubkey),
+            _write_u64(self.nonce),
         ])
 
         hash = hashlib.sha256(ser).digest()
