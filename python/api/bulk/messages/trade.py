@@ -78,7 +78,7 @@ class OraclePrice:
     def to_api(self) -> List[Dict]:
         """Convert to API format with compact field names"""
         return {
-            "oracle": {
+            "px": {
                 't': self.timestamp,
                 'c': self.symbol,
                 'px': float(self.price)
@@ -126,8 +126,8 @@ class LimitOrder:
             _write_u64(round(self.price * DECIMALS_MULTIPLIER)),
             _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             _write_bool(self.reduce_only),
-            _write_pubkey(self.pubkey),
             _write_u64(self.nonce),
+            _write_pubkey(self.pubkey),
         ])
 
         hash = hashlib.sha256(ser).digest()
@@ -137,7 +137,7 @@ class LimitOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            "limitorder": {
+            "l": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
                 'px': self.price,
@@ -211,8 +211,8 @@ class MarketOrder:
             _write_u8(SIDE_MAP[self.side]),
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
-            _write_pubkey(self.pubkey),
             _write_u64(self.nonce),
+            _write_pubkey(self.pubkey),
         ])
 
         hash = hashlib.sha256(ser).digest()
@@ -223,7 +223,7 @@ class MarketOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         order = {
-            "marketorder": {
+            "m": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
                 'sz': self.size,
@@ -277,7 +277,7 @@ class CancelOrder:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         return {
-            "cancel": {
+            "cx": {
                 'c': self.symbol,
                 'oid': self.order_id
             }
@@ -293,7 +293,7 @@ class CancelAll:
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         return {
-            "cancelAll": {
+            "cxa": {
                 'c': self.symbols,
             }
         }
