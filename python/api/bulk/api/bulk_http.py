@@ -668,7 +668,7 @@ class BulkHttpClient:
         
         # Send request
         response = requests.post(
-            f"{self.base_url}/private/faucet",
+            f"{self.base_url}/order",
             json=tx,
             timeout=self.timeout
         )
