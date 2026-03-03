@@ -60,7 +60,6 @@ class BinanceMarketMaker:
         self.binance: Optional[BinanceFuturesWebSocketClient] = None
         self.bulk: Optional[BulkWebSocketClient] = None
         self.signer: Optional[TransactionSigner] = None
-        self.simulated = config.simulated
 
         # Order management
         self.bid_stack: Optional[OrderStack] = None
