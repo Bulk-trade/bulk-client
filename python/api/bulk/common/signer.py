@@ -56,11 +56,12 @@ class TransactionSigner:
             Base58 encoded signature
         """
         # Extract components
-        action = tx.get("action", {})
+        action = tx.get("actions", [])
+        nonce = tx.get("nonce", int(time.time_ns() / 1000))
         account = tx.get("account", self.public_key)
         signer = tx.get("signer", self.public_key)
         
-        message = self.serialize_transaction(action, account, signer)
+        message = self.serialize_transaction(action, nonce, account)
         signed = self.signing_key.sign(message)
         
         sig = base58.b58encode(signed.signature).decode()
@@ -88,173 +89,140 @@ class TransactionSigner:
         return TransactionSigner(private_key_b58)
         
     @staticmethod
-    def serialize_transaction(action: Dict, account: Optional[str], signer: Optional[str]) -> bytes:
+    def serialize_transaction(
+        actions: List[Dict],
+        nonce: int,
+        account: str) -> bytes:
         """
         Serialize transaction using bincode format
 
         Args:
-            action: Action object with type and parameters
+            actions: action list
+            nonce: nonce
             account: Base58 encoded account public key
-            signer: Base58 encoded signer public key
 
         Returns:
             Binary serialized transaction
         """
-        action_type = action.get("type", "")
-        parts = [TransactionSigner.serialize_action(action_type)]
-
-        # get / add nonce
-        nonce = action.get("nonce",None)
-        if not nonce:
-            nonce = int(time.time_ns() / 1000 % 1000000000)
-            action["nonce"] = nonce
-
-        match action_type:
-            case "order":
-                parts.extend(TransactionSigner.serialize_orders(action.get("orders", [])))
-            case "faucet":
-                parts.extend(TransactionSigner.serialize_faucet(action.get("faucet", [])))
-            case "updateUserSettings":
-                parts.extend(TransactionSigner.serialize_update_user_settings(action.get("settings", [])))
-            case "agentWalletCreation":
-                parts.extend(TransactionSigner.serialize_agent_wallet_creation(action.get("agent", [])))
-            case "testnetAdmin":
-                parts.extend(TransactionSigner.serialize_testnet_admin(action.get("actions", [])))
-            case "oracle":
-                parts.extend(TransactionSigner.serialize_oracle(action.get("oracles", [])))
+        parts = [TransactionSigner.write_u32(len(actions))]
+        for action in actions:
+            parts.append(TransactionSigner.serialize_action(action))
 
         parts.append(TransactionSigner.write_u64(nonce))
         parts.append(TransactionSigner.decode_and_validate_key(account))
-        parts.append(TransactionSigner.decode_and_validate_key(signer))
         return b''.join(parts)
-        
+
     @staticmethod
-    def serialize_orders(orders: List[Dict]) -> List[bytes]:
-        """Serialize a order list"""
-        parts = [TransactionSigner.write_u64(len(orders))]
-        
-        for order in orders:
-            order_type = next(iter(order))
-            order_data = order[order_type]
+    def serialize_action(self, action: dict) -> bytes:
+        def to_fixedpoint(x: float) -> int:
+            return int(round(x * 1e8))
 
-            parts.append(TransactionSigner.serialize_order_type(order_type))
+        match action:
+            case {"m": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(0),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['b']),
+                    TransactionSigner.write_u64(to_fixedpoint(order['sz'])),
+                    TransactionSigner.write_bool(order['r']),
+                ])
 
-            match order_type:
-                case "order":
-                    parts.extend([
-                        TransactionSigner.write_string(order_data['c']),
-                        TransactionSigner.write_bool(order_data['b']),
-                        TransactionSigner.write_f64(order_data['px']),
-                        TransactionSigner.write_f64(order_data['sz']),
-                        TransactionSigner.write_bool(order_data['r'])
+            case {"l": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(1),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['b']),
+                    TransactionSigner.write_u64(to_fixedpoint(order['px'])),
+                    TransactionSigner.write_u64(to_fixedpoint(order['sz'])),
+                    TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
+                    TransactionSigner.write_bool(order['r']),
+                ])
+
+            case {"mod": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(2),
+                    TransactionSigner.decode_and_validate_key(order['oid']),
+                    TransactionSigner.write_string(order['symbol']),
+                ])
+
+            case {"cx": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(3),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.decode_and_validate_key(order['oid']),
+                ])
+
+            case {"cxa": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(4),
+                    TransactionSigner.write_strings(order['c']),
+                ])
+
+            case {"p": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(5),
+                    TransactionSigner.write_u64(order['t']),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_f64(order['px']),
+                ])
+
+            case {"o": order}:
+                oracles = order["oracles"]
+                parts = [
+                    TransactionSigner.write_u32(6),
+                    TransactionSigner.write_u32(len(oracles)),
+                ]
+                for x in oracles:
+                    parts.append(TransactionSigner.write_u64(x['t']))
+                    parts.append(TransactionSigner.write_u64(x['fi']))
+                    parts.append(TransactionSigner.write_u64(x['px']))
+                    parts.append(TransactionSigner.write_i16(x['e']))
+
+                return b''.join(parts)
+
+            case {"faucet": order}:
+                if "amount" in order:
+                    return b''.join([
+                        TransactionSigner.write_u32(7),
+                        TransactionSigner.decode_and_validate_key(order['u']),
+                        TransactionSigner.write_bool(True),
+                        TransactionSigner.write_f64(order['amount']),
+                    ])
+                else:
+                    return b''.join([
+                        TransactionSigner.write_u32(7),
+                        TransactionSigner.decode_and_validate_key(order['u']),
+                        TransactionSigner.write_bool(False),
                     ])
 
-                    t = order_data["t"]
-                    if "limit" in t:
-                        parts.extend([
-                            TransactionSigner.write_u32(0),
-                            TransactionSigner.write_u32(TIME_IN_FORCE_MAP[t["limit"]["tif"]]),
-                        ])
-                    elif "trigger" in t:
-                        parts.extend([
-                            TransactionSigner.write_u32(1),
-                            TransactionSigner.write_bool(t["trigger"]["is_market"]),
-                            TransactionSigner.write_f64(t["trigger"]["triggerPx"]),
-                        ])
+            case {"agentWalletCreation": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(8),
+                    TransactionSigner.decode_and_validate_key(order['a']),
+                    TransactionSigner.write_bool(order['d']),
+                ])
 
-                    if "cloid" in order_data:
-                        parts.extend([
-                            TransactionSigner.write_bool(True),
-                            TransactionSigner.decode_and_validate_key(order_data["cloid"]),
-                        ])
-                    else:
-                        parts.extend([
-                            TransactionSigner.write_bool(False),
-                        ])
-                case "cancel":
-                    parts.extend([
-                        TransactionSigner.write_string(order_data["c"]),
-                        base58.b58decode(order_data["oid"])
-                    ])
-                case "cancelAll":
-                    parts.extend(
-                        [TransactionSigner.write_u64(len(order_data["c"]))]
-                        )
-                    for s in order_data["c"]:
-                        parts.extend([
-                            TransactionSigner.write_string(s)
-                        ])
-        return parts
+            case {"updateUserSettings": order}:
+                settings = order["m"]
+                parts = [
+                    TransactionSigner.write_u32(9),
+                    TransactionSigner.write_u32(len(settings)),
+                ]
+                for key,value in settings:
+                    parts.append(TransactionSigner.write_string(key))
+                    parts.append(TransactionSigner.write_f64(value))
 
-    @staticmethod
-    def serialize_oracle(oracles: List[Dict]) -> List[bytes]:
-        """Serialize oracle updates"""
-        parts = [TransactionSigner.write_u64(len(oracles))]
+                return b''.join(parts)
 
-        for oracle in oracles:
-            parts.extend([
-                TransactionSigner.write_u64(oracle['t']),  # timestamp
-                TransactionSigner.write_string(oracle['c']),  # asset
-                TransactionSigner.write_f64(oracle['px'])  # price
-            ])
-
-        return parts
-    
-    @staticmethod
-    def serialize_update_user_settings(settings: Dict) -> List[bytes]:
-        """Serialize a update user settings transaction"""
-        leverage_map = settings.get("m", [])
-        parts = [TransactionSigner.write_u64(len(leverage_map))]
+            case {"whiteListFaucet": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(10),
+                    TransactionSigner.decode_and_validate_key(order['target']),
+                    TransactionSigner.write_bool(order['whitelist']),
+                ])
+            case _:
+                raise Exception("Unknown tx type")
         
-        for symbol, leverage in leverage_map:
-            parts.extend([
-                TransactionSigner.write_string(symbol),
-                TransactionSigner.write_f64(leverage)
-            ])
-            
-        return parts
-
-    @staticmethod
-    def serialize_faucet(faucet: Dict) -> List[bytes]:
-        """Serialize a faucet request"""
-        parts = [TransactionSigner.decode_and_validate_key(faucet["u"])]
-        
-        amount = faucet.get("amount")
-        if amount is None:
-            parts.append(TransactionSigner.write_bool(False))
-        else:
-            parts.extend([
-                TransactionSigner.write_bool(True),
-                TransactionSigner.write_f64(amount)
-            ])
-            
-        return parts
-        
-    @staticmethod
-    def serialize_agent_wallet_creation(agent: Dict) -> List[bytes]:
-        """Serialize a agent wallet creation transaction"""
-        
-        parts = [TransactionSigner.decode_and_validate_key(agent["a"])]
-        
-        if agent.get("d", False):
-            parts.append(TransactionSigner.write_bool(True))
-        else:
-            parts.append(TransactionSigner.write_bool(False))
-        return parts
-
-    @staticmethod
-    def serialize_testnet_admin(actions: Dict) -> List[bytes]:
-        """Serialize a testnet admin transaction"""
-        parts = [TransactionSigner.write_u64(len(actions))]
-        for action in actions:
-            admin_action = next(iter(action))
-            parts.extend([
-                TransactionSigner.serialize_admin_action(admin_action),
-                TransactionSigner.decode_and_validate_key(action[admin_action]["account"]),
-                TransactionSigner.write_bool(action[admin_action]["whitelist"])
-            ])
-            
-        return parts
 
     @staticmethod
     def write_u64(value: int) -> bytes:
@@ -262,10 +230,23 @@ class TransactionSigner:
         return struct.pack("<Q", value)
 
     @staticmethod
+    def write_i16(value: int) -> bytes:
+        """Write a i16 in little-endian format"""
+        return struct.pack("<h", value)
+
+    @staticmethod
     def write_string(value: str) -> bytes:
         """Write a string in little-endian format"""
         s_bytes = value.encode('utf-8')
         return TransactionSigner.write_u64(len(s_bytes)) + s_bytes
+
+    @staticmethod
+    def write_strings(value: List[str]) -> bytes:
+        """Write a string in little-endian format"""
+        bytes = TransactionSigner.write_u32(len(value))
+        for x in value:
+            bytes.extend(TransactionSigner.write_string(x))
+        return bytes
 
     @staticmethod
     def write_bool(value: bool) -> bytes:

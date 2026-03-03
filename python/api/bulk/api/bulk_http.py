@@ -661,8 +661,6 @@ class BulkHttpClient:
                 "signer": self.signer.public_key
             }
 
-        print(f"pre-signing tx: {transaction}")
-
         # Sign transaction
         tx = self.signer.sign_transaction(transaction)
         
