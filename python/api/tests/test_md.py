@@ -1,5 +1,6 @@
+from bulk import Topic
 from bulk.api import BulkWebSocketClient
-from common import Side
+from bulk.common import Side
 
 
 async def test_market_data():
@@ -67,11 +68,11 @@ async def test_market_data():
         print(f"  Volume: {candle.volume:,.2f}")
 
     # Register all handlers
-    client.on("ticker", on_ticker)
-    client.on("trades", on_trades)
-    client.on("l2_snapshot", on_l2_snapshot)
-    client.on("l2_delta", on_l2_delta)
-    client.on("candle", on_candle)
+    client.on(Topic.TICKER, on_ticker)
+    client.on(Topic.FILL, on_trades)
+    client.on(Topic.L2SNAPSHOT, on_l2_snapshot)
+    client.on(Topic.L2DELTA, on_l2_delta)
+    client.on(Topic.CANDLE, on_candle)
 
     try:
         # ========== Connect ==========
@@ -123,7 +124,7 @@ async def test_market_data():
 
             if counter % 30 == 0:
                 # Get and print current order book state
-                book = client.get_order_book(symbol)
+                book = client.get_book(symbol)
                 best_bid = book.get_best_bid()
                 best_ask = book.get_best_ask()
 
