@@ -13,7 +13,7 @@ async def test_market_data():
 
     # Create WebSocket client
     client = BulkWebSocketClient(
-        url="wss://exchange-wss.bulk.trade"
+        url="ws://localhost:12001/",
     )
 
     # ========== Register Event Handlers ==========

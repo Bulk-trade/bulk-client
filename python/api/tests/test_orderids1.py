@@ -54,7 +54,7 @@ class OrderIDTest:
     def __init__(self, signer: TransactionSigner):
         self.signer = signer
         self.client = BulkWebSocketClient(
-            url="wss://exchange-wss.bulk.trade",
+            url="ws://localhost:12001/",
             symbols=["BTC-USD"],
             signer=self.signer,
             logger=logger
