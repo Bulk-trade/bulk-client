@@ -4,29 +4,10 @@ import struct
 import base58
 import time
 
-ACTION_CODES = {
-    "order": 0,
-    "oracle": 1,
-    "faucet": 2,
-    "updateUserSettings": 3,
-    "agentWalletCreation": 4,
-    "testnetAdmin": 5,
-}
-
-ORDER_MAP = {
-    "order": 0,
-    "cancel": 1,
-    "cancelAll": 2,
-}
-
 TIME_IN_FORCE_MAP = {
     "GTC": 0,
     "IOC": 1,
     "ALO": 2,
-}
-
-ADMIN_ACTION_MAP = {
-    "whitelistFaucet": 0
 }
 
 class TransactionSigner:
@@ -113,7 +94,7 @@ class TransactionSigner:
         return b''.join(parts)
 
     @staticmethod
-    def serialize_action(self, action: dict) -> bytes:
+    def serialize_action(action: dict) -> bytes:
         def to_fixedpoint(x: float) -> int:
             return int(round(x * 1e8))
 
@@ -243,10 +224,10 @@ class TransactionSigner:
     @staticmethod
     def write_strings(value: List[str]) -> bytes:
         """Write a string in little-endian format"""
-        bytes = TransactionSigner.write_u32(len(value))
+        parts = [TransactionSigner.write_u32(len(value))]
         for x in value:
-            bytes.extend(TransactionSigner.write_string(x))
-        return bytes
+            bytes.append(TransactionSigner.write_string(x))
+        return b''.join(parts)
 
     @staticmethod
     def write_bool(value: bool) -> bytes:
@@ -262,24 +243,6 @@ class TransactionSigner:
     def write_u32(value: int) -> bytes:
         """Write a u32 in little-endian format"""
         return struct.pack("<I", value)
-
-    @staticmethod
-    def serialize_order_type(order_type: str) -> bytes:
-        if order_type not in ORDER_MAP:
-            raise ValueError(f"Invalid order type: {order_type}")
-        return struct.pack("<I", ORDER_MAP[order_type])
-
-    @staticmethod
-    def serialize_action(action_type: str) -> bytes:
-        if action_type not in ACTION_CODES:
-            raise ValueError(f"Invalid action type: {action_type}")
-        return struct.pack("<I", ACTION_CODES[action_type])
-    
-    @staticmethod
-    def serialize_admin_action(admin_action: str) -> bytes:
-        if admin_action not in ADMIN_ACTION_MAP:
-            raise ValueError(f"Invalid admin action: {admin_action}")
-        return struct.pack("<I", ADMIN_ACTION_MAP[admin_action])
     
     @staticmethod
     def decode_and_validate_key(key: str) -> bytes:
@@ -289,3 +252,25 @@ class TransactionSigner:
         if len(key_bytes) != 32:
             raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
         return key_bytes
+
+
+##
+## Unit Tests
+##
+
+def _test_faucet():
+    faucet = {
+        'actions': [
+            {'faucet': {'u': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5', 'amount': 100000000.0}}
+        ],
+        'nonce': 1772530726852263764,
+        'account': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5',
+        'signer': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5'
+    }
+    signer = TransactionSigner("7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5")
+    signed = signer.sign_transaction(faucet)
+    print(signed)
+
+
+if __name__ == '__main__':
+    _test_faucet()
