@@ -483,7 +483,7 @@ class BulkHttpClient:
 
         # Send request
         response = requests.post(
-            f"{self.base_url}/user-settings",
+            f"{self.base_url}/order",
             json=transaction,
             timeout=self.timeout
         )
@@ -535,7 +535,7 @@ class BulkHttpClient:
 
         # Send request
         response = requests.post(
-            f"{self.base_url}/agent-wallet",
+            f"{self.base_url}/order",
             json=transaction,
             timeout=self.timeout
         )
@@ -603,7 +603,7 @@ class BulkHttpClient:
 
         # Send request
         response = requests.post(
-            f"{self.base_url}/private/testnet-admin",
+            f"{self.base_url}/order",
             json=signed_tx,
             timeout=self.timeout
         )
