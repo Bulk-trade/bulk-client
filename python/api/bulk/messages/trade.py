@@ -21,8 +21,8 @@ TIME_IN_FORCE_MAP = {
 }
 
 SIDE_MAP = {
-    Side.BUY: 0,
-    Side.SELL: 1,
+    Side.BUY: 1,
+    Side.SELL: 0,
 }
 
 # 8 decimals
@@ -35,7 +35,7 @@ def _write_u64(value: int) -> bytes:
 def _write_string(value: str) -> bytes:
     """Write a string in little-endian format"""
     s_bytes = value.encode('utf-8')
-    return _write_u32(len(s_bytes)) + s_bytes
+    return _write_u64(len(s_bytes)) + s_bytes
 
 def _write_bool(value: bool) -> bytes:
     """Write a boolean as single byte"""
@@ -122,13 +122,15 @@ class LimitOrder:
             _write_u32(1),
             _write_string(self.symbol),
             _write_u8(SIDE_MAP[self.side]),
-            _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_u64(round(self.price * DECIMALS_MULTIPLIER)),
+            _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             _write_bool(self.reduce_only),
-            _write_u64(self.nonce),
             _write_pubkey(self.pubkey),
+            _write_u64(self.nonce),
         ])
+
+        dec = list(ser)
 
         hash = hashlib.sha256(ser).digest()
         self.oid = base58.b58encode(hash).decode('utf-8')
@@ -374,3 +376,22 @@ class OrderResponse:
                     ))
         return responses
 
+##
+## Unit Tests
+##
+def _limitorder_id():
+    order = LimitOrder(
+        symbol="BTC-USD",
+        side=Side.BUY,
+        price=68000.0,
+        size=0.001,
+        reduce_only=False,
+        time_in_force=TimeInForce.ALO,
+        nonce=1772569595613073,
+        pubkey="2bZfxVQtWdd8qAWJ4Xyq43cnej9zqMNyuh7HHxTNan8j"
+    )
+    oid = order.order_id()
+    assert oid == "JBHReFLFMA4suv5qs7KTSfho5bFTkQRU8aQ4NYqyhuoJ"
+
+if __name__ == "__main__":
+    _limitorder_id()
