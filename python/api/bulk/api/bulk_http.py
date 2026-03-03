@@ -255,6 +255,7 @@ class BulkHttpClient:
                 }
             }
         """
+        print(f"getting account info for {user} from {self.base_url}/account")
         response = requests.post(
             f"{self.base_url}/account",
             json={
