@@ -220,7 +220,7 @@ class BulkHttpClient:
             params["aggregation"] = aggregation
 
         response = requests.get(
-            f"{self.base_url}/order",
+            f"{self.base_url}/l2book",
             params=params,
             timeout=self.timeout
         )
@@ -256,7 +256,7 @@ class BulkHttpClient:
             }
         """
         response = requests.post(
-            f"{self.base_url}/order",
+            f"{self.base_url}/account",
             json={
                 "type": "fullAccount",
                 "user": user
