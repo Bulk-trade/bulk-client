@@ -47,9 +47,6 @@ class MMConfig:
     # what to log: ["STATE", "FILL", "POSITION"]
     to_log: Set[str]
 
-    # Indicate whether simulated or hitting bulk
-    simulated: bool
-
     def bulk_symbol(self) -> str:
         """symbol for bulk market"""
         return f"{self.coin}-USD"
@@ -82,6 +79,5 @@ class MMConfig:
                 inventory_close_depth=config.get("inventory_close_depth", 50.0),
                 binance_timeout=config.get("binance_timeout", 60.0),
                 log_level=config.get("log_level", "INFO"),
-                to_log=set(config.get("to_log", ["FILL", "POSITION"])),
-                simulated=config.get("simulated", True),
+                to_log=set(config.get("to_log", ["FILL", "POSITION"]))
             )
