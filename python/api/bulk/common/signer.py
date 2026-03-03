@@ -161,7 +161,7 @@ class TransactionSigner:
 
                 return b''.join(parts)
 
-            case {"faucet": order}:
+            case {"faucet": order} | {"Faucet": order}:
                 if "amount" in order:
                     return b''.join([
                         TransactionSigner.write_u32(7),

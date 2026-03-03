@@ -640,7 +640,7 @@ class BulkHttpClient:
         if amount is None:
             transaction = {
                 "actions": [{
-                    "faucet": {
+                    "Faucet": {
                         "u": target_user
                     },
                 }],
@@ -651,7 +651,7 @@ class BulkHttpClient:
         else:
             transaction = {
                 "actions": [{
-                    "faucet": {
+                    "Faucet": {
                         "u": target_user,
                         "amount": amount
                     },
