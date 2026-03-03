@@ -28,7 +28,7 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from bulk import BulkWebSocketClient, SimulatedWebSocketClient
+from bulk import BulkWebSocketClient
 from bulk import Topic as BulkTopic
 from bulk.common import Side, TimeInForce
 from bulk.common.inventory import Inventory
@@ -150,29 +150,17 @@ class BinanceMarketMaker:
             self.logger.info(f"      Ask stack: {self.ask_stack}")
 
             # Initialize Bulk client
-            if not self.simulated:
-                self.logger.info(f"\n3. Connecting to Bulk for ({self.config.bulk_symbol()}), on: {self.config.bulk_ws_url}...")
-                self.bulk = BulkWebSocketClient(
-                    url=self.config.bulk_ws_url,
-                    symbols=[self.config.bulk_symbol()],
-                    signer=self.signer,
-                    handlers={
-                        BulkTopic.ORDER: self._handle_order_state,
-                        BulkTopic.FILL: self._handle_fill,
-                        BulkTopic.POSITION: self._handle_position_update,
-                    }
-                )
-            else:
-                self.logger.info(f"\n3. Connecting to Simulator for ({self.config.bulk_symbol()})...")
-                self.bulk = SimulatedWebSocketClient(
-                    symbols=[self.config.bulk_symbol()],
-                    signer=self.signer,
-                    handlers={
-                        BulkTopic.ORDER: self._handle_order_state,
-                        BulkTopic.FILL: self._handle_fill,
-                        BulkTopic.POSITION: self._handle_position_update,
-                    }
-                )
+            self.logger.info(f"\n3. Connecting to Bulk for ({self.config.bulk_symbol()}), on: {self.config.bulk_ws_url}...")
+            self.bulk = BulkWebSocketClient(
+                url=self.config.bulk_ws_url,
+                symbols=[self.config.bulk_symbol()],
+                signer=self.signer,
+                handlers={
+                    BulkTopic.ORDER: self._handle_order_state,
+                    BulkTopic.FILL: self._handle_fill,
+                    BulkTopic.POSITION: self._handle_position_update,
+                }
+            )
 
             connected = await self.bulk.connect()
             if not connected:
