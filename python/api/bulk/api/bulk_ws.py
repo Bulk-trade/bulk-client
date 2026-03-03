@@ -21,7 +21,7 @@ from bulk.messages import SubscriptionRequest
 from bulk.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrices
+from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice
 from bulk.data import OrderBook
 from bulk.common import Topic
 
@@ -269,7 +269,7 @@ class BulkWebSocketClient:
 
     async def update_oracle(
         self,
-        action: OraclePrices,
+        actions: [OraclePrice],
         timeout: Optional[float] = None,
         nonce: Optional[int] = None,
     ):
@@ -281,15 +281,12 @@ class BulkWebSocketClient:
         if not self.is_connected:
             raise RuntimeError("Not connected to WebSocket")
 
-        if nonce:
-            action.nonce = nonce
+        if not nonce:
+            nonce = actions[0].nonce
 
         tx = {
-            "action": {
-                "type": "oracle",
-                "oracles": action.to_api(),
-                "nonce": nonce,
-            },
+            "actions": [x.to_api() for x in actions],
+            "nonce": nonce,
             "account": self.signer.public_key,
             "signer": self.signer.public_key,
         }
@@ -351,11 +348,8 @@ class BulkWebSocketClient:
                 nonce = int(time.time_ns() / 1000)
 
         tx = tx = {
-            "action": {
-                "type": "order",
-                "orders": orders,
-                "nonce": nonce,
-            },
+            "action": [x.as_api() for x in actions],
+            "nonce": nonce,
             "account": self.signer.public_key,
             "signer": self.signer.public_key,
         }
