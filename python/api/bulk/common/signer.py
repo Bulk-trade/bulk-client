@@ -124,6 +124,7 @@ class TransactionSigner:
                     TransactionSigner.write_u32(2),
                     TransactionSigner.decode_and_validate_key(order['oid']),
                     TransactionSigner.write_string(order['symbol']),
+                    TransactionSigner.write_f64(order['amount']),
                 ])
 
             case {"cx": order}:
@@ -139,7 +140,7 @@ class TransactionSigner:
                     TransactionSigner.write_strings(order['c']),
                 ])
 
-            case {"p": order}:
+            case {"px": order}:
                 return b''.join([
                     TransactionSigner.write_u32(5),
                     TransactionSigner.write_u64(order['t']),
