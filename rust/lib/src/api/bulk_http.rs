@@ -29,17 +29,22 @@
 //! }
 //! ```
 
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
+use bulk_transaction::action::Action;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
+use bulk_transaction::{TimeInForce, Transaction, TransactionSigner};
+use bulk_transaction::action::account::{AgentWalletCreation, Faucet, UpdateUserSettings, WhitelistFaucet};
+use bulk_transaction::action::order::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
+use solana_hash::Hash;
 use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
-use crate::common::tif::TimeInForce;
-use crate::common::TransactionSigner;
 use crate::msgs::*;
-use crate::tx::order_tx::{OrderAction, OrderTransaction};
 
 /// HTTP REST API client for Bulk Labs exchange.
 ///
@@ -281,13 +286,14 @@ impl BulkHttpClient {
     /// # Example
     /// ```rust,no_run
     /// let resp = client.place_orders(vec![
-    ///     LimitOrder::new("BTC-USD", Side::Buy, 95_000.0, 0.01, TimeInForce::GTC).into(),
-    ///     CancelAll::new(vec!["ETH-USD".into()]).into(),
+    ///     LimitOrder { ... },
+    ///     CancelAll { ... },
     /// ], None).await?;
     /// ```
     pub async fn place_orders(
         &self,
-        actions: Vec<OrderAction>,
+        actions: Vec<Action>,
+        account: Option<Pubkey>,
         nonce: Option<u64>,
     ) -> eyre::Result<Vec<OrderResponse>> {
         let signer = self
@@ -296,33 +302,28 @@ impl BulkHttpClient {
             .as_ref()
             .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
 
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
         let nonce = nonce.unwrap_or_else(make_nonce);
         let pk = signer.public_key();
 
         // Build + sign the transaction
-        let mut bundle = OrderTransaction::new(actions, nonce, pk, pk);
-        signer.sign(&mut bundle)?;
+        let mut tx = Transaction {
+            actions,
+            nonce: 0,
+            account: account,
+            signer: signer.public_key(),
+            signature: Default::default(),
+            tracking: (),
+        };
+        tx.sign(signer)?;
 
-        let sig = bundle
-            .signature_b58()
-            .ok_or_else(|| eyre::eyre!("signing failed"))?;
-        let pk_b58 = signer.public_key_b58();
-
-        // Build orders JSON array via write_api
-        let mut orders_buf = String::with_capacity(256 * bundle.actions.len());
-        orders_buf.push('[');
-        for (i, action) in bundle.actions.iter().enumerate() {
-            if i > 0 { orders_buf.push(','); }
-            action.write_api(&mut orders_buf);
-        }
-        orders_buf.push(']');
-
-        // Assemble full transaction JSON string
-        let body = format!(
-            r#"{{"action":{{"type":"order","orders":{},"nonce":{}}},"account":"{}","signer":"{}","signature":"{}"}}"#,
-            orders_buf, nonce, pk_b58, pk_b58, sig,
-        );
-        eprintln!("{}", body);
+        // Build JSON body via tx serialization
+        let body = serde_json::to_string(&tx)?;
 
         let resp = self
             .client
@@ -347,10 +348,16 @@ impl BulkHttpClient {
         tif: TimeInForce,
         reduce_only: bool,
     ) -> eyre::Result<OrderResponse> {
-        let mut order = LimitOrder::new(symbol, side, price, size, tif);
-        order.reduce_only = reduce_only;
+        let order = LimitOrder {
+            symbol: Arc::from(symbol),
+            is_buy: side == Side::Buy,
+            price,
+            size,
+            tif,
+            reduce_only,
+        };
 
-        let results = self.place_orders(vec![order.into()], None).await?;
+        let results = self.place_orders(vec![Action::LimitOrder(order)], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -362,10 +369,14 @@ impl BulkHttpClient {
         size: f64,
         reduce_only: bool,
     ) -> eyre::Result<OrderResponse> {
-        let mut order = MarketOrder::new(symbol, side, size);
-        order.reduce_only = reduce_only;
+        let order = MarketOrder {
+            symbol: Arc::from(symbol),
+            is_buy: side == Side::Buy,
+            size,
+            reduce_only,
+        };
 
-        let results = self.place_orders(vec![order.into()], None).await?;
+        let results = self.place_orders(vec![Action::MarketOrder(order)], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -375,17 +386,22 @@ impl BulkHttpClient {
         symbol: &str,
         order_id: &str,
     ) -> eyre::Result<OrderResponse> {
-        let cancel = CancelOrder::new(symbol, order_id);
+        let cancel = CancelOrder {
+            symbol: symbol.to_string(),
+            oid: Hash::from_str(&order_id)?,
+        };
 
-        let results = self.place_orders(vec![cancel.into()], None).await?;
+        let results = self.place_orders(vec![Action::Cancel(cancel)], None, None).await?;
         Ok(results[0].clone())
     }
 
     /// Cancel all orders, optionally filtered by symbols.
     pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<OrderResponse> {
-        let cancel = CancelAll::new(symbols);
+        let cancel = CancelAll {
+            symbols,
+        };
 
-        let results = self.place_orders(vec![cancel.into()], None).await?;
+        let results = self.place_orders(vec![Action::CancelAll(cancel)], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -396,38 +412,17 @@ impl BulkHttpClient {
     /// Update maximum leverage settings for markets.
     ///
     /// # Arguments
-    /// - `settings`: List of (symbol, max_leverage) pairs
+    /// - `settings`: Map of (symbol, max_leverage) pairs
     pub async fn update_leverage(
         &self,
-        settings: &[(&str, f64)],
-    ) -> eyre::Result<Value> {
-        let signer = self
-            .config
-            .signer
-            .as_ref()
-            .ok_or_else(|| eyre::eyre!("Private key required for settings operations"))?;
+        settings: HashMap<String, f64>,
+    ) -> eyre::Result<OrderResponse> {
+        let settings = UpdateUserSettings {
+            max_leverage: settings,
+        };
 
-        let leverage_list: Vec<Value> = settings
-            .iter()
-            .map(|(sym, lev)| json!([sym, lev]))
-            .collect();
-
-        let transaction = self.sign_generic_transaction(json!({
-            "action": {
-                "type": "updateUserSettings",
-                "settings": { "m": leverage_list },
-                "nonce": 1,
-            },
-        }))?;
-
-        let resp = self
-            .client
-            .post(format!("{}/user-settings", self.config.base_url))
-            .json(&transaction)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+        let results = self.place_orders(vec![Action::UpdateUserSettings(settings)], None, None).await?;
+        Ok(results[0].clone())
     }
 
     /// Create or delete an agent wallet authorization.
@@ -439,25 +434,14 @@ impl BulkHttpClient {
         &self,
         agent_pubkey: Pubkey,
         delete: bool,
-    ) -> eyre::Result<Value> {
-        let transaction = self.sign_generic_transaction(json!({
-            "action": {
-                "type": "agentWalletCreation",
-                "agent": {
-                    "a": agent_pubkey,
-                    "d": delete,
-                },
-            },
-        }))?;
+    ) -> eyre::Result<OrderResponse> {
+        let settings = AgentWalletCreation {
+            agent: agent_pubkey,
+            delete,
+        };
 
-        let resp = self
-            .client
-            .post(format!("{}/agent-wallet", self.config.base_url))
-            .json(&transaction)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+        let results = self.place_orders(vec![Action::AgentWalletCreation(settings)], None, None).await?;
+        Ok(results[0].clone())
     }
 
     // =====================================================================
@@ -476,31 +460,13 @@ impl BulkHttpClient {
         &self,
         target_account: Pubkey,
         whitelist: bool,
-        nonce: Option<u64>,
-    ) -> eyre::Result<Value> {
-        let nonce = nonce.unwrap_or_else(make_nonce);
-
-        let transaction = self.sign_generic_transaction(json!({
-            "action": {
-                "type": "testnetAdmin",
-                "actions": [{
-                    "whitelistFaucet": {
-                        "account": target_account,
-                        "whitelist": whitelist,
-                    }
-                }],
-                "nonce": nonce,
-            },
-        }))?;
-
-        let resp = self
-            .client
-            .post(format!("{}/private/testnet-admin", self.config.base_url))
-            .json(&transaction)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+    ) -> eyre::Result<OrderResponse> {
+        let settings = WhitelistFaucet {
+            target: target_account,
+            whitelist,
+        };
+        let results = self.place_orders(vec![Action::WhitelistFaucet(settings)], None, None).await?;
+        Ok(results[0].clone())
     }
 
     /// Request testnet faucet funds.
@@ -516,44 +482,25 @@ impl BulkHttpClient {
         user: Option<Pubkey>,
         amount: Option<f64>,
         nonce: Option<u64>,
-    ) -> eyre::Result<Value> {
+    ) -> eyre::Result<OrderResponse> {
         let signer = self
             .config
             .signer
             .as_ref()
-            .ok_or_else(|| eyre::eyre!("Private key required for faucet operations"))?;
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
 
-        let nonce = nonce.unwrap_or_else(make_nonce);
-        let target_user = user.unwrap_or(signer.public_key());
+        let user = if let Some(user) = user {
+            user
+        } else {
+            signer.public_key()
+        };
+        let req = Faucet {
+            user,
+            amount,
+        };
 
-        let mut faucet = json!({ "u": target_user });
-        if let Some(amt) = amount {
-            faucet["amount"] = json!(amt);
-        }
-
-        // Account field uses the target user (matches Python)
-        let mut tx = json!({
-            "action": {
-                "type": "faucet",
-                "faucet": faucet,
-                "nonce": nonce,
-            },
-            "account": target_user,
-            "signer": signer.public_key_b58(),
-        });
-
-        // Sign and attach signature
-        let sig = self.sign_action_payload(&tx["action"])?;
-        tx["signature"] = json!(sig);
-
-        let resp = self
-            .client
-            .post(format!("{}/private/faucet", self.config.base_url))
-            .json(&tx)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+        let results = self.place_orders(vec![Action::Faucet(req)], None, None).await?;
+        Ok(results[0].clone())
     }
 
 

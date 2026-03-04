@@ -8,6 +8,10 @@
 
 use std::process;
 use std::str::FromStr;
+use std::sync::Arc;
+use bulk_transaction::action::Action;
+use bulk_transaction::action::order::LimitOrder;
+use bulk_transaction::{TimeInForce, TransactionSigner};
 use clap::Parser;
 use solana_pubkey::Pubkey;
 use tracing::{info};
@@ -15,10 +19,6 @@ use tracing_subscriber::EnvFilter;
 use bulk_api::api::{BulkHttpClient};
 use bulk_api::api::parts::HttpConfig;
 use bulk_api::common::side::Side;
-use bulk_api::common::tif::TimeInForce;
-use bulk_api::common::TransactionSigner;
-use bulk_api::msgs::LimitOrder;
-use bulk_api::tx::order_tx::OrderAction;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]
@@ -51,11 +51,25 @@ async fn main() -> eyre::Result<()> {
     }).unwrap();
 
     let orders = vec![
-        OrderAction::Limit(LimitOrder::new("BTC-USD", Side::Buy, 1000.0, 0.0001, TimeInForce::IOC)),
-        OrderAction::Limit(LimitOrder::new("ETH-USD", Side::Buy, 1000.0, 0.0001, TimeInForce::IOC)),
+        Action::LimitOrder(LimitOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            price: 1000.0,
+            size: 0.0001,
+            tif: TimeInForce::IOC,
+            reduce_only: false,
+        }),
+        Action::LimitOrder(LimitOrder {
+            symbol: Arc::from("ETH-USD"),
+            is_buy: true,
+            price: 1000.0,
+            size: 0.0001,
+            tif: TimeInForce::IOC,
+            reduce_only: false,
+        }),
     ];
 
-    let results = client.place_orders(orders, None).await?;
+    let results = client.place_orders(orders, None, None).await?;
     eprintln!("results: {:?}\n", results);
 
     process::exit(0);

@@ -2,20 +2,16 @@
 //! Random Market Maker
 //! ═══════════════════════════════════════════════════════════════════════════
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use bulk_transaction::action::Action;
+use bulk_transaction::action::order::{CancelAll, LimitOrder};
+use bulk_transaction::{TimeInForce, TransactionSigner};
 use rand::distr::{Distribution, Uniform};
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 use bulk_api::api::BulkHttpClient;
-use bulk_api::api::parts::config::WSConfig;
 use bulk_api::api::parts::HttpConfig;
-use bulk_api::common::side::Side;
-use bulk_api::common::tif::TimeInForce;
-use bulk_api::common::TransactionSigner;
-use bulk_api::msgs::cancel_all::CancelAll;
-use bulk_api::msgs::limit_order::LimitOrder;
-use bulk_api::msgs::oracle::OraclePrice;
-use bulk_api::tx::order_tx::OrderAction;
 use crate::parts::config::RmmConfig;
 use crate::parts::price_process::OuProcess;
 
@@ -41,6 +37,7 @@ impl RandomHttpMarketMaker {
         info!("{}", "=".repeat(70));
 
         let signer = TransactionSigner::from_private_key(private_key)?;
+        let pubkey = signer.public_key();
         info!("Account: {}", signer.public_key_b58());
 
         let symbol = config.bulk_symbol();
@@ -166,31 +163,27 @@ impl RandomHttpMarketMaker {
         let n_orders = orders.len();
 
         // First chunk includes cancel-all; remaining chunks are orders only
-        let cancel: OrderAction = CancelAll::new(vec![]).into();
-
-        // Convert all orders to actions
-        let order_actions: Vec<OrderAction> = orders
-            .into_iter()
-            .map(|o| o.into())
-            .collect();
+        let cancel = Action::CancelAll(CancelAll {
+            symbols: vec![],
+        });
 
         let chunk_size = self.config.chunksize;
         let mut chunk_start = 0;
         let mut first = true;
 
-        while chunk_start < order_actions.len() || first {
-            let chunk_end = (chunk_start + chunk_size).min(order_actions.len());
-            let mut actions: Vec<OrderAction> = Vec::new();
+        while chunk_start < orders.len() || first {
+            let chunk_end = (chunk_start + chunk_size).min(orders.len());
+            let mut actions: Vec<Action> = Vec::new();
 
             if first {
                 actions.push(cancel.clone());
                 first = false;
             }
 
-            actions.extend(order_actions[chunk_start..chunk_end].to_vec());
+            actions.extend(orders[chunk_start..chunk_end].to_vec());
 
             // place orders
-            match self.client.place_orders(actions, Some(nonce)).await {
+            match self.client.place_orders(actions, None, Some(nonce)).await {
                 Ok(responses) => {
                     let n_err = responses.iter().filter(|r| r.is_error()).count();
                     if n_err > 1 {
@@ -232,7 +225,7 @@ impl RandomHttpMarketMaker {
     /// - Size grows linearly with distance from mid:
     ///       `level_size = base_size * (1 + level_index * 0.01)`
     ///   Each order at that level = `level_size / orders_per_level`
-    fn build_book(&self, mid: f64) -> Vec<LimitOrder> {
+    fn build_book(&self, mid: f64) -> Vec<Action> {
         let cfg = &self.config;
         let half_spread = cfg.spread / 2.0;
         let growth = 0.01;
@@ -257,23 +250,25 @@ impl RandomHttpMarketMaker {
 
             for i in 0..cfg.orders_per_level {
                 let bid_sz = order_size_bid + (i + 1) as f64 * 1e-5;
-                let bid_order = LimitOrder::new(
-                    &symbol,
-                    Side::Buy,
-                    bid_price,
-                    bid_sz,
-                    TimeInForce::ALO,
-                );
+                let bid_order = Action::LimitOrder(LimitOrder {
+                    symbol: Arc::from(symbol.as_str()),
+                    is_buy: true,
+                    price: bid_price,
+                    size: bid_sz,
+                    tif: TimeInForce::ALO,
+                    reduce_only: false,
+                });
                 orders.push(bid_order);
 
                 let ask_sz = order_size_ask + (i + 1) as f64 * 1e-5;
-                let ask_order = LimitOrder::new(
-                    &symbol,
-                    Side::Sell,
-                    ask_price,
-                    ask_sz,
-                    TimeInForce::GTC,
-                );
+                let ask_order = Action::LimitOrder(LimitOrder {
+                    symbol: Arc::from(symbol.as_str()),
+                    is_buy: false,
+                    price: ask_price,
+                    size: ask_sz,
+                    tif: TimeInForce::ALO,
+                    reduce_only: false,
+                });
                 orders.push(ask_order);
             }
         }

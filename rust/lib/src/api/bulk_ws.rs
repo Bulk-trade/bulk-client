@@ -56,9 +56,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use bulk_transaction::action::Action;
+use bulk_transaction::{TimeInForce, Transaction, TransactionSigner};
+use bulk_transaction::action::order::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
 use eyre::bail;
 use serde_json::{json, Value};
 use crate::msgs::account::{Fill, LeverageSetting, Margin, OrderState, PositionInfo};
@@ -68,6 +72,8 @@ use crate::msgs::subscription::SubscriptionRequest;
 use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
 use serde::Deserialize;
+use solana_hash::Hash;
+use solana_pubkey::Pubkey;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time;
@@ -79,16 +85,7 @@ use crate::api::parts::command::Command;
 use crate::api::parts::config::WSConfig;
 use crate::api::parts::{make_nonce, Event, Topic};
 use crate::common::side::Side;
-use crate::common::tif::TimeInForce;
-use crate::common::TransactionSigner;
-use crate::msgs::cancel_all::CancelAll;
-use crate::msgs::cancel_order::CancelOrder;
-use crate::msgs::limit_order::LimitOrder;
-use crate::msgs::market_order::MarketOrder;
 use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
-use crate::msgs::oracle::OraclePrice;
-use crate::tx::oracle_tx::OracleTransaction;
-use crate::tx::order_tx::{OrderAction, OrderTransaction};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,26 +404,45 @@ impl BulkWsClient {
     /// - list of responses
     pub async fn place_orders(
         &self,
-        actions: Vec<OrderAction>,
+        actions: Vec<Action>,
+        account: Option<Pubkey>,
         nonce: Option<u64>,
     ) -> eyre::Result<Vec<OrderResponse>> {
         let signer = self
             .signer
             .as_ref()
-            .ok_or_else(|| eyre::eyre!("Signer not configured"))?;
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
 
         let nonce = nonce.unwrap_or_else(make_nonce);
         let pk = signer.public_key();
 
-        // Build, serialize, sign
-        let mut bundle = OrderTransaction::new(actions, nonce, pk, pk);
-        signer.sign(&mut bundle)?;
+        // Build + sign the transaction
+        let mut tx = Transaction {
+            actions,
+            nonce: 0,
+            account,
+            signer: signer.public_key(),
+            signature: Default::default(),
+            tracking: (),
+        };
+        tx.sign(signer)?;
 
         let request_id = self
             .next_request_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let json = bundle.to_ws_request(request_id)?;
+        // Build JSON body via tx serialization
+        let body = serde_json::to_string(&tx)?;
+        let json = format!(
+            r#"{{"method":"post","request":{{"type":"action","payload":{}}},"id":{}}}"#,
+            body, request_id
+        );
 
         let (resp_tx, resp_rx) = oneshot::channel();
 
@@ -444,40 +460,6 @@ impl BulkWsClient {
             Ok(Err(_)) => bail!("response channel dropped"),
             Err(_) => bail!("order request {request_id} timed out"),
         }
-    }
-
-    /// Send an oracle price update (fire-and-forget, no response awaited).
-    ///
-    /// # Argument
-    /// - `prices`: list of oracle
-    /// - `nonce`: nonce to be used
-    pub async fn update_oracle(
-        &self,
-        prices: Vec<OraclePrice>,
-        nonce: Option<u64>,
-    ) -> eyre::Result<()> {
-        let signer = self
-            .signer
-            .as_ref()
-            .ok_or_else(|| eyre::eyre!("Signer not configured"))?;
-
-        let nonce = nonce.unwrap_or_else(make_nonce);
-        let pk = signer.public_key();
-
-        let mut bundle = OracleTransaction::new(prices, nonce, pk, pk);
-        signer.sign(&mut bundle)?;
-
-        let request_id = self
-            .next_request_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let ws_text = bundle.to_ws_request_string(request_id)?;
-
-        self.cmd_tx
-            .send(Command::SendRaw(ws_text))
-            .await
-            .map_err(|_| eyre::eyre!("actor gone"))?;
-        Ok(())
     }
 
     // ── Convenience wrappers ─────────────────────────────────────────────
@@ -503,9 +485,15 @@ impl BulkWsClient {
         tif: TimeInForce,
         reduce_only: bool,
     ) -> eyre::Result<OrderResponse> {
-        let mut order = LimitOrder::new(symbol, side, price, size, tif);
-        order.reduce_only = reduce_only;
-        let resps = self.place_orders(vec![order.into()], None).await?;
+        let order = LimitOrder {
+            symbol: Arc::from(symbol),
+            is_buy: side == Side::Buy,
+            price,
+            size,
+            tif,
+            reduce_only,
+        };
+        let resps = self.place_orders(vec![Action::LimitOrder(order)], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -526,9 +514,14 @@ impl BulkWsClient {
         size: f64,
         reduce_only: bool,
     ) -> eyre::Result<OrderResponse> {
-        let mut order = MarketOrder::new(symbol, side, size);
-        order.reduce_only = reduce_only;
-        let resps = self.place_orders(vec![order.into()], None).await?;
+        let order = MarketOrder {
+            symbol: Arc::from(symbol),
+            is_buy: side == Side::Buy,
+            size,
+            reduce_only,
+        };
+
+        let resps = self.place_orders(vec![Action::MarketOrder(order)], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -545,8 +538,12 @@ impl BulkWsClient {
         symbol: &str,
         order_id: &str,
     ) -> eyre::Result<OrderResponse> {
-        let cancel = CancelOrder::new(symbol, order_id);
-        let resps = self.place_orders(vec![cancel.into()], None).await?;
+        let cancel = CancelOrder {
+            symbol: symbol.to_string(),
+            oid: Hash::from_str(&order_id)?,
+        };
+
+        let resps = self.place_orders(vec![Action::Cancel(cancel)], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -558,8 +555,10 @@ impl BulkWsClient {
     /// # Returns
     /// - response for order cancel
     pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<OrderResponse> {
-        let cancel = CancelAll::new(symbols);
-        let resps = self.place_orders(vec![cancel.into()], None).await?;
+        let cancel = CancelAll {
+            symbols,
+        };
+        let resps = self.place_orders(vec![Action::CancelAll(cancel)], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
