@@ -1,5 +1,7 @@
 from typing import Dict, List, Tuple, Optional
-from nacl.signing import SigningKey
+
+from nacl.exceptions import BadSignatureError
+from nacl.signing import SigningKey, VerifyKey
 import struct
 import base58
 import time
@@ -50,6 +52,37 @@ class TransactionSigner:
         tx["signature"] = sig
         return tx
 
+    def verify(self, tx: Dict) -> bool:
+        """
+        Verify an Ed25519 transaction signature.
+
+        Args:
+            tx: Signed transaction dict containing actions, nonce, account, signer, signature
+
+        Returns:
+            True if signature is valid, raises on failure
+        """
+        signature_b58 = tx.get("signature")
+        if not signature_b58:
+            raise ValueError("Transaction has no signature")
+
+        actions = tx.get("actions", [])
+        nonce = tx.get("nonce")
+        account = tx.get("account")
+        signer = tx.get("signer", account)
+
+        message = TransactionSigner.serialize_transaction(actions, nonce, account)
+
+        signer_pubkey_bytes = base58.b58decode(signer)
+        signature_bytes = base58.b58decode(signature_b58)
+
+        try:
+            verify_key = VerifyKey(signer_pubkey_bytes)
+            verify_key.verify(message, signature_bytes)
+            return True
+        except BadSignatureError:
+            return False
+
     @staticmethod
     def generate_account() -> 'TransactionSigner':
         """
@@ -85,7 +118,7 @@ class TransactionSigner:
         Returns:
             Binary serialized transaction
         """
-        parts = [TransactionSigner.write_u32(len(actions))]
+        parts = [TransactionSigner.write_u64(len(actions))]
         for action in actions:
             parts.append(TransactionSigner.serialize_action(action))
 
@@ -227,7 +260,7 @@ class TransactionSigner:
         """Write a string in little-endian format"""
         parts = [TransactionSigner.write_u32(len(value))]
         for x in value:
-            bytes.append(TransactionSigner.write_string(x))
+            parts.append(TransactionSigner.write_string(x))
         return b''.join(parts)
 
     @staticmethod
@@ -273,5 +306,27 @@ def _test_faucet():
     print(signed)
 
 
+def _test_orders():
+    orders = {
+        "actions": [
+            {"l": {"c": "BTC-USD", "b": True, "px": 71262.5, "sz": 2.695, "r": False, "tif": "GTC"}},
+            {"l": {"c": "BTC-USD", "b": True, "px": 71262.5, "sz": 2.69500001, "r": False, "tif": "GTC"}},
+            {"l": {"c": "BTC-USD", "b": True, "px": 71262.5, "sz": 2.6950000199999997, "r": False, "tif": "GTC"}},
+            {"l": {"c": "BTC-USD", "b": True, "px": 71262.5, "sz": 2.6950000299999997, "r": False,"tif": "GTC"}},
+            {"l": {"c": "BTC-USD", "b": True, "px": 71262.5, "sz": 2.69500004, "r": False, "tif": "GTC"}},
+            {"l": {"c": "BTC-USD", "b": True, "px": 71261.5, "sz": 0.25, "r": False, "tif": "GTC"}}
+        ],
+        "nonce": 1772729933516666,
+        "account": "7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5",
+        "signer": "2bZfxVQtWdd8qAWJ4Xyq43cnej9zqMNyuh7HHxTNan8j",
+        "signature": "3XumSgC1Hq5TXvPJwsaGSQDxsPjeKpaitDWsr2Lywi4mFd8yq6AnvTcS9ZjyD4N5PCfJjPKnm5mFLbJ5wUaocfNo"
+    }
+    signer = TransactionSigner("5BkyJozwQDSrs261gZc176uRfrXRvr9ec4RcfQhqnavj")
+
+    signed = signer.sign_transaction(orders)
+    assert signer.verify(orders)
+    print(signed)
+
 if __name__ == '__main__':
+    _test_orders()
     _test_faucet()
