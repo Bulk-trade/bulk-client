@@ -83,7 +83,7 @@ use crate::api::parts::config::WSConfig;
 use crate::api::parts::{make_nonce, Event, Topic};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
-use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
+use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder, Price};
 use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
 use crate::transaction::{Action, Transaction, TransactionSigner};
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ impl BulkWsClient {
         // Build + sign the transaction
         let mut tx = Transaction {
             actions,
-            nonce: 0,
+            nonce,
             account,
             signer: signer.public_key(),
             signature: Default::default(),
@@ -457,6 +457,63 @@ impl BulkWsClient {
             Ok(Err(_)) => bail!("response channel dropped"),
             Err(_) => bail!("order request {request_id} timed out"),
         }
+    }
+
+    /// Send oracle price updates
+    ///
+    /// # Arguments
+    /// - `actions`: list of oracle update
+    /// - `nonce`: nonce to be used
+    ///
+    /// # Returns
+    /// - list of responses
+    pub async fn update_oracle(
+        &self,
+        actions: Vec<Price>,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<()> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+        let pk = signer.public_key();
+
+        // Build + sign the transaction
+        let mut tx = Transaction {
+            actions: actions.iter().map(|a| a.clone().into()).collect(),
+            nonce,
+            account,
+            signer: signer.public_key(),
+            signature: Default::default(),
+        };
+        tx.sign(signer)?;
+
+        let request_id = self
+            .next_request_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // Build JSON body via tx serialization
+        let body = serde_json::to_string(&tx)?;
+        let json = format!(
+            r#"{{"method":"post","request":{{"type":"action","payload":{}}},"id":{}}}"#,
+            body, request_id
+        );
+
+        self.cmd_tx
+            .send(Command::AsyncTx {
+                json,
+            })
+            .await
+            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))
     }
 
     // ── Convenience wrappers ─────────────────────────────────────────────
@@ -773,6 +830,12 @@ impl Actor {
                                 if let Some(tx) = self.pending.remove(&request_id) {
                                     let _ = tx.send(Err(e));
                                 }
+                            }
+                        }
+
+                        Some(Command::AsyncTx { json}) => {
+                            if let Err(e) = self.ws_send_text(&json).await {
+                                error!("Order send error: {e}");
                             }
                         }
 

@@ -18,16 +18,16 @@
     // base size of inner level
     size: 0.1,
     // depth of book on each side (for example 500)
-    depth: 500,
+    depth: 100,
     // orders per level (for example 20)
     orders_per_level: 20,
     // chunk size
     chunksize: 15000,
 
     // frequency of update (secs)
-    frequency: 0.005,
+    frequency: 0.01,
     // priming period
-    priming: 20,
+    priming: 5,
     // timeout period in seconds (change this to adjust amount of time a query can take)
     timeout: 10
 }

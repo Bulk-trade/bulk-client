@@ -13,6 +13,7 @@ use crate::msgs::subscription::SubscriptionRequest;
 #[allow(unused)]
 type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
 
+#[allow(unused)]
 pub(crate) enum Command {
     /// Subscribe to additional topics.
     Subscribe(Vec<SubscriptionRequest>),
@@ -23,6 +24,12 @@ pub(crate) enum Command {
         request_id: u64,
         json: String,
         respond: oneshot::Sender<eyre::Result<Vec<Response>>>,
+    },
+
+    /// Send a signed async payload through the WebSocket
+    /// with no wait for the post response.
+    AsyncTx {
+        json: String,
     },
 
     /// Send a raw JSON message (e.g. oracle update, fire-and-forget).
