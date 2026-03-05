@@ -1,0 +1,28 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Price {
+    #[serde(rename = "t")]
+    pub timestamp: u64,
+    #[serde(rename = "c")]
+    pub asset: String,
+    #[serde(rename = "px")]
+    pub price: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PythPrice {
+    #[serde(rename = "t")]
+    pub timestamp: u64,
+    #[serde(rename = "fi")]
+    pub id: u64,
+    #[serde(rename = "px")]
+    pub px: u64,
+    #[serde(rename = "e")]
+    pub exponent: i16,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PythOracle {
+    pub oracles: Vec<PythPrice>,
+}

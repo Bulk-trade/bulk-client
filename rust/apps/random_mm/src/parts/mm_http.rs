@@ -4,14 +4,14 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use bulk_transaction::action::Action;
-use bulk_transaction::action::order::{CancelAll, LimitOrder};
-use bulk_transaction::{TimeInForce, TransactionSigner};
 use rand::distr::{Distribution, Uniform};
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 use bulk_api::api::BulkHttpClient;
 use bulk_api::api::parts::HttpConfig;
+use bulk_api::common::tif::TimeInForce;
+use bulk_api::msgs::{CancelAll, LimitOrder};
+use bulk_api::transaction::{Action, TransactionSigner};
 use crate::parts::config::RmmConfig;
 use crate::parts::price_process::OuProcess;
 
@@ -163,9 +163,9 @@ impl RandomHttpMarketMaker {
         let n_orders = orders.len();
 
         // First chunk includes cancel-all; remaining chunks are orders only
-        let cancel = Action::CancelAll(CancelAll {
+        let cancel = CancelAll {
             symbols: vec![],
-        });
+        };
 
         let chunk_size = self.config.chunksize;
         let mut chunk_start = 0;
@@ -176,7 +176,7 @@ impl RandomHttpMarketMaker {
             let mut actions: Vec<Action> = Vec::new();
 
             if first {
-                actions.push(cancel.clone());
+                actions.push(cancel.clone().into());
                 first = false;
             }
 
@@ -250,26 +250,26 @@ impl RandomHttpMarketMaker {
 
             for i in 0..cfg.orders_per_level {
                 let bid_sz = order_size_bid + (i + 1) as f64 * 1e-5;
-                let bid_order = Action::LimitOrder(LimitOrder {
+                let bid_order = LimitOrder {
                     symbol: Arc::from(symbol.as_str()),
                     is_buy: true,
                     price: bid_price,
                     size: bid_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
-                });
-                orders.push(bid_order);
+                };
+                orders.push(bid_order.into());
 
                 let ask_sz = order_size_ask + (i + 1) as f64 * 1e-5;
-                let ask_order = Action::LimitOrder(LimitOrder {
+                let ask_order = LimitOrder {
                     symbol: Arc::from(symbol.as_str()),
                     is_buy: false,
                     price: ask_price,
                     size: ask_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
-                });
-                orders.push(ask_order);
+                };
+                orders.push(ask_order.into());
             }
         }
 

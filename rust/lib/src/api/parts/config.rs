@@ -1,5 +1,5 @@
 use std::time::Duration;
-use bulk_transaction::TransactionSigner;
+use crate::transaction::TransactionSigner;
 
 /// Bulk Websocket API configuration
 #[derive(Debug, Clone)]
