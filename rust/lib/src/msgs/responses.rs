@@ -7,7 +7,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
-pub struct OrderResponse {
+pub struct Response {
     pub order_id: Option<String>,
     pub status: String,
     pub message: Option<String>,
@@ -16,7 +16,7 @@ pub struct OrderResponse {
 }
 
 #[allow(unused)]
-impl OrderResponse {
+impl Response {
     pub fn is_error(&self) -> bool {
         matches!(
             self.status.as_str(),
@@ -43,7 +43,7 @@ impl OrderResponse {
         arr.iter()
             .map(|entry| {
                 if let Some(body) = entry.get("error") {
-                    OrderResponse {
+                    Response {
                         order_id: None,
                         status: "error".into(),
                         message: body["message"].as_str().map(Into::into),
@@ -57,11 +57,20 @@ impl OrderResponse {
                         .unwrap_or(&String::new())
                         .clone();
                     let body = &entry[&status_key];
-                    OrderResponse {
-                        order_id: body["oid"].as_str().map(Into::into),
-                        status: status_key,
-                        message: None,
-                        raw: body.clone(),
+                    if let Some(oid) = body.get("oid") {
+                        Response {
+                            order_id: body["oid"].as_str().map(Into::into),
+                            status: status_key,
+                            message: None,
+                            raw: body.clone(),
+                        }
+                    } else {
+                        Response {
+                            order_id: None,
+                            status: status_key,
+                            message: None,
+                            raw: body.clone(),
+                        }
                     }
                 }
             })

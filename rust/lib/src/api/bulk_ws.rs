@@ -60,13 +60,10 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use bulk_transaction::action::Action;
-use bulk_transaction::{TimeInForce, Transaction, TransactionSigner};
-use bulk_transaction::action::order::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
 use eyre::bail;
 use serde_json::{json, Value};
 use crate::msgs::account::{Fill, LeverageSetting, Margin, OrderState, PositionInfo};
-use crate::msgs::responses::OrderResponse;
+use crate::msgs::responses::Response;
 use crate::msgs::subscription::SubscriptionRequest;
 
 use futures_util::{SinkExt, StreamExt};
@@ -85,9 +82,10 @@ use crate::api::parts::command::Command;
 use crate::api::parts::config::WSConfig;
 use crate::api::parts::{make_nonce, Event, Topic};
 use crate::common::side::Side;
+use crate::common::tif::TimeInForce;
+use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
 use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
-
-
+use crate::transaction::{Action, Transaction, TransactionSigner};
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot: the full state picture pushed over a single watch channel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,7 +405,7 @@ impl BulkWsClient {
         actions: Vec<Action>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
-    ) -> eyre::Result<Vec<OrderResponse>> {
+    ) -> eyre::Result<Vec<Response>> {
         let signer = self
             .signer
             .as_ref()
@@ -429,7 +427,6 @@ impl BulkWsClient {
             account,
             signer: signer.public_key(),
             signature: Default::default(),
-            tracking: (),
         };
         tx.sign(signer)?;
 
@@ -447,7 +444,7 @@ impl BulkWsClient {
         let (resp_tx, resp_rx) = oneshot::channel();
 
         self.cmd_tx
-            .send(Command::PlaceOrders {
+            .send(Command::Tx {
                 request_id,
                 json,
                 respond: resp_tx,
@@ -484,7 +481,7 @@ impl BulkWsClient {
         size: f64,
         tif: TimeInForce,
         reduce_only: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let order = LimitOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -493,7 +490,7 @@ impl BulkWsClient {
             tif,
             reduce_only,
         };
-        let resps = self.place_orders(vec![Action::LimitOrder(order)], None, None).await?;
+        let resps = self.place_orders(vec![order.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -513,7 +510,7 @@ impl BulkWsClient {
         side: Side,
         size: f64,
         reduce_only: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let order = MarketOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -521,7 +518,7 @@ impl BulkWsClient {
             reduce_only,
         };
 
-        let resps = self.place_orders(vec![Action::MarketOrder(order)], None, None).await?;
+        let resps = self.place_orders(vec![order.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -537,13 +534,13 @@ impl BulkWsClient {
         &self,
         symbol: &str,
         order_id: &str,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let cancel = CancelOrder {
             symbol: symbol.to_string(),
             oid: Hash::from_str(&order_id)?,
         };
 
-        let resps = self.place_orders(vec![Action::Cancel(cancel)], None, None).await?;
+        let resps = self.place_orders(vec![cancel.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -554,11 +551,11 @@ impl BulkWsClient {
     ///
     /// # Returns
     /// - response for order cancel
-    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<OrderResponse> {
+    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<Response> {
         let cancel = CancelAll {
             symbols,
         };
-        let resps = self.place_orders(vec![Action::CancelAll(cancel)], None, None).await?;
+        let resps = self.place_orders(vec![cancel.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
     }
 
@@ -699,7 +696,7 @@ struct Actor {
     tickers: HashMap<String, Ticker>,
     prices: HashMap<String, f64>,
     account_state: AccountState,
-    pending: HashMap<u64, oneshot::Sender<eyre::Result<Vec<OrderResponse>>>>,
+    pending: HashMap<u64, oneshot::Sender<eyre::Result<Vec<Response>>>>,
 
     // Subscription log (for reconnection replay)
     subscriptions: Vec<SubscriptionRequest>,
@@ -769,7 +766,7 @@ impl Actor {
                             self.subscriptions.extend(subs);
                         }
 
-                        Some(Command::PlaceOrders { request_id, json, respond }) => {
+                        Some(Command::Tx { request_id, json, respond }) => {
                             self.pending.insert(request_id, respond);
                             if let Err(e) = self.ws_send_text(&json).await {
                                 error!("Order send error: {e}");
@@ -1066,7 +1063,7 @@ impl Actor {
             }
             self.emit(Topic::Error, &Event::Error(data.clone()));
         } else {
-            let responses = OrderResponse::parse_responses(data);
+            let responses = Response::parse_responses(data);
             if let Some(tx) = sender {
                 let _ = tx.send(Ok(responses));
             }

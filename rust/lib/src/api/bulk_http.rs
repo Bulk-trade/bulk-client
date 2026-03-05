@@ -33,18 +33,16 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use bulk_transaction::action::Action;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
-use bulk_transaction::{TimeInForce, Transaction, TransactionSigner};
-use bulk_transaction::action::account::{AgentWalletCreation, Faucet, UpdateUserSettings, WhitelistFaucet};
-use bulk_transaction::action::order::{CancelAll, CancelOrder, LimitOrder, MarketOrder};
 use solana_hash::Hash;
 use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
+use crate::common::tif::TimeInForce;
 use crate::msgs::*;
+use crate::transaction::{Action, Transaction, TransactionSigner};
 
 /// HTTP REST API client for Bulk Labs exchange.
 ///
@@ -295,7 +293,7 @@ impl BulkHttpClient {
         actions: Vec<Action>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
-    ) -> eyre::Result<Vec<OrderResponse>> {
+    ) -> eyre::Result<Vec<Response>> {
         let signer = self
             .config
             .signer
@@ -318,7 +316,6 @@ impl BulkHttpClient {
             account: account,
             signer: signer.public_key(),
             signature: Default::default(),
-            tracking: (),
         };
         tx.sign(signer)?;
 
@@ -335,7 +332,7 @@ impl BulkHttpClient {
             .error_for_status()?;
 
         let data: Value = resp.json().await?;
-        Ok(OrderResponse::parse_responses(&data))
+        Ok(Response::parse_responses(&data))
     }
 
     /// Place a single limit order.
@@ -347,7 +344,7 @@ impl BulkHttpClient {
         size: f64,
         tif: TimeInForce,
         reduce_only: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let order = LimitOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -357,7 +354,7 @@ impl BulkHttpClient {
             reduce_only,
         };
 
-        let results = self.place_orders(vec![Action::LimitOrder(order)], None, None).await?;
+        let results = self.place_orders(vec![order.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -368,7 +365,7 @@ impl BulkHttpClient {
         side: Side,
         size: f64,
         reduce_only: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let order = MarketOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -376,7 +373,7 @@ impl BulkHttpClient {
             reduce_only,
         };
 
-        let results = self.place_orders(vec![Action::MarketOrder(order)], None, None).await?;
+        let results = self.place_orders(vec![order.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -385,23 +382,23 @@ impl BulkHttpClient {
         &self,
         symbol: &str,
         order_id: &str,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let cancel = CancelOrder {
             symbol: symbol.to_string(),
             oid: Hash::from_str(&order_id)?,
         };
 
-        let results = self.place_orders(vec![Action::Cancel(cancel)], None, None).await?;
+        let results = self.place_orders(vec![cancel.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
     /// Cancel all orders, optionally filtered by symbols.
-    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<OrderResponse> {
+    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<Response> {
         let cancel = CancelAll {
             symbols,
         };
 
-        let results = self.place_orders(vec![Action::CancelAll(cancel)], None, None).await?;
+        let results = self.place_orders(vec![cancel.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -416,12 +413,12 @@ impl BulkHttpClient {
     pub async fn update_leverage(
         &self,
         settings: HashMap<String, f64>,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let settings = UpdateUserSettings {
             max_leverage: settings,
         };
 
-        let results = self.place_orders(vec![Action::UpdateUserSettings(settings)], None, None).await?;
+        let results = self.place_orders(vec![settings.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -434,7 +431,7 @@ impl BulkHttpClient {
         &self,
         agent_pubkey: Pubkey,
         delete: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let settings = AgentWalletCreation {
             agent: agent_pubkey,
             delete,
@@ -460,7 +457,7 @@ impl BulkHttpClient {
         &self,
         target_account: Pubkey,
         whitelist: bool,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let settings = WhitelistFaucet {
             target: target_account,
             whitelist,
@@ -482,7 +479,7 @@ impl BulkHttpClient {
         user: Option<Pubkey>,
         amount: Option<f64>,
         nonce: Option<u64>,
-    ) -> eyre::Result<OrderResponse> {
+    ) -> eyre::Result<Response> {
         let signer = self
             .config
             .signer
