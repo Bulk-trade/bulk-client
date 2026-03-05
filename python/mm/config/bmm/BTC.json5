@@ -10,8 +10,7 @@
     // Maximum number of new orders per level
     max_new_orders: 5,
     // Maximum number of price levels to replicate
-    //max_price_levels: 100,
-    max_price_levels: 5,
+    max_price_levels: 100,
 
     // tick resolution (in price) for the 1st K levels
     fine_tick: 0.25,
