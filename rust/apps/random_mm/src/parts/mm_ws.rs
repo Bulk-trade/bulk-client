@@ -173,7 +173,7 @@ impl RandomWsMarketMaker {
                 price: mid,
             };
             self.client
-                .place_orders(vec![oracle.into()], None, Some(nonce))
+                .update_oracle(vec![oracle], None, Some(nonce))
                 .await?;
             info!("oracle tick: {}", self.tick_count);
             nonce += 1;
