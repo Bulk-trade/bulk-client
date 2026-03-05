@@ -371,6 +371,7 @@ class BulkWebSocketClient:
 
         try:
             sjson = json.dumps(request)
+            print(f"sending request: {sjson[:min(len(sjson),1024)]}")
             self.logger.debug(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
@@ -598,6 +599,7 @@ class BulkWebSocketClient:
             async for message in self.ws:
                 try:
                     data = json.loads(message)
+                    print(f"received: {message[:min(len(message),1024)]}")
                     await self._handle_message(data)
                 except json.JSONDecodeError as e:
                     self.logger.error(f"JSON decode error: {e}")
