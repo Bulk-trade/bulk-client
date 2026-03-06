@@ -201,7 +201,7 @@ class MarketOrder:
     pubkey: Optional[str] = None
     oid: Optional[str] = None
 
-    def order_id(self) -> str:
+    def order_id(self) -> Optional[str]:
         """
         Generate hash used as order ID
         """
