@@ -726,6 +726,7 @@ class OrderStack:
         actions = []
         actions.extend(orders_to_cancel)
         actions.extend(orders_to_place)
+        actions = sorted(actions, key=lambda a: a.seqno)
 
         if len(actions) == 0:
             return [], [], True

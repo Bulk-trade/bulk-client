@@ -344,7 +344,8 @@ class BinanceMarketMaker:
             f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels, "
             f"open orders: {len(self.bulk.get_order_map())}")
 
-        actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
+        actions = sorted([*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed], key=lambda a: a.seqno)
+
         if len(actions) > 0:
             responses = await self.bulk.place_orders(actions, nonce=nonce)
             for i, response in enumerate(responses):
