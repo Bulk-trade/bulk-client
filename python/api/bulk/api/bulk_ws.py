@@ -372,11 +372,11 @@ class BulkWebSocketClient:
         try:
             sjson = json.dumps(request)
             self.logger.debug(f"Sending request: {sjson}")
-            self.logger.debug(f"Sending request: {sjson}")
             await self.ws.send(sjson)
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
+            BulkWebSocketClient::_check_responses (actions, responses)
 
             return responses
         except asyncio.TimeoutError:
@@ -1015,4 +1015,18 @@ class BulkWebSocketClient:
                 trade.maker == self.signer.public_key or
                 trade.taker == self.signer.public_key
         )
+
+    @staticmethod
+    def _check_responses(
+        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder|OraclePrice]],
+        responses: List[OrderResponse]
+    ):
+        """
+        Check if any of the responses have oid's that don't match up
+        """
+        oids = set([x.order_id for x in actions])
+        for response in responses:
+            oid = response.order_id
+            if oid and oid not in oids:
+                raise RuntimeError(f"Order id {oid} from response does not match computed oid, response: {response}")
 

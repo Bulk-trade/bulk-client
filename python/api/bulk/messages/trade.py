@@ -75,6 +75,9 @@ class OraclePrice:
     nonce: Optional[int] = None
     pubkey: Optional[str] = None
 
+    def order_id(self) -> Optional[str]:
+        return None
+
     def to_api(self) -> List[Dict]:
         """Convert to API format with compact field names"""
         return {
@@ -109,7 +112,7 @@ class LimitOrder:
     oid: Optional[str] = None
     pubkey: Optional[str] = None
 
-    def order_id(self) -> str:
+    def order_id(self) -> Optional[str]:
         """
         Generate hash used as order ID
         """
@@ -276,6 +279,9 @@ class CancelOrder:
     side: Optional[Side] = None
     nonce: Optional[int] = None
 
+    def order_id(self) -> Optional[str]:
+        return self.order_id
+
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         return {
@@ -291,6 +297,9 @@ class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     symbols: List[str]
     nonce: Optional[int] = None
+
+    def order_id(self) -> Optional[str]:
+        return None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
