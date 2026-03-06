@@ -847,6 +847,7 @@ async def example_usage():
         time_in_force=TimeInForce.GTC,
         nonce=int(time.time_ns() / 1000),
         pubkey=signer.public_key,
+        seqno=0
     )
     state = order.to_state(OrderStatus.NONE)
     print(state)

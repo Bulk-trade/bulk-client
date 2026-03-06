@@ -122,7 +122,7 @@ class LimitOrder:
             return self.oid
         if not self.nonce and not self.pubkey:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
-        if not self.seqno:
+        if self.seqno is None:
             raise ValueError(f"Missing seqno for order: {self}")
 
         ser = b''.join([
@@ -215,7 +215,7 @@ class MarketOrder:
             return self.oid
         if not self.nonce and not self.pubkey:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
-        if not self.seqno:
+        if self.seqno is None:
             raise ValueError(f"Missing seqno for order: {self}")
 
         ser = b''.join([
@@ -406,11 +406,12 @@ def _limitorder_id():
         size=0.001,
         reduce_only=False,
         time_in_force=TimeInForce.ALO,
+        seqno=0,
         nonce=1772569595613073,
         pubkey="2bZfxVQtWdd8qAWJ4Xyq43cnej9zqMNyuh7HHxTNan8j"
     )
     oid = order.order_id()
-    assert oid == "JBHReFLFMA4suv5qs7KTSfho5bFTkQRU8aQ4NYqyhuoJ"
+    assert oid == "3FGBWAAcrstJq4VfyzTnmvwid52hCeW2esrVYCntjxuy"
 
 if __name__ == "__main__":
     _limitorder_id()
