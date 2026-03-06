@@ -313,7 +313,7 @@ class BinanceMarketMaker:
         ask_prices, ask_sizes = binance_book.aggregate_dual(
             Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
-        nonce = int(time.time_ns() / 1000)
+        nonce = time.time_ns()
 
         # Sync bid side
         bid_placed, bid_cancelled, bidx_added, bidx_deleted = self.bid_stack.plan(
@@ -340,7 +340,7 @@ class BinanceMarketMaker:
 
         actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
         if len(actions) > 0:
-            responses = await self.bulk.place_orders(actions, nonce=actions[0].nonce)
+            responses = await self.bulk.place_orders(actions, nonce=nonce)
             for i, response in enumerate(responses):
                 if response.is_error():
                     self.logger.error(f"Error executing order: {actions[i]}: {response}")

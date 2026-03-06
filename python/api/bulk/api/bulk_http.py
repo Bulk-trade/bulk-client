@@ -398,7 +398,8 @@ class BulkHttpClient:
 
     def place_orders(
         self,
-        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll]]
+        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll]],
+        nonce: Optional[int] = None,
     ) -> Dict:
         """
         Place multiple order-related tx in a single transaction
@@ -410,12 +411,17 @@ class BulkHttpClient:
         Args:
             txns: tx to place in transaction
         """
-        
+
+        if nonce is None:
+            nonce = time.time_ns()
         if not self.signer:
             raise ValueError("Private key required for trading operations")
         
         order_objects = []
+        account = self.signer.public_key()
         for tx in txns:
+            tx.nonce = nonce
+            tx.pubkey = account
             match tx:
                 case LimitOrder():
                     order_objects.append(tx.to_api())
