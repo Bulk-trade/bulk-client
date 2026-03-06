@@ -920,6 +920,11 @@ class BulkWebSocketClient:
         Emits: OpenOrder object for placed, order_id for cancelled
         """
         state = OrderState.from_api(data)
+        if state.status.is_terminal():
+            self.open_orders.pop(state.order_id)
+        else:
+            self.open_orders[state.order_id] = state
+
         await self._emit_event(Topic.ORDER, state)
 
 
