@@ -376,7 +376,7 @@ class BulkWebSocketClient:
 
             # Wait for response with timeout
             responses = await asyncio.wait_for(future, timeout=timeout)
-            BulkWebSocketClient::_check_responses (actions, responses)
+            BulkWebSocketClient._check_responses (actions, responses)
 
             return responses
         except asyncio.TimeoutError:
