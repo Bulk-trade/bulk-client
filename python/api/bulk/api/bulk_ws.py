@@ -220,6 +220,10 @@ class BulkWebSocketClient:
         else:
             return list(self.open_orders.values())
 
+    def get_order_map(self) -> Dict[str, OrderState]:
+        """Get open orders"""
+        return self.open_orders
+
     def get_pnl(self) -> Pnl:
         """Calculate P&L using Inventory class"""
         return self.inventory.pv(self.prices)
