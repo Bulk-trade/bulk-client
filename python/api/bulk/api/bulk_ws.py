@@ -1024,7 +1024,7 @@ class BulkWebSocketClient:
         """
         Check if any of the responses have oid's that don't match up
         """
-        oids = set([x.order_id for x in actions])
+        oids = set([x.order_id() for x in actions])
         for i, response in enumerate(responses):
             oid = response.order_id
             if oid and oid not in oids:
