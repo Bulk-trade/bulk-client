@@ -72,6 +72,7 @@ class OraclePrice:
     timestamp: int
     symbol: str
     price: float
+    seqno: Optional[int] = None
     nonce: Optional[str] = None
     pubkey: Optional[str] = None
 
@@ -108,6 +109,7 @@ class LimitOrder:
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
 
+    seqno: Optional[int] = None
     nonce: Optional[str] = None
     oid: Optional[str] = None
     pubkey: Optional[str] = None
@@ -120,8 +122,11 @@ class LimitOrder:
             return self.oid
         if not self.nonce and not self.pubkey:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
+        if not self.seqno:
+            raise ValueError(f"Missing seqno for order: {self}")
 
         ser = b''.join([
+            _write_u32(self.seqno),
             _write_u32(1),
             _write_string(self.symbol),
             _write_u8(SIDE_MAP[self.side]),
@@ -197,6 +202,7 @@ class MarketOrder:
     size: float
     reduce_only: bool = False
 
+    seqno: Optional[int] = None
     nonce: Optional[str] = None
     pubkey: Optional[str] = None
     oid: Optional[str] = None
@@ -209,8 +215,11 @@ class MarketOrder:
             return self.oid
         if not self.nonce and not self.pubkey:
             raise ValueError(f"Neither pubkey nor nonce are set for order: {self}")
+        if not self.seqno:
+            raise ValueError(f"Missing seqno for order: {self}")
 
         ser = b''.join([
+            _write_u32(self.seqno),
             _write_u32(0),
             _write_string(self.symbol),
             _write_u8(SIDE_MAP[self.side]),
@@ -276,7 +285,9 @@ class CancelOrder:
     symbol: str
     oid: str
     side: Optional[Side] = None
+    seqno: Optional[int] = None
     nonce: Optional[str] = None
+    pubkey: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
         return self.oid
@@ -296,6 +307,8 @@ class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     symbols: List[str]
     nonce: Optional[str] = None
+    seqno: Optional[int] = None
+    pubkey: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
         return None

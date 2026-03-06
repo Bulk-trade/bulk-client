@@ -419,7 +419,8 @@ class BulkHttpClient:
         
         order_objects = []
         account = self.signer.public_key()
-        for tx in txns:
+        for ith, tx in enumerate(txns):
+            tx.seqno = ith
             tx.nonce = nonce
             tx.pubkey = account
             match tx:
