@@ -921,7 +921,7 @@ class BulkWebSocketClient:
         """
         state = OrderState.from_api(data)
         if state.status.is_terminal():
-            self.open_orders.pop(state.order_id)
+            self.open_orders.pop(state.order_id, None)
         else:
             self.open_orders[state.order_id] = state
 
