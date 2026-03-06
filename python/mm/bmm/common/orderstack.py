@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
 
 from bulk.api import BulkWebSocketClient
-from bulk.common import Side, OrderStatus, TimeInForce, TransactionSigner
+from bulk.common import Side, OrderStatus, TimeInForce, TransactionSigner, SequenceCounter
 from bulk.messages.account import OrderState
 from bulk.data import FastOrderBook
 from bulk.messages import L2Snapshot, OrderBookLevel, LimitOrder, CancelOrder
 
 import logging
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class PriceLevel:
     granular size adjustments as Binance book changes.
     """
 
-    def __init__(self, symbol, price: float, side: Side, chunk_size: float, decimals: int):
+    def __init__(self, symbol, price: float, side: Side, chunk_size: float, decimals: int, seqno: SequenceCounter):
         """
         Initialize price level
 
@@ -42,12 +44,14 @@ class PriceLevel:
             side: Side.BUY or Side.SELL
             chunk_size: Base size for each order chunk
             decimals: Number of decimal digits
+            seqno: action sequence counter
         """
         self.symbol = symbol
         self.price = price
         self.side = side
         self.chunk_size = chunk_size
         self.decimal_scale = 10.0**decimals
+        self.seqno = seqno
 
         self.pending_placed = 0
         self.pending_cancel = 0
@@ -185,6 +189,7 @@ class PriceLevel:
                     time_in_force=tif,
                     pubkey=signer.public_key,
                     nonce=nonce,
+                    seqno=self.seqno.next(),
                 )
                 orders_to_place.append(order)
 
@@ -199,7 +204,8 @@ class PriceLevel:
                     symbol=self.symbol,
                     oid=oid,
                     side=self.side,
-                    nonce=nonce
+                    nonce=nonce,
+                    seqno=self.seqno.next(),
                 )
                 orders_to_cancel.append(action)
 
@@ -224,6 +230,7 @@ class PriceLevel:
                     symbol=self.symbol,
                     oid=oid,
                     side=self.side,
+                    seqno=self.seqno.next(),
                 )
                 actions.append(action)
 
@@ -337,6 +344,7 @@ class OrderStack:
         symbol: str,
         side: Side,
         signer: TransactionSigner,
+        seqno: SequenceCounter,
         chunk_size: float = 0.5,
         max_orders: int = 5,
         tif: TimeInForce = TimeInForce.GTC,
@@ -359,6 +367,7 @@ class OrderStack:
         self.symbol = symbol
         self.side = side
         self.signer = signer
+        self.seqno = seqno
         self.chunk_size = chunk_size
         self.max_orders = max_orders
         self.tif = tif
@@ -542,7 +551,7 @@ class OrderStack:
                 if target_size == 0:
                     continue
                 levels_added.append(key * 1e-8)
-                self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals)
+                self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals, self.seqno)
                 level = self.levels[key]
             else:
                 level = self.levels[key]
@@ -614,7 +623,7 @@ class OrderStack:
 
         # create level if does not exist
         if key not in self.levels:
-            self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals)
+            self.levels[key] = PriceLevel(self.symbol, price, self.side, self.chunk_size, self.decimals, self.seqno)
 
         # Update level
         level = self.levels[key]
