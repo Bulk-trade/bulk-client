@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 
 from nacl.exceptions import BadSignatureError
 from nacl.signing import SigningKey, VerifyKey
@@ -105,7 +105,7 @@ class TransactionSigner:
     @staticmethod
     def serialize_transaction(
         actions: List[Dict],
-        nonce: int,
+        nonce: Union[int, str],
         account: str) -> bytes:
         """
         Serialize transaction using bincode format
@@ -122,7 +122,7 @@ class TransactionSigner:
         for action in actions:
             parts.append(TransactionSigner.serialize_action(action))
 
-        parts.append(TransactionSigner.write_u64(nonce))
+        parts.append(TransactionSigner.write_u64(int(nonce)))
         parts.append(TransactionSigner.decode_and_validate_key(account))
         return b''.join(parts)
 

@@ -72,7 +72,7 @@ class OraclePrice:
     timestamp: int
     symbol: str
     price: float
-    nonce: Optional[int] = None
+    nonce: Optional[str] = None
     pubkey: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
@@ -108,7 +108,7 @@ class LimitOrder:
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
 
-    nonce: Optional[int] = None
+    nonce: Optional[str] = None
     oid: Optional[str] = None
     pubkey: Optional[str] = None
 
@@ -130,7 +130,7 @@ class LimitOrder:
             _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             _write_bool(self.reduce_only),
             _write_pubkey(self.pubkey),
-            _write_u64(self.nonce),
+            _write_u64(int(self.nonce)),
         ])
 
         dec = list(ser)
@@ -197,7 +197,7 @@ class MarketOrder:
     size: float
     reduce_only: bool = False
 
-    nonce: Optional[int] = None
+    nonce: Optional[str] = None
     pubkey: Optional[str] = None
     oid: Optional[str] = None
 
@@ -217,7 +217,7 @@ class MarketOrder:
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
             _write_pubkey(self.pubkey),
-            _write_u64(self.nonce),
+            _write_u64(int(self.nonce)),
         ])
 
         hash = hashlib.sha256(ser).digest()
@@ -277,7 +277,7 @@ class CancelOrder:
     symbol: str
     oid: str
     side: Optional[Side] = None
-    nonce: Optional[int] = None
+    nonce: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
         return self.oid
@@ -296,7 +296,7 @@ class CancelOrder:
 class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     symbols: List[str]
-    nonce: Optional[int] = None
+    nonce: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
         return None
@@ -319,7 +319,6 @@ class Fill:
     """Represents a trade fill"""
     symbol: str
     order_id: str
-    client_id: Optional[str]
     price: float
     size: float
     side: Side
@@ -331,7 +330,6 @@ class Fill:
         return cls(
             symbol=data.get('symbol'),
             order_id=data.get('orderId'),
-            client_id=data.get('clientId', None),
             price=data.get('price'),
             size=data.get('size'),
             side=Side.BUY if data.get('isBuy') else Side.SELL,
