@@ -603,12 +603,16 @@ async def main():
     mm = BinanceMarketMaker(config)
 
     # Setup signal handlers for clean shutdown
-    def signal_handler(signum, frame):
-        logger.info(f"\nReceived signal {signum}, shutting down...")
-        mm.running = False
+    loop = asyncio.get_event_loop()
+    main_task = None
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    def _handle_shutdown():
+        logger.info("\nReceived shutdown signal, exiting immediately...")
+        if main_task and not main_task.done():
+            main_task.cancel()
+
+    loop.add_signal_handler(signal.SIGINT, _handle_shutdown)
+    loop.add_signal_handler(signal.SIGTERM, _handle_shutdown)
 
     # Initialize
     if not await mm.initialize():
@@ -617,7 +621,11 @@ async def main():
 
     # Run market maker
     try:
+        main_task = asyncio.current_task()
         await mm.run()
+        return 0
+    except asyncio.CancelledError:
+        logger.info("Shutting down...")
         return 0
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
