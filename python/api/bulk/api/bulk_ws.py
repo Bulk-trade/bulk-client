@@ -1027,7 +1027,10 @@ class BulkWebSocketClient:
         oids = set([x.order_id() for x in actions])
         for i, response in enumerate(responses):
             oid = response.order_id
-            if oid and oid not in oids:
-                action = actions[i]
+
+            action = actions[i]
+            action_oid = action.order_id()
+
+            if action_oid and oid not in oids:
                 raise RuntimeError(f"Order id {oid} from response does not match computed oid, response: {response}, action: {action}")
 
