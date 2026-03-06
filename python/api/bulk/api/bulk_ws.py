@@ -339,18 +339,19 @@ class BulkWebSocketClient:
         request_id = self.request_id
         timeout = timeout if timeout is not None else self.default_timeout
 
+        account = self.signer.public_key()
+        if not nonce:
+            nonce = int(time.time_ns())
+
         # Build transaction using LimitOrder.to_tx
         orders = []
-        for action in actions:
+        for ith, action in enumerate(actions):
+            action.seqno = ith
+            action.nonce = nonce
+            action.pubkey = account
             orders.append(action.to_api())
 
-        # Bundle
-        if not nonce:
-            if actions[0].nonce:
-                nonce = actions[0].nonce
-            else:
-                nonce = int(time.time_ns())
-
+        # Compose TX
         tx = tx = {
             "actions": [x.to_api() for x in actions],
             "nonce": f"{nonce}",
