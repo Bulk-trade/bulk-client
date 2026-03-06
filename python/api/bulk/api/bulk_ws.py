@@ -339,7 +339,7 @@ class BulkWebSocketClient:
         request_id = self.request_id
         timeout = timeout if timeout is not None else self.default_timeout
 
-        account = self.signer.public_key()
+        account = self.signer.public_key
         if not nonce:
             nonce = int(time.time_ns())
 
