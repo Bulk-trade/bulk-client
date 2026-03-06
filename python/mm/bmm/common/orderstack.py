@@ -222,7 +222,7 @@ class PriceLevel:
             if order.status != OrderStatus.CANCEL_PENDING:
                 action = CancelOrder(
                     symbol=self.symbol,
-                    order_id=oid,
+                    oid=oid,
                     side=self.side,
                 )
                 actions.append(action)
