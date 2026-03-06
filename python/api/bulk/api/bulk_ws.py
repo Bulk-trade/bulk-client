@@ -290,7 +290,7 @@ class BulkWebSocketClient:
 
         tx = {
             "actions": [x.to_api() for x in actions],
-            "nonce": nonce,
+            "nonce": f"{nonce}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key,
         }
@@ -349,11 +349,11 @@ class BulkWebSocketClient:
             if actions[0].nonce:
                 nonce = actions[0].nonce
             else:
-                nonce = int(time.time_ns() / 1000)
+                nonce = int(time.time_ns())
 
         tx = tx = {
             "actions": [x.to_api() for x in actions],
-            "nonce": nonce,
+            "nonce": f"{nonce}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key,
         }
