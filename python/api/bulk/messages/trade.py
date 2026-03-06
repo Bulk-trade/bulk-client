@@ -145,8 +145,8 @@ class LimitOrder:
             "l": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
-                'px': f"{self.price:.8g}",
-                'sz': f"{self.size:.8g}",
+                'px': f"{self.price}",
+                'sz': f"{self.size}",
                 'r': self.reduce_only,
                 'tif': str(self.time_in_force)
             }
@@ -231,7 +231,7 @@ class MarketOrder:
             "m": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
-                'sz': f"{self.size:.8g}",
+                'sz': f"{self.size}",
                 'r': self.reduce_only,
             }
         }
