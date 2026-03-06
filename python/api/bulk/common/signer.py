@@ -128,8 +128,8 @@ class TransactionSigner:
 
     @staticmethod
     def serialize_action(action: dict) -> bytes:
-        def to_fixedpoint(x: float) -> int:
-            return int(round(x * 1e8))
+        def to_fixedpoint(x: Union[float,str]) -> int:
+            return int(round(float(x) * 1e8))
 
         match action:
             case {"m": order}:
