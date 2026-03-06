@@ -170,14 +170,14 @@ class LimitOrder:
         )
 
     def __str__(self) -> str:
-        parts = [f"{self.side.name} {self.size:.17g} {self.symbol} @ {self.price:.17g}"]
+        parts = [f"{self.side.name} {self.size:.17g} {self.symbol} @ {self.price:.17g}, tif={self.time_in_force.name}"]
 
         if self.reduce_only:
             parts.append("reduce_only")
-        if self.time_in_force != TimeInForce.GTC:
-            parts.append(f"tif={self.time_in_force.name}")
         if self.oid:
             parts.append(f"oid={self.oid}")
+        if self.pubkey:
+            parts.append(f"account={self.pubkey}")
         if self.nonce is not None:
             parts.append(f"nonce={self.nonce}")
 
