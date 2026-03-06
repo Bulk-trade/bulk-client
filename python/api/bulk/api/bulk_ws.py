@@ -1042,5 +1042,5 @@ class BulkWebSocketClient:
             action_oid = action.order_id()
 
             if action_oid and oid not in oids:
-                raise RuntimeError(f"Order id {oid} from response does not match computed oid, response: {response}, action: {action}")
+                raise RuntimeError(f"Response {i}, non-matching {oid} , response: {response}, action: {action}")
 

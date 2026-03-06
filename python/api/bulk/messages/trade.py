@@ -185,6 +185,8 @@ class LimitOrder:
             parts.append(f"account={self.pubkey}")
         if self.nonce is not None:
             parts.append(f"nonce={self.nonce}")
+        if self.seqno is not None:
+            parts.append(f"seqno={self.seqno}")
 
         return f"LimitOrder({', '.join(parts)})"
 
@@ -271,6 +273,8 @@ class MarketOrder:
             parts.append(f"oid={self.oid}")
         if self.nonce is not None:
             parts.append(f"nonce={self.nonce}")
+        if self.seqno is not None:
+            parts.append(f"seqno={self.seqno}")
 
         return f"MarketOrder({', '.join(parts)})"
 
