@@ -197,7 +197,7 @@ class PriceLevel:
             for oid in self._get_orders_to_cancel(target_size):
                 action = CancelOrder(
                     symbol=self.symbol,
-                    order_id=oid,
+                    oid=oid,
                     side=self.side,
                     nonce=nonce
                 )
@@ -222,7 +222,7 @@ class PriceLevel:
             if order.status != OrderStatus.CANCEL_PENDING:
                 action = CancelOrder(
                     symbol=self.symbol,
-                    order_id=oid,
+                    oid=oid,
                     side=self.side,
                 )
                 actions.append(action)
