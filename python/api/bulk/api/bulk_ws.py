@@ -504,7 +504,7 @@ class BulkWebSocketClient:
         timeout = timeout if timeout is not None else self.default_timeout
 
         # Create CancelOrder using your class
-        cancel_order = CancelOrder(symbol=symbol, order_id=order_id, side=side)
+        cancel_order = CancelOrder(symbol=symbol, oid=order_id, side=side)
         # Build transaction using CancelOrder.to_tx
         results = await self.place_orders([cancel_order], timeout=timeout, nonce=nonce)
         return results[0]
@@ -1024,10 +1024,6 @@ class BulkWebSocketClient:
         """
         Check if any of the responses have oid's that don't match up
         """
-        for x in actions:
-            if not hasattr(x, "order_id"):
-                raise TypeError(f"Invalid action: {x}, type: {type(x)}")
-
         oids = set([x.order_id() for x in actions])
         for i, response in enumerate(responses):
             oid = response.order_id
