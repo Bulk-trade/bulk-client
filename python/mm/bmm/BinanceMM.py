@@ -335,7 +335,8 @@ class BinanceMarketMaker:
         self.logger.info(
             f"updating {self.config.bulk_symbol()} book with "
             f"{len(bid_placed) + len(ask_placed)} new orders "
-            f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels")
+            f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels, "
+            f"open orders: {len(self.bulk.get_order_map())}")
 
         actions = [*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed]
         if len(actions) > 0:
