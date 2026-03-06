@@ -24,6 +24,8 @@ from typing import Optional
 
 import numpy as np
 
+from common import SequenceCounter
+
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -62,6 +64,7 @@ class BinanceMarketMaker:
         self.signer: Optional[TransactionSigner] = None
 
         # Order management
+        self.seqno = SequenceCounter()
         self.bid_stack: Optional[OrderStack] = None
         self.ask_stack: Optional[OrderStack] = None
 
@@ -129,6 +132,7 @@ class BinanceMarketMaker:
             self.bid_stack = OrderStack(
                 symbol=self.config.bulk_symbol(),
                 side=Side.BUY,
+                seqno=self.seqno,
                 chunk_size=self.config.chunk_size,
                 max_orders=self.config.max_new_orders,
                 max_price_levels=self.config.max_price_levels,
@@ -138,6 +142,7 @@ class BinanceMarketMaker:
             self.ask_stack = OrderStack(
                 symbol=self.config.bulk_symbol(),
                 side=Side.SELL,
+                seqno=self.seqno,
                 chunk_size=self.config.chunk_size,
                 max_orders=self.config.max_new_orders,
                 max_price_levels=self.config.max_price_levels,
@@ -314,6 +319,9 @@ class BinanceMarketMaker:
             Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
         nonce = time.time_ns()
+
+        # reset action count
+        self.seqno.reset()
 
         # Sync bid side
         bid_placed, bid_cancelled, bidx_added, bidx_deleted = self.bid_stack.plan(

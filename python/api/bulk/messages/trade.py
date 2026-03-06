@@ -3,7 +3,7 @@ import json
 import struct
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 
 import base58
 from bulk.common import OrderStatus, TimeInForce, Side
@@ -73,7 +73,7 @@ class OraclePrice:
     symbol: str
     price: float
     seqno: Optional[int] = None
-    nonce: Optional[str] = None
+    nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
@@ -110,7 +110,7 @@ class LimitOrder:
     time_in_force: TimeInForce = TimeInForce.GTC
 
     seqno: Optional[int] = None
-    nonce: Optional[str] = None
+    nonce: Optional[Union[str,int]] = None
     oid: Optional[str] = None
     pubkey: Optional[str] = None
 
@@ -203,7 +203,7 @@ class MarketOrder:
     reduce_only: bool = False
 
     seqno: Optional[int] = None
-    nonce: Optional[str] = None
+    nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
     oid: Optional[str] = None
 
@@ -286,7 +286,7 @@ class CancelOrder:
     oid: str
     side: Optional[Side] = None
     seqno: Optional[int] = None
-    nonce: Optional[str] = None
+    nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
 
     def order_id(self) -> Optional[str]:
@@ -306,7 +306,7 @@ class CancelOrder:
 class CancelAll:
     """Cancel all orders for symbol or across symbols"""
     symbols: List[str]
-    nonce: Optional[str] = None
+    nonce: Optional[Union[str,int]] = None
     seqno: Optional[int] = None
     pubkey: Optional[str] = None
 
