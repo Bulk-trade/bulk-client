@@ -24,15 +24,13 @@ from typing import Optional
 
 import numpy as np
 
-from common import SequenceCounter
-
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from bulk import BulkWebSocketClient
 from bulk import Topic as BulkTopic
-from bulk.common import Side, TimeInForce
+from bulk.common import Side, TimeInForce, SequenceCounter
 from bulk.common.inventory import Inventory
 from bulk.common.signer import TransactionSigner
 from bulk.messages import MarketOrder, LimitOrder, CancelOrder
