@@ -1025,8 +1025,9 @@ class BulkWebSocketClient:
         Check if any of the responses have oid's that don't match up
         """
         oids = set([x.order_id for x in actions])
-        for response in responses:
+        for i, response in enumerate(responses):
             oid = response.order_id
             if oid and oid not in oids:
-                raise RuntimeError(f"Order id {oid} from response does not match computed oid, response: {response}")
+                action = actions[i]
+                raise RuntimeError(f"Order id {oid} from response does not match computed oid, response: {response}, action: {action}")
 
