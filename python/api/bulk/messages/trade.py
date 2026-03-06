@@ -275,19 +275,19 @@ class MarketOrder:
 class CancelOrder:
     """Cancel order"""
     symbol: str
-    order_id: str
+    oid: str
     side: Optional[Side] = None
     nonce: Optional[int] = None
 
     def order_id(self) -> Optional[str]:
-        return self.order_id
+        return self.oid
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
         return {
             "cx": {
                 'c': self.symbol,
-                'oid': self.order_id
+                'oid': self.oid
             }
         }
 
