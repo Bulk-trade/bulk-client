@@ -24,8 +24,6 @@ from typing import Optional
 
 import numpy as np
 
-from messages import CancelAll
-
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -35,7 +33,7 @@ from bulk import Topic as BulkTopic
 from bulk.common import Side, TimeInForce, SequenceCounter
 from bulk.common.inventory import Inventory
 from bulk.common.signer import TransactionSigner
-from bulk.messages import MarketOrder, LimitOrder, CancelOrder
+from bulk.messages import MarketOrder, LimitOrder, CancelOrder, CancelAll
 from bulk.messages import OrderState, Fill, PositionUpdate
 from bulk.messages import L2Delta
 
