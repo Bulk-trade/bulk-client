@@ -382,6 +382,11 @@ class OrderStack:
 
     # ==================== PUBLIC METHODS ====================
 
+    def clear(self):
+        """Clear all orders"""
+        self.levels.clear()
+        self.orders.clear()
+
     # Primary getters (simple, fast queries)
 
     def get_total_size(self) -> float:

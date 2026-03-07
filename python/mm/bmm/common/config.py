@@ -28,6 +28,9 @@ class MMConfig:
     coarse_tick: float
     # max depth (bps)
     max_depth: float
+    # maximum total # of live orders
+    max_live_orders: int
+
 
     # Update frequency (seconds between syncs)
     sync_interval: float
@@ -72,6 +75,7 @@ class MMConfig:
                 fine_tick=config.get("fine_tick", 0.25),
                 coarse_tick=config.get("coarse_tick", 5.0),
                 max_depth=config.get("max_depth", 1000.0),
+                max_live_orders=config.get("max_live_orders", 8000),
                 sync_interval=config.get("sync_interval", 1.0),
                 monitor_interval=config.get("monitor_interval", 1.0),
                 max_inventory_notional=config.get("max_inventory_notional", 250000.0),

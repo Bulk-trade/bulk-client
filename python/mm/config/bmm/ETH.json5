@@ -18,6 +18,8 @@
     coarse_tick: 0.25,
     // maximum depth (bps)
     max_depth: 1000.0,
+    // maximum total # of live orders
+    max_live_orders: 8000,
 
     // Update frequency (seconds between syncs)
     sync_interval: 0.250,

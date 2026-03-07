@@ -24,6 +24,8 @@ from typing import Optional
 
 import numpy as np
 
+from messages import CancelAll
+
 # Add parent directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -317,9 +319,22 @@ class BinanceMarketMaker:
             Side.SELL, self.config.fine_tick, self.config.coarse_tick)
 
         nonce = time.time_ns()
+        clears = []
 
         # reset action count
         self.seqno.reset()
+
+        # if the number of outstanding orders exceeds maximum, clear
+        orders = self.bulk.get_order_map()
+        if len(orders) > self.config.max_live_orders:
+            self.logger.info(f"clearing an excess of orders: {len(orders)}")
+            self.bid_stack.clear()
+            self.ask_stack.clear()
+            cancel = CancelAll(
+                symbols=[self.config.bulk_symbol()],
+                seqno=self.seqno.next(),
+            )
+            clears.append(cancel)
 
         # Sync bid side
         bid_placed, bid_cancelled, bidx_added, bidx_deleted = self.bid_stack.plan(
@@ -344,7 +359,7 @@ class BinanceMarketMaker:
             f"+ {len(bid_cancelled)+len(ask_cancelled)} cancels, "
             f"open orders: {len(self.bulk.get_order_map())}")
 
-        actions = sorted([*bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed], key=lambda a: a.seqno)
+        actions = sorted([*clears, *bid_cancelled, *ask_cancelled, *bid_placed, *ask_placed], key=lambda a: a.seqno)
 
         if len(actions) > 0:
             responses = await self.bulk.place_orders(actions, nonce=nonce)
@@ -355,6 +370,7 @@ class BinanceMarketMaker:
                     if response.order_id and isinstance(actions[i], CancelOrder):
                         order_id = response.order_id
                         side = actions[i].side
+
                         self.logger.debug(f"handling cancel failure for: {order_id}")
                         stack = self.bid_stack if side == Side.BUY else self.ask_stack
                         stack.terminated(order_id)
