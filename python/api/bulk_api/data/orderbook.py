@@ -3,8 +3,8 @@ from typing import Optional, List, Dict
 
 from sortedcontainers import SortedDict
 
-from bulk.common import Side
-from bulk.messages import L2Snapshot, L2Delta, BBO, OrderBookLevel
+from bulk_api.common import Side
+from bulk_api.messages import L2Snapshot, L2Delta, BBO, OrderBookLevel
 
 
 class OrderBook:

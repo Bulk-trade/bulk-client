@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Dict, Optional, List, Union
 
 import base58
-from bulk.common import OrderStatus, TimeInForce, Side
-from bulk.messages import OrderState
+from bulk_api.common import OrderStatus, TimeInForce, Side
+from bulk_api.messages import OrderState
 
 
 # =======================================================

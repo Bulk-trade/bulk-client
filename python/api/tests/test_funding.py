@@ -1,7 +1,7 @@
-from bulk.api import BulkWebSocketClient
-from bulk.api.ws import Topic
-from bulk.common import Side
-from bulk.messages import L2Snapshot, Ticker
+from bulk_api.api import BulkWebSocketClient
+from bulk_api.api.ws import Topic
+from bulk_api.common import Side
+from bulk_api.messages import L2Snapshot, Ticker
 
 tick = None
 snap = None

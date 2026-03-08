@@ -14,8 +14,8 @@ import time
 import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
-from bulk.common import TransactionSigner, Side, TimeInForce
-from bulk.messages import LimitOrder, CancelOrder, MarketOrder, CancelAll
+from bulk_api.common import TransactionSigner, Side, TimeInForce
+from bulk_api.messages import LimitOrder, CancelOrder, MarketOrder, CancelAll
 
 
 class BulkHttpClient:

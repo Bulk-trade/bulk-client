@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from sortedcontainers import SortedDict
 
-from bulk.common import Side
+from bulk_api.common import Side
 
 # ============================================================================
 # Summary-level Data

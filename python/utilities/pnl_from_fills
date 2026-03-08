@@ -13,8 +13,8 @@ from collections import defaultdict
 import pandas as pd
 
 # Import your existing classes
-from bulk.common.comparisons import *
-from bulk.common.inventory import Inventory, Position, Pnl
+from bulk_api.common.comparisons import *
+from bulk_api.common.inventory import Inventory, Position, Pnl
 
 def parse_fills(json_file: str) -> List[Dict[str, Any]]:
     """Parse JSON file containing fills"""

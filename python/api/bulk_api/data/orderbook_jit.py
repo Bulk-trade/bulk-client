@@ -3,8 +3,8 @@ import time
 import numpy as np
 from numba import njit, types
 from typing import Optional, Tuple
-from bulk.common import Side
-from bulk.messages import L2Snapshot, OrderBookLevel, L2Delta
+from bulk_api.common import Side
+from bulk_api.messages import L2Snapshot, OrderBookLevel, L2Delta
 
 
 class FastOrderBook:

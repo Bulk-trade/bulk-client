@@ -1,6 +1,6 @@
-from bulk import Topic
-from bulk.api import BulkWebSocketClient
-from bulk.common import Side
+from bulk_api import Topic
+from bulk_api.api import BulkWebSocketClient
+from bulk_api.common import Side
 
 
 async def test_market_data():
