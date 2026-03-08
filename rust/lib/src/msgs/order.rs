@@ -30,8 +30,11 @@ impl MarketOrder {
     /// # Arguments
     /// - `account`: account associated with order
     /// - `nonce`: nonce associated with tx
-    pub fn order_id(&self, account: Pubkey, nonce: u64) -> Hash {
-        let mut bin = bincode::serialize(&self).unwrap();
+    /// - `seqno`: action sequence number
+    pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
+        let mut bin = Vec::<u8>::new();
+        bin.extend(seqno.to_le_bytes());
+        bin.extend(bincode::serialize(&self).unwrap());
         bin.extend_from_slice(account.as_ref());
         bin.extend_from_slice(&nonce.to_le_bytes());
 
@@ -73,8 +76,11 @@ impl LimitOrder {
     /// # Arguments
     /// - `account`: account associated with order
     /// - `nonce`: nonce associated with tx
-    pub fn order_id(&self, account: Pubkey, nonce: u64) -> Hash {
-        let mut bin = bincode::serialize(&self).unwrap();
+    /// - `seqno`: action sequence number
+    pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
+        let mut bin = Vec::<u8>::new();
+        bin.extend(seqno.to_le_bytes());
+        bin.extend(bincode::serialize(&self).unwrap());
         bin.extend_from_slice(account.as_ref());
         bin.extend_from_slice(&nonce.to_le_bytes());
 
