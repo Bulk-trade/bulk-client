@@ -2,7 +2,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from bulk.common import Side, OrderStatus
+from bulk_api.common import Side, OrderStatus
 
 
 @dataclass

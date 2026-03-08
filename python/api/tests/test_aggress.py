@@ -21,11 +21,11 @@ import time
 from pathlib import Path
 from typing import Tuple
 
-from bulk.api import Topic
-from bulk.common import TransactionSigner, Side
-from bulk.api import BulkHttpClient
-from bulk.api import BulkWebSocketClient
-from bulk.messages.trade import MarketOrder
+from bulk_api.api import Topic
+from bulk_api.common import TransactionSigner, Side
+from bulk_api.api import BulkHttpClient
+from bulk_api.api import BulkWebSocketClient
+from bulk_api.messages.trade import MarketOrder
 from common import signer
 from messages import LimitOrder
 

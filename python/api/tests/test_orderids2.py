@@ -11,11 +11,11 @@ import sys
 import time
 from pathlib import Path
 
-from bulk import BulkHttpClient
-from bulk.common import Side, TimeInForce, Topic
-from bulk.common.signer import TransactionSigner
-from bulk.messages.trade import LimitOrder, OrderResponse
-from bulk.api import BulkWebSocketClient
+from bulk_api import BulkHttpClient
+from bulk_api.common import Side, TimeInForce, Topic
+from bulk_api.common.signer import TransactionSigner
+from bulk_api.messages.trade import LimitOrder, OrderResponse
+from bulk_api.api import BulkWebSocketClient
 
 
 # Setup logging

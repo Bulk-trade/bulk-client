@@ -9,7 +9,7 @@ import argparse
 from typing import Optional
 
 sys.path.insert(0, '../api')
-from bulk.common import TransactionSigner
+from bulk_api.common import TransactionSigner
 
 
 def main():

@@ -21,7 +21,7 @@ import argparse
 from typing import Optional
 
 sys.path.insert(0, '../api')
-from bulk import BulkHttpClient
+from bulk_api import BulkHttpClient
 
 
 

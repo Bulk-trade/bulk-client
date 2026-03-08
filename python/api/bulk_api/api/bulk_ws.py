@@ -14,16 +14,16 @@ from enum import Enum
 import websockets
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
-from bulk.common import Side, TimeInForce, LoggingWebSocket
-from bulk.common.inventory import Inventory, Pnl
-from bulk.common.signer import TransactionSigner
-from bulk.messages import SubscriptionRequest
-from bulk.messages.account import AccountSnapshot, Margin, \
+from bulk_api.common import Side, TimeInForce, LoggingWebSocket
+from bulk_api.common.inventory import Inventory, Pnl
+from bulk_api.common.signer import TransactionSigner
+from bulk_api.messages import SubscriptionRequest
+from bulk_api.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
-from bulk.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice
-from bulk.data import OrderBook
-from bulk.common import Topic
+from bulk_api.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
+from bulk_api.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice
+from bulk_api.data import OrderBook
+from bulk_api.common import Topic
 
 
 class ConnectionState(Enum):
@@ -470,7 +470,7 @@ class BulkWebSocketClient:
         timeout = timeout if timeout is not None else self.default_timeout
 
         # Import MarketOrder here to avoid circular imports
-        from bulk.messages.trade import MarketOrder
+        from bulk_api.messages.trade import MarketOrder
 
         # Create MarketOrder using your class
         market_order = MarketOrder(
