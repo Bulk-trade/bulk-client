@@ -66,7 +66,7 @@ async fn main() -> eyre::Result<()> {
         }),
     ];
 
-    let results = client.place_orders(orders, None, None).await?;
+    let results = client.place_tx(orders, None, None).await?;
     eprintln!("results: {:?}\n", results);
 
     process::exit(0);

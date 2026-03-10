@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::msgs::{AgentWalletCreation, CancelAll, CancelOrder, Faucet, LimitOrder, MarketOrder, ModifyOrder, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
+use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, LimitOrder, MarketOrder, Matrix, ModifyOrder, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
@@ -16,8 +16,12 @@ pub enum Action {
 
     #[serde(rename = "px")]
     Price(Price),
+    #[serde(rename = "corrs")]
+    Corrs(Matrix),
     #[serde(rename = "o")]
     PythOracle(PythOracle),
+    #[serde(rename = "beacon")]
+    Beacon(Beacon),
 
     #[serde(rename = "faucet")]
     Faucet(Faucet),
@@ -27,6 +31,18 @@ pub enum Action {
     UpdateUserSettings(UpdateUserSettings),
     #[serde(rename = "whitelistFaucet")]
     WhitelistFaucet(WhitelistFaucet),
+
+    #[serde(rename = "addMarket")]
+    AddMarket(AddMarket),
+
+    #[serde(rename = "configFairPrice")]
+    ConfigFairPrice(Vec<u8>),
+    #[serde(rename = "configSecurity")]
+    ConfigSecurity(Vec<u8>),
+    #[serde(rename = "configRegime")]
+    ConfigRegime(Vec<u8>),
+    #[serde(rename = "configRisk")]
+    ConfigRisk(Vec<u8>),
 }
 
 impl From<MarketOrder> for Action {
