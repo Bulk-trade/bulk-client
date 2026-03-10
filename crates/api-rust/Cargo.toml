@@ -1,5 +1,5 @@
 [package]
-name = "bulk_api"
+name = "bulk-api"
 version = "0.1.0"
 authors.workspace = true
 repository.workspace = true

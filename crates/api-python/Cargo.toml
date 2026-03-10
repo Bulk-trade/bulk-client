@@ -1,0 +1,11 @@
+[package]
+name = "api-python-shim"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name= "api_python_shim"
+path = ".src/lib.rs"
+
+[build-dependencies]
+# No dependencies needed
