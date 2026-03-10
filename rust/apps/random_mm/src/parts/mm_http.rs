@@ -183,7 +183,7 @@ impl RandomHttpMarketMaker {
             actions.extend(orders[chunk_start..chunk_end].to_vec());
 
             // place orders
-            match self.client.place_orders(actions, None, Some(nonce)).await {
+            match self.client.place_tx(actions, None, Some(nonce)).await {
                 Ok(responses) => {
                     let n_err = responses.iter().filter(|r| r.is_error()).count();
                     if n_err > 1 {

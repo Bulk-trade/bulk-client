@@ -3,8 +3,22 @@
 //! These structs are deserialized from the WebSocket JSON feed and correspond
 //! to the Python definitions in `md.py`.
 
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use crate::common::side::Side;
+
+// ============================================================================
+// Matrix MD
+// ============================================================================
+
+
+/// Matrix with named columns and rows
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Matrix {
+    /// named labels for the matrix
+    pub index: Vec<String>,
+    pub matrix: Vec<Vec<f64>>,
+}
+
 // ============================================================================
 // Summary-level Data
 // ============================================================================

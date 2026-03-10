@@ -288,7 +288,7 @@ impl BulkHttpClient {
     ///     CancelAll { ... },
     /// ], None).await?;
     /// ```
-    pub async fn place_orders(
+    pub async fn place_tx(
         &self,
         actions: Vec<Action>,
         account: Option<Pubkey>,
@@ -354,7 +354,7 @@ impl BulkHttpClient {
             reduce_only,
         };
 
-        let results = self.place_orders(vec![order.into()], None, None).await?;
+        let results = self.place_tx(vec![order.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -373,7 +373,7 @@ impl BulkHttpClient {
             reduce_only,
         };
 
-        let results = self.place_orders(vec![order.into()], None, None).await?;
+        let results = self.place_tx(vec![order.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -388,7 +388,7 @@ impl BulkHttpClient {
             oid: Hash::from_str(&order_id)?,
         };
 
-        let results = self.place_orders(vec![cancel.into()], None, None).await?;
+        let results = self.place_tx(vec![cancel.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -398,7 +398,7 @@ impl BulkHttpClient {
             symbols,
         };
 
-        let results = self.place_orders(vec![cancel.into()], None, None).await?;
+        let results = self.place_tx(vec![cancel.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -418,7 +418,7 @@ impl BulkHttpClient {
             max_leverage: settings,
         };
 
-        let results = self.place_orders(vec![settings.into()], None, None).await?;
+        let results = self.place_tx(vec![settings.into()], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -437,7 +437,7 @@ impl BulkHttpClient {
             delete,
         };
 
-        let results = self.place_orders(vec![Action::AgentWalletCreation(settings)], None, None).await?;
+        let results = self.place_tx(vec![Action::AgentWalletCreation(settings)], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -462,7 +462,7 @@ impl BulkHttpClient {
             target: target_account,
             whitelist,
         };
-        let results = self.place_orders(vec![Action::WhitelistFaucet(settings)], None, None).await?;
+        let results = self.place_tx(vec![Action::WhitelistFaucet(settings)], None, None).await?;
         Ok(results[0].clone())
     }
 
@@ -496,7 +496,7 @@ impl BulkHttpClient {
             amount,
         };
 
-        let results = self.place_orders(vec![Action::Faucet(req)], None, None).await?;
+        let results = self.place_tx(vec![Action::Faucet(req)], None, None).await?;
         Ok(results[0].clone())
     }
 

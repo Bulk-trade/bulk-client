@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
 
 /// Per-market configuration returned by the exchange.
@@ -20,3 +21,18 @@ pub struct MarketInfo {
     pub time_in_forces: Vec<String>,
 }
 
+/// Beacon tx
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Beacon {
+    pub epoch: u32,
+    pub node_id: u16,
+    pub wall_clock_ns: u64,
+    pub since_commit_us: u64,
+}
+
+/// Add new market tx
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AddMarket {
+    #[serde(rename = "c")]
+    pub symbol: Arc<str>,
+}
