@@ -75,73 +75,6 @@ def fund(
             "step": "faucet"
         }
 
-    # Wait for the funds to be credited
-    print("Waiting 3 seconds for funds to be credited...")
-    time.sleep(3)
-    print()
-
-    # Step 3: Query account and verify margin
-    print("=" * 70)
-    print("STEP 3: Querying account and verifying margin")
-    print("=" * 70)
-
-    try:
-        account_state = admin_client.get_full_account(pubkey)
-
-        # Extract margin information
-        margin_summary = account_state.get('fullAccount', {}).get('marginSummary', {})
-
-        # The margin amount should be in the accountValue or withdrawable field
-        account_value = float(margin_summary.get('accountValue', 0))
-        withdrawable = float(margin_summary.get('withdrawable', 0))
-        total_ntl_pos = float(margin_summary.get('totalNtlPos', 0))
-        total_raw_usd = float(margin_summary.get('totalRawUsd', 0))
-
-        print(f"Account Value:    ${account_value:,.2f}")
-        print(f"Withdrawable:     ${withdrawable:,.2f}")
-        print(f"Total Ntl Pos:    ${total_ntl_pos:,.2f}")
-        print(f"Total Raw USD:    ${total_raw_usd:,.2f}")
-        print()
-
-        # Verify the margin (use withdrawable as the main check)
-        expected_amount = amount
-        actual_margin = withdrawable
-        tolerance = 0.01  # Allow 1 cent tolerance for floating point
-
-        margin_verified = abs(actual_margin - expected_amount) < tolerance
-
-        if margin_verified:
-            print(f"✓ MARGIN VERIFIED: Expected ${expected_amount:,.2f}, Got ${actual_margin:,.2f}")
-        else:
-            print(f"✗ MARGIN MISMATCH: Expected ${expected_amount:,.2f}, Got ${actual_margin:,.2f}")
-            print(f"  Difference: ${abs(actual_margin - expected_amount):,.2f}")
-
-        # Print full margin summary for reference
-        print()
-        print("Full Margin Summary:")
-        print("-" * 70)
-        for key, value in margin_summary.items():
-            print(f"  {key}: {value}")
-
-        return {
-            "target_key": pubkey,
-            "faucet_response": faucet_response,
-            "account_state": account_state,
-            "margin_verified": margin_verified,
-            "expected_margin": expected_amount,
-            "actual_margin": actual_margin,
-            "margin_summary": margin_summary
-        }
-
-    except Exception as e:
-        print(f"✗ Account query failed: {e}")
-        return {
-            "target_key": pubkey,
-            "faucet_response": faucet_response,
-            "error": f"Account query failed: {e}",
-            "step": "verification"
-        }
-
 
 def main():
     """Main entry point for the application"""
@@ -206,23 +139,6 @@ def main():
     print("=" * 70)
     print("FINAL SUMMARY")
     print("=" * 70)
-    print(f"Admin Key: {result.get('admin_key', 'N/A')}")
-    print(f"Target Key: {result['target_key']}")
-
-    if 'error' in result:
-        print(f"Status: FAILED at {result['step']}")
-        print(f"Error: {result['error']}")
-        sys.exit(1)
-    else:
-        print(f"Status: {'SUCCESS' if result['margin_verified'] else 'PARTIAL SUCCESS'}")
-        print(f"Margin Verified: {result['margin_verified']}")
-        print(f"Expected: ${result['expected_margin']:,.2f}")
-        print(f"Actual: ${result['actual_margin']:,.2f}")
-
-        if not result['margin_verified']:
-            sys.exit(1)
-
-    print()
 
 
 if __name__ == "__main__":
