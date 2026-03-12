@@ -1147,10 +1147,11 @@ impl Actor {
                         raw: inner.clone(),
                     }
                 } else {
+                    let message = inner["message"].as_str().unwrap_or("");
                     Response {
                         order_id: None,
                         status: "Error".to_string(),
-                        message: None,
+                        message: Some(message.to_string()),
                         raw: inner.clone(),
                     }
                 };
