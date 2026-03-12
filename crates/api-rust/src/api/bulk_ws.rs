@@ -793,7 +793,7 @@ impl Actor {
                         Some(Ok(Message::Text(text))) => {
                             debug!("msg {}: {}", text.len(), &text[0..512.min(text.len())]);
                             match serde_json::from_str::<Value>(&text) {
-                                Ok(data) => self.handle_message(data).await,
+                                Ok(data) => self.handle_message(data, &text).await,
                                 Err(e) => error!("JSON decode error: {e}"),
                             }
                         }
@@ -915,7 +915,7 @@ impl Actor {
     // Message dispatch
     // ─────────────────────────────────────────────────────────────────────
 
-    async fn handle_message(&mut self, data: Value) {
+    async fn handle_message(&mut self, data: Value, json: &str) {
         let msg_type = data["type"].as_str().unwrap_or("");
 
         match msg_type {
@@ -979,7 +979,7 @@ impl Actor {
             }
 
             "post" => {
-                self.handle_post_response(&data);
+                self.handle_post_response(&data, json);
             }
 
             other => {
@@ -1113,23 +1113,52 @@ impl Actor {
     // Post (order) response
     // ─────────────────────────────────────────────────────────────────────
 
-    fn handle_post_response(&mut self, data: &Value) {
+    fn handle_post_response(&mut self, data: &Value, json: &str) {
         let request_id = data["id"].as_u64().unwrap_or(0);
-        let status = data["data"]["payload"]["status"].as_str().unwrap_or("");
-
+        let inner = &data["data"];
+        let rtype = inner["type"].as_str().unwrap_or("");
         let sender = self.pending.remove(&request_id);
 
-        if status != "ok" {
-            error!("Order request {request_id} failed: {status}");
-            if let Some(tx) = sender {
-                let _ = tx.send(Err(eyre::eyre!("order request failed: {}", data)));
+        match rtype {
+            "action"=> {
+                let payload = &inner["payload"];
+                let status = payload["status"].as_str().unwrap_or("");
+
+                if status != "ok" {
+                    error!("Order request {request_id} failed: {status}");
+                    if let Some(tx) = sender {
+                        let _ = tx.send(Err(eyre::eyre!("order request failed: {}", data)));
+                    }
+                    self.emit(Topic::Error, &Event::Error(data.clone()));
+                } else {
+                    let responses = Response::parse_responses(data);
+                    if let Some(tx) = sender {
+                        let _ = tx.send(Ok(responses));
+                    }
+                }
             }
-            self.emit(Topic::Error, &Event::Error(data.clone()));
-        } else {
-            let responses = Response::parse_responses(data);
-            if let Some(tx) = sender {
-                let _ = tx.send(Ok(responses));
+            "ack" => {
+                let ok = inner["ok"].as_bool().unwrap_or(false);
+                let response = if ok {
+                    Response {
+                        order_id: None,
+                        status: "OK".to_string(),
+                        message: None,
+                        raw: inner.clone(),
+                    }
+                } else {
+                    Response {
+                        order_id: None,
+                        status: "Error".to_string(),
+                        message: None,
+                        raw: inner.clone(),
+                    }
+                };
+                if let Some(tx) = sender {
+                    let _ = tx.send(Ok(vec![response]));
+                }
             }
+            _ => panic!("unknown response type: {}", rtype),
         }
     }
 

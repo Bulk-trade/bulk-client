@@ -36,3 +36,9 @@ pub struct AddMarket {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
 }
+
+/// Opaque wrapper for special tx
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpaqueAction {
+    pub payload: Vec<u8>,
+}
