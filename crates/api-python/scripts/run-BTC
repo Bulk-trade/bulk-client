@@ -1,1 +1,0 @@
-BULK_PRIVATE_KEY=C6cM5H18PfhRLUcycVyisjBMyAaHFdcrQ8qdmBJiQVJS python -m mm.bmm --config mm/config/bmm/BTC.json5
