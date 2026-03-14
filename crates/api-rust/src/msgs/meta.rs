@@ -30,6 +30,23 @@ pub struct Beacon {
     pub since_commit_us: u64,
 }
 
+
+/// WarmJoin protocol: a validator announces it has caught up and is ready to vote.
+///
+/// System-internal transaction (like Beacon). Not a user order.
+/// Authentication is via the BulkTransaction signer — verified against the
+/// preconfigured validator pubkey map before consensus processes the join.
+///
+/// `committed_round` is the node's last committed round at emission time.
+/// Re-emitted join TXs naturally hash differently, preventing dedup stalls.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Join {
+    pub node_id: u16,
+    pub committed_round: u64,
+}
+
+
 /// Add new market tx
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddMarket {
