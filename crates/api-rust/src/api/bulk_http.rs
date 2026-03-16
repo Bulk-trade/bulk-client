@@ -312,7 +312,7 @@ impl BulkHttpClient {
         // Build + sign the transaction
         let mut tx = Transaction {
             actions,
-            nonce: 0,
+            nonce,
             account: account,
             signer: signer.public_key(),
             signature: Default::default(),
