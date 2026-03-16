@@ -140,6 +140,7 @@ class BulkWebSocketClient:
                 close_timeout=10,
                 max_size=2**24,    # 16MB max receive size
                 write_limit=2**24,
+                compression=None
             )
             if self.debug:
                 self.ws = LoggingWebSocket(ws, logger=self.logger)
