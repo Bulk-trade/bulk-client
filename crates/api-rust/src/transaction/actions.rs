@@ -1,5 +1,16 @@
 use serde::{Deserialize, Serialize};
+use solana_hash::Hash;
+use solana_keypair::Pubkey;
 use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
+
+/// Meta data for an action
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ActionMeta {
+    pub account: Pubkey,
+    pub nonce: u64,
+    pub seqno: u32,
+    pub hash: Option<Hash>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +47,88 @@ pub enum Action {
     ConfigRegime(OpaqueAction),
     ConfigRisk(OpaqueAction),
 }
+
+macro_rules! dispatch {
+    ($self:expr, $x:ident => $body:expr) => {
+        match $self {
+            Action::MarketOrder($x) => $body,
+            Action::LimitOrder($x) => $body,
+            Action::ModifyOrder($x) => $body,
+            Action::Cancel($x) => $body,
+            Action::CancelAll($x) => $body,
+            Action::Price($x) => $body,
+            Action::Corrs($x) => $body,
+            Action::PythOracle($x) => $body,
+            Action::Beacon($x) => $body,
+            Action::Join($x) => $body,
+            Action::Faucet($x) => $body,
+            Action::AgentWalletCreation($x) => $body,
+            Action::UpdateUserSettings($x) => $body,
+            Action::WhitelistFaucet($x) => $body,
+            Action::AddMarket($x) => $body,
+            Action::ConfigFairPrice($x) => $body,
+            Action::ConfigVolatility($x) => $body,
+            Action::ConfigSecurity($x) => $body,
+            Action::ConfigRegime($x) => $body,
+            Action::ConfigRisk($x) => $body,
+        }
+    };
+}
+
+impl Action {
+    /// Get account associated with action
+    pub fn account(&self) -> &Pubkey {
+        dispatch!(self, x => &x.meta.account)
+    }
+
+    /// Get nonce associated with action
+    pub fn nonce(&self) -> u64 {
+        dispatch!(self, x => x.meta.nonce)
+    }
+
+
+    /// Get or compute hash of action
+    pub fn hash(&mut self) -> Hash {
+        use sha2::Digest;
+
+        // Single dispatch: cache check + extract raw pointer to meta
+        let meta_ptr: *mut ActionMeta = dispatch!(self, x => {
+            if let Some(h) = x.meta.hash {
+                return h;
+            }
+            &mut x.meta as *mut ActionMeta
+        });
+
+        // Read meta fields through pointer — no live borrows of self
+        let (seqno, account, nonce) = unsafe {
+            let m = &*meta_ptr;
+            (m.seqno, m.account, m.nonce)
+        };
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&seqno.to_le_bytes());
+        bincode::serialize_into(&mut hasher, &*self).expect("serialization failed");
+        // Immutable borrow of self released here
+        hasher.update(account.as_ref());
+        hasher.update(&nonce.to_le_bytes());
+
+        let hash = Hash::from(Into::<[u8; 32]>::into(hasher.finalize()));
+
+        // Write result — no active borrows of self
+        unsafe {
+            (*meta_ptr).hash = Some(hash);
+        }
+        hash
+    }
+
+    /// Link tx and action meta information in each action
+    pub fn link(&mut self, meta: ActionMeta) {
+        dispatch!(self, x => {
+            x.meta = meta;
+        })
+    }
+}
+
 
 impl From<MarketOrder> for Action {
     fn from(o: MarketOrder) -> Self {

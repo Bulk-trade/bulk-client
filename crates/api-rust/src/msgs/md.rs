@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 use crate::common::side::Side;
-
+use crate::transaction::ActionMeta;
 // ============================================================================
 // Matrix MD
 // ============================================================================
@@ -17,6 +17,9 @@ pub struct Matrix {
     /// named labels for the matrix
     pub index: Vec<String>,
     pub matrix: Vec<Vec<f64>>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 // ============================================================================

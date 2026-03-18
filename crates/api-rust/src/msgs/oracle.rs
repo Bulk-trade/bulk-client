@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::transaction::ActionMeta;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Price {
@@ -8,6 +9,9 @@ pub struct Price {
     pub asset: String,
     #[serde(rename = "px")]
     pub price: f64,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,4 +29,7 @@ pub struct PythPrice {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PythOracle {
     pub oracles: Vec<PythPrice>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }

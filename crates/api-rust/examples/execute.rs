@@ -55,6 +55,7 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
+            meta: Default::default()
         }),
         Action::LimitOrder(LimitOrder {
             symbol: Arc::from("ETH-USD"),
@@ -63,6 +64,7 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
+            meta: Default::default()
         }),
     ];
 

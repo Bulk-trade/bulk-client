@@ -85,7 +85,7 @@ use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder, Price};
 use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
-use crate::transaction::{Action, Transaction, TransactionSigner};
+use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot: the full state picture pushed over a single watch channel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -538,7 +538,21 @@ impl BulkWsClient {
         size: f64,
         tif: TimeInForce,
         reduce_only: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let order = LimitOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -546,6 +560,12 @@ impl BulkWsClient {
             size,
             tif,
             reduce_only,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
         let resps = self.place_orders(vec![order.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
@@ -567,12 +587,32 @@ impl BulkWsClient {
         side: Side,
         size: f64,
         reduce_only: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let order = MarketOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
             size,
             reduce_only,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let resps = self.place_orders(vec![order.into()], None, None).await?;
@@ -591,10 +631,30 @@ impl BulkWsClient {
         &self,
         symbol: &str,
         order_id: &str,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let cancel = CancelOrder {
             symbol: symbol.to_string(),
             oid: Hash::from_str(&order_id)?,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let resps = self.place_orders(vec![cancel.into()], None, None).await?;
@@ -608,9 +668,32 @@ impl BulkWsClient {
     ///
     /// # Returns
     /// - response for order cancel
-    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<Response> {
+    pub async fn cancel_all(
+        &self, 
+        symbols: Vec<String>,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let cancel = CancelAll {
             symbols,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
         let resps = self.place_orders(vec![cancel.into()], None, None).await?;
         resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))

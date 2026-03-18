@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-
+use crate::transaction::ActionMeta;
 
 /// Per-market configuration returned by the exchange.
 #[derive(Debug, Clone, Deserialize)]
@@ -28,6 +28,9 @@ pub struct Beacon {
     pub node_id: u16,
     pub wall_clock_ns: u64,
     pub since_commit_us: u64,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 
@@ -44,6 +47,9 @@ pub struct Beacon {
 pub struct Join {
     pub node_id: u16,
     pub committed_round: u64,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 
@@ -52,10 +58,16 @@ pub struct Join {
 pub struct AddMarket {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 /// Opaque wrapper for special tx
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpaqueAction {
     pub payload: Vec<u8>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
