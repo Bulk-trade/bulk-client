@@ -22,6 +22,7 @@ pub struct Transaction {
     pub signature: Signature,
 }
 
+#[allow(unused)]
 impl Transaction {
     /// Sign transaction
     /// - NOTE: nonce and account must be filled appropriately before can sign the tx

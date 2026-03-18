@@ -86,6 +86,10 @@ impl Action {
         dispatch!(self, x => x.meta.nonce)
     }
 
+    /// Get nonce associated with action
+    pub fn seqno(&self) -> u32 {
+        dispatch!(self, x => x.meta.seqno)
+    }
 
     /// Get or compute hash of action
     pub fn hash(&mut self) -> Hash {
