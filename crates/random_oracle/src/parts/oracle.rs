@@ -125,6 +125,7 @@ impl RandomOracle {
                 timestamp: now,
                 asset: self.config.coins[i].coin.clone(),
                 price: mid,
+                meta: Default::default()
             };
             actions.push(price);
         }

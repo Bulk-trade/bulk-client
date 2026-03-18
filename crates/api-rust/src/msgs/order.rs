@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use solana_pubkey::Pubkey;
 use crate::common::tif::TimeInForce;
-
+use crate::transaction::ActionMeta;
 // ─────────────────────────────────────────────────────────────────────────────
 // Market Order
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,6 +22,9 @@ pub struct MarketOrder {
 
     #[serde(rename = "r")]
     pub reduce_only: bool,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 impl MarketOrder {
@@ -68,6 +71,9 @@ pub struct LimitOrder {
 
     #[serde(rename = "r")]
     pub reduce_only: bool,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 impl LimitOrder {
@@ -104,6 +110,9 @@ pub struct ModifyOrder {
     pub symbol: String,
     #[serde(rename = "sz")]
     pub amount: f64,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +125,9 @@ pub struct CancelOrder {
     pub symbol: String,
     #[serde(with = "crate::msgs::serde_hash", rename = "oid")]
     pub oid: Hash,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,4 +138,7 @@ pub struct CancelOrder {
 pub struct CancelAll {
     #[serde(rename = "c")]
     pub symbols: Vec<String>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }

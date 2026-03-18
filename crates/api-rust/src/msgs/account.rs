@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 use crate::common::order_status::OrderStatus;
 use crate::common::side::Side;
-
+use crate::transaction::ActionMeta;
 // ─────────────────────────────────────────────────────────────────────────────
 // Faucet Request
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,6 +13,9 @@ pub struct Faucet {
     #[serde(with = "crate::msgs::serde_pubkey", rename = "u")]
     pub user: Pubkey,
     pub amount: Option<f64>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 
@@ -25,6 +28,9 @@ pub struct WhitelistFaucet {
     #[serde(with = "crate::msgs::serde_pubkey")]
     pub target: Pubkey,
     pub whitelist: bool,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +43,9 @@ pub struct AgentWalletCreation {
     pub agent: Pubkey,
     #[serde(rename = "d")]
     pub delete: bool,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +56,9 @@ pub struct AgentWalletCreation {
 pub struct UpdateUserSettings {
     #[serde(rename = "m")]
     pub max_leverage: HashMap<String, f64>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }
 
 

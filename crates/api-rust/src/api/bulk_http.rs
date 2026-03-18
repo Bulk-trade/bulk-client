@@ -42,7 +42,7 @@ use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::*;
-use crate::transaction::{Action, Transaction, TransactionSigner};
+use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
 
 /// HTTP REST API client for Bulk Labs exchange.
 ///
@@ -344,7 +344,23 @@ impl BulkHttpClient {
         size: f64,
         tif: TimeInForce,
         reduce_only: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+
         let order = LimitOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
@@ -352,6 +368,12 @@ impl BulkHttpClient {
             size,
             tif,
             reduce_only,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![order.into()], None, None).await?;
@@ -365,12 +387,34 @@ impl BulkHttpClient {
         side: Side,
         size: f64,
         reduce_only: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+
         let order = MarketOrder {
             symbol: Arc::from(symbol),
             is_buy: side == Side::Buy,
             size,
             reduce_only,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![order.into()], None, None).await?;
@@ -382,10 +426,31 @@ impl BulkHttpClient {
         &self,
         symbol: &str,
         order_id: &str,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let cancel = CancelOrder {
             symbol: symbol.to_string(),
             oid: Hash::from_str(&order_id)?,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![cancel.into()], None, None).await?;
@@ -393,9 +458,33 @@ impl BulkHttpClient {
     }
 
     /// Cancel all orders, optionally filtered by symbols.
-    pub async fn cancel_all(&self, symbols: Vec<String>) -> eyre::Result<Response> {
+    pub async fn cancel_all(
+        &self,
+        symbols: Vec<String>,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let cancel = CancelAll {
             symbols,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![cancel.into()], None, None).await?;
@@ -413,9 +502,30 @@ impl BulkHttpClient {
     pub async fn update_leverage(
         &self,
         settings: HashMap<String, f64>,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let settings = UpdateUserSettings {
             max_leverage: settings,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![settings.into()], None, None).await?;
@@ -431,10 +541,31 @@ impl BulkHttpClient {
         &self,
         agent_pubkey: Pubkey,
         delete: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let settings = AgentWalletCreation {
             agent: agent_pubkey,
             delete,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![Action::AgentWalletCreation(settings)], None, None).await?;
@@ -457,10 +588,31 @@ impl BulkHttpClient {
         &self,
         target_account: Pubkey,
         whitelist: bool,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
     ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
         let settings = WhitelistFaucet {
             target: target_account,
             whitelist,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
         let results = self.place_tx(vec![Action::WhitelistFaucet(settings)], None, None).await?;
         Ok(results[0].clone())
@@ -491,9 +643,17 @@ impl BulkHttpClient {
         } else {
             signer.public_key()
         };
+        let nonce = nonce.unwrap_or_else(make_nonce);
+
         let req = Faucet {
             user,
             amount,
+            meta: ActionMeta {
+                account: user,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         };
 
         let results = self.place_tx(vec![Action::Faucet(req)], None, None).await?;

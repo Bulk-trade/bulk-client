@@ -59,7 +59,7 @@ impl RandomHttpMarketMaker {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Cancel any stale orders
-        client.cancel_all(vec![symbol.clone()]).await?;
+        client.cancel_all(vec![symbol.clone()], None, None).await?;
         info!("Cancelled any pre-existing orders");
 
         let ou = OuProcess::new(config.price, config.kappa, config.sigma);
@@ -134,7 +134,7 @@ impl RandomHttpMarketMaker {
         info!("Shutting down …");
         if let Err(e) = self
             .client
-            .cancel_all(vec![self.config.bulk_symbol()])
+            .cancel_all(vec![self.config.bulk_symbol()], None, None)
             .await
         {
             error!("Error cancelling on shutdown: {e}");
@@ -163,9 +163,10 @@ impl RandomHttpMarketMaker {
         let n_orders = orders.len();
 
         // First chunk includes cancel-all; remaining chunks are orders only
-        let cancel = CancelAll {
+        let cancel = Action::CancelAll(CancelAll {
             symbols: vec![],
-        };
+            meta: Default::default()
+        });
 
         let chunk_size = self.config.chunksize;
         let mut chunk_start = 0;
@@ -257,6 +258,7 @@ impl RandomHttpMarketMaker {
                     size: bid_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    meta: Default::default(),
                 };
                 orders.push(bid_order.into());
 
@@ -268,6 +270,7 @@ impl RandomHttpMarketMaker {
                     size: ask_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    meta: Default::default(),
                 };
                 orders.push(ask_order.into());
             }

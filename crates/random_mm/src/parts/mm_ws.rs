@@ -60,7 +60,7 @@ impl RandomWsMarketMaker {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Cancel any stale orders
-        client.cancel_all(vec![symbol.clone()]).await?;
+        client.cancel_all(vec![symbol.clone()], None, None).await?;
         info!("Cancelled any pre-existing orders");
 
         let ou = OuProcess::new(config.price, config.kappa, config.sigma);
@@ -135,7 +135,7 @@ impl RandomWsMarketMaker {
         info!("Shutting down …");
         if let Err(e) = self
             .client
-            .cancel_all(vec![self.config.bulk_symbol()])
+            .cancel_all(vec![self.config.bulk_symbol()], None, None)
             .await
         {
             error!("Error cancelling on shutdown: {e}");
@@ -171,6 +171,7 @@ impl RandomWsMarketMaker {
                 timestamp,
                 asset: self.config.coin.clone(),
                 price: mid,
+                meta: Default::default()
             };
             self.client
                 .update_oracle(vec![oracle], None, Some(nonce))
@@ -187,6 +188,7 @@ impl RandomWsMarketMaker {
             // First chunk includes cancel-all; remaining chunks are orders only
             let cancel = CancelAll {
                 symbols: vec![],
+                meta: Default::default()
             };
 
             // Convert all orders to actions
@@ -297,6 +299,7 @@ impl RandomWsMarketMaker {
                     size: bid_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    meta: Default::default()
                 };
                 orders.push(bid_order.into());
 
@@ -308,6 +311,7 @@ impl RandomWsMarketMaker {
                     size: ask_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    meta: Default::default()
                 };
                 orders.push(ask_order.into());
             }
