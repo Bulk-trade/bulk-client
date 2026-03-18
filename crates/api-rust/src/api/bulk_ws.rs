@@ -108,7 +108,7 @@ pub struct AccountState {
 /// User-supplied callback. Receives the raw JSON payload for the topic.
 /// Runs synchronously inside the actor loop — keep it fast or spawn.
 #[allow(unused)]
-type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
+pub type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // BulkWsClient  —  the public handle (cheap clone, no locks)
