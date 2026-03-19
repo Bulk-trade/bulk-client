@@ -1196,7 +1196,7 @@ impl Actor {
     // Post (order) response
     // ─────────────────────────────────────────────────────────────────────
 
-    fn handle_post_response(&mut self, data: &Value, json: &str) {
+    fn handle_post_response(&mut self, data: &Value, _json: &str) {
         let request_id = data["id"].as_u64().unwrap_or(0);
         let inner = &data["data"];
         let rtype = inner["type"].as_str().unwrap_or("");

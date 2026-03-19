@@ -17,6 +17,7 @@ pub struct Response {
 
 #[allow(unused)]
 impl Response {
+    /// Indicate whether response is an error
     pub fn is_error(&self) -> bool {
         matches!(
             self.status.as_str(),
@@ -25,6 +26,14 @@ impl Response {
                 | "rejectedInvalid"
                 | "rejectedDuplicate"
                 | "rejectedCrossing"
+        )
+    }
+
+    /// Indicate whether response is a placement
+    pub fn is_placement(&self) -> bool {
+        matches!(
+            self.status.as_str(),
+            "resting" | "working" | "filled"
         )
     }
 
