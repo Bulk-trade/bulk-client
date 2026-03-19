@@ -6,7 +6,7 @@
 //!     --symbols BTC-USD,ETH-USD
 //! ```
 
-use std::process;
+use std::{env, process};
 use std::sync::Arc;
 use clap::Parser;
 use tracing::{info};
@@ -15,18 +15,15 @@ use bulk_api::api::{BulkHttpClient};
 use bulk_api::api::parts::HttpConfig;
 use bulk_api::common::tif::TimeInForce;
 use bulk_api::msgs::LimitOrder;
-use bulk_api::transaction::{Action, TransactionSigner};
+use bulk_api::parts::make_nonce;
+use bulk_api::transaction::{Action, ActionMeta, TransactionSigner};
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]
 struct Args {
     /// WebSocket URL
-    #[arg(long, default_value = "https://exchange-api2.bulk.trade/api/v1")]
+    #[arg(long, default_value = "http://localhost:12000/api/v1")]
     url: String,
-
-    /// private key
-    #[arg(long)]
-    key: String,
 }
 
 #[tokio::main]
@@ -40,14 +37,18 @@ async fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     info!("Connecting to {} for execution", args.url);
-    let signer = TransactionSigner::from_private_key(args.key.as_str())?;
+    let key = env::var("BULK_PRIVATE_KEY")?;
+    let signer = TransactionSigner::from_private_key(key.as_str())?;
     let client = BulkHttpClient::new(&HttpConfig {
         base_url: args.url,
-        signer: Some(signer),
+        signer: Some(signer.clone()),
         ..Default::default()
     }).unwrap();
 
-    let orders = vec![
+    let account = signer.public_key();
+    let nonce = make_nonce();
+
+    let mut orders = vec![
         Action::LimitOrder(LimitOrder {
             symbol: Arc::from("BTC-USD"),
             is_buy: true,
@@ -55,7 +56,12 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
-            meta: Default::default()
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            }
         }),
         Action::LimitOrder(LimitOrder {
             symbol: Arc::from("ETH-USD"),
@@ -64,11 +70,22 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
-            meta: Default::default()
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 1,
+                hash: None,
+            }
         }),
     ];
 
-    let results = client.place_tx(orders, None, None).await?;
+    let oids = orders.iter_mut()
+        .map(|o| o.hash().to_string())
+        .collect::<Vec<_>>();
+
+    eprintln!("order IDs: {:?}", oids);
+
+    let results = client.place_tx(orders, Some(account), Some(nonce)).await?;
     eprintln!("results: {:?}\n", results);
 
     process::exit(0);

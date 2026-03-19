@@ -42,7 +42,6 @@ pub struct Beacon {
 ///
 /// `committed_round` is the node's last committed round at emission time.
 /// Re-emitted join TXs naturally hash differently, preventing dedup stalls.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Join {
     pub node_id: u16,
