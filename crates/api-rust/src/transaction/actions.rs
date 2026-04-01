@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use solana_hash::Hash;
 use solana_keypair::Pubkey;
 use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
+use crate::msgs::conditional::{Range, StopOrTP, Trigger};
 
 /// Meta data for an action
 #[derive(Clone, Copy, Debug, Default)]
@@ -25,6 +26,14 @@ pub enum Action {
     Cancel(CancelOrder),
     #[serde(rename = "cxa")]
     CancelAll(CancelAll),
+    #[serde(rename = "st")]
+    Stop(StopOrTP),
+    #[serde(rename = "tp")]
+    TakeProfit(StopOrTP),
+    #[serde(rename = "rng")]
+    Range(Range),
+    #[serde(rename = "trig")]
+    Trigger(Trigger),
 
     #[serde(rename = "px")]
     Price(Price),
@@ -56,6 +65,10 @@ macro_rules! dispatch {
             Action::ModifyOrder($x) => $body,
             Action::Cancel($x) => $body,
             Action::CancelAll($x) => $body,
+            Action::Stop($x) => $body,
+            Action::TakeProfit($x) => $body,
+            Action::Range($x) => $body,
+            Action::Trigger($x) => $body,
             Action::Price($x) => $body,
             Action::Corrs($x) => $body,
             Action::PythOracle($x) => $body,
