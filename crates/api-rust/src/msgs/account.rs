@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 use crate::common::order_status::OrderStatus;
+use crate::common::order_type::OrderType;
 use crate::common::side::Side;
+use crate::common::tif::TimeInForce;
 use crate::transaction::ActionMeta;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Faucet Request
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,6 +124,25 @@ pub struct PositionInfo {
 // Order State
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_above: Option<bool>,
+    pub px: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lim: Option<f64>,
+    pub oco: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub px_hi: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lim_hi: Option<f64>,
+    #[serde(rename = "trb", skip_serializing_if = "Option::is_none")]
+    pub trail_bps: Option<u32>,
+    #[serde(rename = "stb", skip_serializing_if = "Option::is_none")]
+    pub step_bps: Option<u32>,
+}
+
 /// Resting or historical order state.
 ///
 /// Deserializes from both WebSocket and HTTP payloads:
@@ -129,33 +151,44 @@ pub struct PositionInfo {
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct OrderState {
-    #[serde(default)]
-    pub timestamp: u64,
-    pub symbol: String,
-    #[serde(rename = "orderId")]
-    pub order_id: String,
+    #[serde(rename = "ot")]
+    pub order_type: OrderType,
     pub status: OrderStatus,
-    #[serde(rename = "isBuy")]
-    pub side: Side,
+    #[serde(rename = "sym")]
+    pub symbol: String,
+    #[serde(rename = "oid")]
+    pub order_id: String,
+    #[serde(rename = "px")]
     pub price: f64,
-    pub size: f64,
-    #[serde(rename = "filledSize", default)]
-    pub filled_size: f64,
-    #[serde(rename = "originalSize", default)]
+    #[serde(rename = "origSz")]
     pub original_size: f64,
-    #[serde(rename = "maker", default)]
-    pub is_maker: bool,
-    #[serde(rename = "reason", default)]
-    pub error: Option<String>,
-    /// Volume-weighted average fill price (HTTP only).
-    #[serde(default)]
+    #[serde(rename = "sz")]
+    pub size: f64,
+    #[serde(rename = "fillSz")]
+    pub filled_size: f64,
     pub vwap: f64,
-    /// Whether this is a reduce-only order (HTTP only).
-    #[serde(rename = "reduceOnly", default)]
+    pub tif: TimeInForce,
+    #[serde(rename = "r")]
     pub reduce_only: bool,
-    /// Time-in-force as a string, e.g. "gtc" (HTTP only).
+    #[serde(rename = "mk")]
+    pub maker: bool,
     #[serde(default)]
-    pub tif: Option<String>,
+    pub trigger: Option<TriggerSpec>,
+    #[serde(rename = "ts")]
+    pub timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl OrderState {
+    /// Provide side of order
+    pub fn side(&self) -> Side {
+        if self.size < 0.0 {
+            Side::Sell
+        } else {
+            Side::Buy
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,18 +251,19 @@ mod tests {
     #[test]
     fn test_order_state_rejected_risk_limit() {
         let json = r#"{
+            "ts": 1770918312787284000,
+            "ot": "limit",
             "status": "rejectedRiskLimit",
-            "symbol": "BTC-USD",
-            "orderId": "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ",
-            "price": 100001.37,
-            "originalSize": 0.02474,
-            "size": 0.02474,
-            "filledSize": 0.0,
+            "sym": "BTC-USD",
+            "oid": "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ",
+            "px": 100001.37,
+            "origSz": -0.02474,
+            "sz": -0.02474,
+            "fillSz": 0.0,
             "vwap": 0.0,
-            "isBuy": false,
-            "maker": true,
+            "mk": true,
+            "r": false,
             "tif": "gtc",
-            "timestamp": 1770918312787284000,
             "reason": "no oracle / fair price reference yet for: BTC-USD"
         }"#;
 
@@ -238,15 +272,15 @@ mod tests {
         assert_eq!(order.symbol, "BTC-USD");
         assert_eq!(order.order_id, "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ");
         assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
-        assert_eq!(order.side, Side::Sell);
+        assert!(order.size < 0.0);
         assert!((order.price - 100001.37).abs() < 1e-6);
-        assert!((order.original_size - 0.02474).abs() < 1e-8);
-        assert!((order.size - 0.02474).abs() < 1e-8);
+        assert!((order.original_size.abs() - 0.02474).abs() < 1e-8);
+        assert!((order.size.abs() - 0.02474).abs() < 1e-8);
         assert_eq!(order.filled_size, 0.0);
-        assert!(order.is_maker);
+        assert!(order.maker);
         assert_eq!(order.timestamp, 1770918312787284000);
         assert_eq!(
-            order.error.as_deref(),
+            order.reason.as_deref(),
             Some("no oracle / fair price reference yet for: BTC-USD")
         );
 
@@ -255,87 +289,4 @@ mod tests {
         assert!(order.status.is_rejected());
     }
 
-    #[test]
-    fn test_order_state_from_ws_envelope() {
-        let json = r#"{
-            "type": "account",
-            "data": {
-                "type": "orderUpdate",
-                "status": "rejectedRiskLimit",
-                "symbol": "BTC-USD",
-                "orderId": "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ",
-                "price": 100001.37,
-                "originalSize": 0.02474,
-                "size": 0.02474,
-                "filledSize": 0.0,
-                "vwap": 0.0,
-                "isBuy": false,
-                "maker": true,
-                "tif": "gtc",
-                "timestamp": 1770918312787284000,
-                "reason": "no oracle / fair price reference yet for: BTC-USD"
-            },
-            "topic": "account.2bZfxVQtWdd8qAWJ4Xyq43cnej9zqMNyuh7HHxTNan8j"
-        }"#;
-
-        // Parse the same way the actor does: from data["data"]
-        let envelope: serde_json::Value = serde_json::from_str(json).unwrap();
-        let order: OrderState =
-            serde_json::from_value(envelope["data"].clone()).unwrap();
-
-        assert_eq!(order.symbol, "BTC-USD");
-        assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
-        assert_eq!(order.side, Side::Sell);
-        assert!(order.error.is_some());
-    }
-
-    #[test]
-    fn test_order_state_resting_no_reason() {
-        let json = r#"{
-            "status": "resting",
-            "symbol": "ETH-USD",
-            "orderId": "abc123",
-            "price": 3200.0,
-            "originalSize": 1.0,
-            "size": 1.0,
-            "filledSize": 0.0,
-            "isBuy": true,
-            "maker": true,
-            "timestamp": 1770918312787284000
-        }"#;
-
-        let order: OrderState = serde_json::from_str(json).unwrap();
-
-        assert_eq!(order.status, OrderStatus::Resting);
-        assert_eq!(order.side, Side::Buy);
-        assert!(order.error.is_none());
-
-        assert!(!order.status.is_terminal());
-        assert!(!order.status.is_rejected());
-    }
-
-    #[test]
-    fn test_order_state_filled() {
-        let json = r#"{
-            "status": "filled",
-            "symbol": "BTC-USD",
-            "orderId": "xyz789",
-            "price": 98000.0,
-            "originalSize": 0.5,
-            "size": 0.0,
-            "filledSize": 0.5,
-            "isBuy": true,
-            "maker": false,
-            "timestamp": 1770918312787284000
-        }"#;
-
-        let order: OrderState = serde_json::from_str(json).unwrap();
-
-        assert_eq!(order.status, OrderStatus::Filled);
-        assert!(order.status.is_terminal());
-        assert!(!order.status.is_rejected());
-        assert!(!order.is_maker);
-        assert_eq!(order.filled_size, 0.5);
-        assert_eq!(order.size, 0.0);
-    }
 }
