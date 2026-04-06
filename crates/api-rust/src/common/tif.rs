@@ -2,8 +2,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum TimeInForce {
+    #[serde(alias = "gtc")]
     GTC,
+    #[serde(alias = "ioc")]
     IOC,
+    #[serde(alias = "alo")]
     ALO,
 }
 

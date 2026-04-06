@@ -13,12 +13,31 @@ pub enum Side {
     Sell = 1,
 }
 
+
+impl Side {
+    pub fn dir(&self) -> f64 {
+        match self {
+            Side::Buy => 1.0,
+            Side::Sell => -1.0,
+        }
+    }
+}
+
 /// Formatting
 impl Display for Side {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Side::Buy => write!(f, "Buy"),
             Side::Sell => write!(f, "Sell"),
+        }
+    }
+}
+
+impl Into<f64> for Side {
+    fn into(self) -> f64 {
+        match self {
+            Side::Buy => 1.0,
+            Side::Sell => -1.0,
         }
     }
 }

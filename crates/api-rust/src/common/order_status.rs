@@ -36,6 +36,12 @@ pub enum OrderStatus {
     RejectedCrossing,
     // order rejected due to being a duplicate
     RejectedDuplicate,
+    // notify that order triggered
+    Triggered,
+    // notify that sibling conditional order cancelled
+    SiblingCancelled,
+    // notify that trigger failed
+    TriggerFailed,
 }
 
 #[allow(unused)]
@@ -59,6 +65,9 @@ impl OrderStatus {
             OrderStatus::RejectedRiskLimit => true,
             OrderStatus::RejectedCrossing => true,
             OrderStatus::RejectedDuplicate => true,
+            OrderStatus::Triggered => true,
+            OrderStatus::SiblingCancelled => true,
+            OrderStatus::TriggerFailed => true,
         }
     }
 
@@ -100,6 +109,9 @@ impl TryFrom<&str> for OrderStatus {
             "rejectedRiskLimit" => Ok(OrderStatus::RejectedRiskLimit),
             "rejectedCrossing" => Ok(OrderStatus::RejectedCrossing),
             "rejectedDuplicate" => Ok(OrderStatus::RejectedDuplicate),
+            "triggered" => Ok(OrderStatus::Triggered),
+            "siblingCancelled" => Ok(OrderStatus::SiblingCancelled),
+            "triggerFailed" => Ok(OrderStatus::TriggerFailed),
             _ => Err(format!("Unknown OrderStatus: {}", status)),
         }
     }
