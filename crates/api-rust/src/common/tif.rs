@@ -1,7 +1,7 @@
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde::de::Error;
 
-#[repr(u8)]
+#[repr(u32)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TimeInForce {
     GTC = 0,
@@ -35,7 +35,7 @@ impl Serialize for TimeInForce {
                 TimeInForce::ALO => "ALO",
             })
         } else {
-            s.serialize_u8(*self as u8)
+            s.serialize_u32(*self as u32)
         }
     }
 }
@@ -51,7 +51,7 @@ impl<'de> Deserialize<'de> for TimeInForce {
                 _ => Err(de::Error::unknown_variant(&s, &["GTC", "IOC", "ALO"])),
             }
         } else {
-            let v = u8::deserialize(d)?;
+            let v = u32::deserialize(d)? as u8;
             Self::try_from(v).map_err(|_| {
                 D::Error::invalid_value(serde::de::Unexpected::Unsigned(v as u64), &"0..=2")
             })

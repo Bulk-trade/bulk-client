@@ -212,3 +212,38 @@ impl From<WhitelistFaucet> for Action {
         Action::WhitelistFaucet(o)
     }
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use crate::common::tif::TimeInForce;
+    use super::*;
+
+    #[test]
+    fn test_limit_hash() {
+        let limit = LimitOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            price: 100000.0,
+            size: 1.0,
+            tif: TimeInForce::ALO,
+            reduce_only: false,
+            meta: ActionMeta {
+                account: Default::default(),
+                nonce: 1_776_128_000_000_000_000,
+                seqno: 0,
+                hash: None,
+            },
+        };
+
+        let mut action = Action::LimitOrder(limit);
+        let hash = action.hash();
+
+        assert_eq!(
+            hash.to_string(),
+            "82GJrc8KoJYSPQfRH2T7B2L4eMZ3PLitdi1h7kuXMmMc"
+        );
+    }
+}
