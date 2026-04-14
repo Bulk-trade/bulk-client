@@ -163,7 +163,7 @@ pub struct OrderState {
     #[serde(rename = "origSz")]
     pub original_size: f64,
     #[serde(rename = "sz")]
-    pub size: f64,
+    pub signed_size: f64,
     #[serde(rename = "fillSz")]
     pub filled_size: f64,
     pub vwap: f64,
@@ -183,11 +183,16 @@ pub struct OrderState {
 impl OrderState {
     /// Provide side of order
     pub fn side(&self) -> Side {
-        if self.size < 0.0 {
+        if self.signed_size < 0.0 {
             Side::Sell
         } else {
             Side::Buy
         }
+    }
+
+    /// Magnitude of size
+    pub fn amount(&self) -> f64 {
+        self.signed_size.abs()
     }
 }
 
@@ -272,10 +277,10 @@ mod tests {
         assert_eq!(order.symbol, "BTC-USD");
         assert_eq!(order.order_id, "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ");
         assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
-        assert!(order.size < 0.0);
+        assert!(order.signed_size < 0.0);
         assert!((order.price - 100001.37).abs() < 1e-6);
         assert!((order.original_size.abs() - 0.02474).abs() < 1e-8);
-        assert!((order.size.abs() - 0.02474).abs() < 1e-8);
+        assert!((order.signed_size.abs() - 0.02474).abs() < 1e-8);
         assert_eq!(order.filled_size, 0.0);
         assert!(order.maker);
         assert_eq!(order.timestamp, 1770918312787284000);

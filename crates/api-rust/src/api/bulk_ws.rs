@@ -1156,10 +1156,11 @@ impl Actor {
 
             "fill" => {
                 if let Ok(fill) = serde_json::from_value::<Fill>(data.clone()) {
+                    let dir = fill.side.dir();
                     if let Some(order) = self.account_state.open_orders.get_mut(&fill.order_id) {
                         order.filled_size += fill.size;
-                        order.size -= fill.size;
-                        if order.size <= 0.0 {
+                        order.signed_size -= dir * fill.size;
+                        if order.signed_size * dir <= 0.0 {
                             self.account_state.open_orders.remove(&fill.order_id);
                         }
                     }
