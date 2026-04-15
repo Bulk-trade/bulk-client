@@ -175,7 +175,7 @@ class TransactionSigner:
 
             case {"px": order}:
                 return b''.join([
-                    TransactionSigner.write_u32(5),
+                    TransactionSigner.write_u32(11),
                     TransactionSigner.write_u64(order['t']),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_f64(order['px']),
@@ -184,7 +184,7 @@ class TransactionSigner:
             case {"o": order}:
                 oracles = order["oracles"]
                 parts = [
-                    TransactionSigner.write_u32(6),
+                    TransactionSigner.write_u32(13),
                     TransactionSigner.write_u32(len(oracles)),
                 ]
                 for x in oracles:
@@ -198,21 +198,21 @@ class TransactionSigner:
             case {"faucet": order} | {"Faucet": order}:
                 if "amount" in order:
                     return b''.join([
-                        TransactionSigner.write_u32(7),
+                        TransactionSigner.write_u32(16),
                         TransactionSigner.decode_and_validate_key(order['u']),
                         TransactionSigner.write_bool(True),
                         TransactionSigner.write_f64(order['amount']),
                     ])
                 else:
                     return b''.join([
-                        TransactionSigner.write_u32(7),
+                        TransactionSigner.write_u32(16),
                         TransactionSigner.decode_and_validate_key(order['u']),
                         TransactionSigner.write_bool(False),
                     ])
 
             case {"agentWalletCreation": order}:
                 return b''.join([
-                    TransactionSigner.write_u32(8),
+                    TransactionSigner.write_u32(17),
                     TransactionSigner.decode_and_validate_key(order['a']),
                     TransactionSigner.write_bool(order['d']),
                 ])
@@ -220,7 +220,7 @@ class TransactionSigner:
             case {"updateUserSettings": order}:
                 settings = order["m"]
                 parts = [
-                    TransactionSigner.write_u32(9),
+                    TransactionSigner.write_u32(18),
                     TransactionSigner.write_u32(len(settings)),
                 ]
                 for key,value in settings:
@@ -231,7 +231,7 @@ class TransactionSigner:
 
             case {"whiteListFaucet": order}:
                 return b''.join([
-                    TransactionSigner.write_u32(10),
+                    TransactionSigner.write_u32(19),
                     TransactionSigner.decode_and_validate_key(order['target']),
                     TransactionSigner.write_bool(order['whitelist']),
                 ])
@@ -305,6 +305,9 @@ def _test_faucet():
     signed = signer.sign_transaction(faucet)
     print(signed)
 
+def _generate_keypair():
+    pair = TransactionSigner.generate_account()
+    print("private: {}, public: {}", pair.private_key, pair.public_key)
 
 def _test_orders():
     orders = {
@@ -328,5 +331,10 @@ def _test_orders():
     print(signed)
 
 if __name__ == '__main__':
-    _test_orders()
-    _test_faucet()
+    _generate_keypair()
+    _generate_keypair()
+    _generate_keypair()
+    _generate_keypair()
+    _generate_keypair()
+    #_test_orders()
+    #_test_faucet()
