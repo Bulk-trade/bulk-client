@@ -295,13 +295,13 @@ class TransactionSigner:
 def _test_faucet():
     faucet = {
         'actions': [
-            {'faucet': {'u': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5', 'amount': 100000000.0}}
+            {'faucet': {'u': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS', 'amount': 100.0}}
         ],
-        'nonce': 1772530726852263764,
-        'account': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5',
-        'signer': '7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5'
+        'nonce': 42,
+        'account': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS',
+        'signer': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS'
     }
-    signer = TransactionSigner("7DHvrCZMMLZ2ovNfKaGpvJZXAQyydbTz6dM7w7qXtzX5")
+    signer = TransactionSigner("1111111111111111111111111111111111111111111")
     signed = signer.sign_transaction(faucet)
     print(signed)
 
@@ -331,10 +331,6 @@ def _test_orders():
     print(signed)
 
 if __name__ == '__main__':
-    _generate_keypair()
-    _generate_keypair()
-    _generate_keypair()
-    _generate_keypair()
-    _generate_keypair()
+    _test_faucet()
+    #_generate_keypair()
     #_test_orders()
-    #_test_faucet()
