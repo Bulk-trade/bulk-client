@@ -438,7 +438,7 @@ class BulkHttpClient:
         # package into a transaction
         transaction = {
             "actions": order_objects,
-            "nonce": order_objects[0].nonce,
+            "nonce": f"{order_objects[0].nonce}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -482,7 +482,7 @@ class BulkHttpClient:
                     "m": leverage_settings
                 },
             }],
-            "nonce": int(time.time_ns() / 1000),
+            "nonce": f"{int(time.time_ns() / 1000)}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -534,7 +534,7 @@ class BulkHttpClient:
                     "d": delete
                 }
             }],
-            "nonce": int(time.time_ns() / 1000),
+            "nonce": f"{int(time.time_ns() / 1000)}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -602,7 +602,7 @@ class BulkHttpClient:
                     "whitelist": whitelist
                 }
             }],
-            "nonce": nonce,
+            "nonce": f"{nonce}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -653,7 +653,7 @@ class BulkHttpClient:
                         "u": target_user
                     },
                 }],
-                "nonce": nonce,
+                "nonce": f"{nonce}",
                 "account": target_user,
                 "signer": self.signer.public_key
             }
@@ -665,7 +665,7 @@ class BulkHttpClient:
                         "amount": amount
                     },
                 }],
-                "nonce": nonce,
+                "nonce": f"{nonce}",
                 "account": target_user,
                 "signer": self.signer.public_key
             }
