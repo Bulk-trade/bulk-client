@@ -40,4 +40,166 @@ impl Transaction {
         self.signer = signer.public_key();
         Ok(())
     }
+
+    /// Determine if tx was properly signed
+    pub fn verify(&self) -> eyre::Result<bool> {
+        // get serialized form: actions nonce + account
+        let mut serialized = bincode::serialize(&self.actions)?;
+        serialized.extend_from_slice(&self.nonce.to_le_bytes());
+        serialized.extend_from_slice(self.account.as_ref());
+
+        Ok(self.signature.verify(&self.signer.to_bytes(), &serialized))
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use sha2::digest::Mac;
+    use crate::common::tif::TimeInForce;
+    use crate::msgs::{CancelAll, LimitOrder};
+    use crate::transaction::ActionMeta;
+
+    /// A stable base58 seed (32-byte all-zeros key) used only in tests.
+    const TEST_PRIVATE_KEY_B58: &str = "1111111111111111111111111111111111111111111";
+
+    // -----------------------------------------------------------------------
+    // LimitOrder
+    // -----------------------------------------------------------------------
+
+    fn make_limit_order_tx() -> (Transaction, TransactionSigner) {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY_B58).expect("valid test key");
+
+        let account = signer.public_key();
+
+        let action = Action::LimitOrder(LimitOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            price: 65_000.0,
+            size: 0.5,
+            tif: TimeInForce::GTC,
+            reduce_only: false,
+            meta: ActionMeta {
+                account,
+                nonce: 42,
+                seqno: 0,
+                ..Default::default()
+            },
+        });
+
+        let tx = Transaction {
+            actions: vec![action],
+            nonce: 42,
+            account,
+            signer: Pubkey::default(),
+            signature: Signature::default(),
+        };
+
+        (tx, signer)
+    }
+
+    #[test]
+    fn limit_order_tx_sign_and_verify() {
+        let (mut tx, signer) = make_limit_order_tx();
+
+        tx.sign(&signer).expect("sign should succeed");
+
+        // Signer pubkey must be populated after signing
+        assert_eq!(tx.signer, signer.public_key());
+
+        // Signature must not be the default all-zero value
+        assert_ne!(tx.signature, Signature::default());
+
+        eprintln!("limit_order signature: {}", tx.signature);
+
+        // Verification must pass
+        assert!(
+            tx.verify().expect("verify should not error"),
+            "limit order signature verification failed"
+        );
+    }
+
+    #[test]
+    fn limit_order_tx_tampered_price_fails_verify() {
+        let (mut tx, signer) = make_limit_order_tx();
+        tx.sign(&signer).expect("sign should succeed");
+
+        // Tamper with the action payload after signing
+        if let Action::LimitOrder(ref mut o) = tx.actions[0] {
+            o.price = 1.0;
+        }
+
+        let valid = tx.verify().expect("verify should not error");
+        assert!(!valid, "tampered limit order should not verify");
+    }
+
+    // -----------------------------------------------------------------------
+    // CancelAll
+    // -----------------------------------------------------------------------
+
+    fn make_cancel_all_tx() -> (Transaction, TransactionSigner) {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY_B58).expect("valid test key");
+
+        let account = signer.public_key();
+
+        let action = Action::CancelAll(CancelAll {
+            symbols: vec!["BTC-USD".to_string()],
+            meta: ActionMeta {
+                account,
+                nonce: 42,
+                seqno: 0,
+                ..Default::default()
+            },
+        });
+
+        let tx = Transaction {
+            actions: vec![action],
+            nonce: 42,
+            account,
+            signer: Pubkey::default(),
+            signature: Signature::default(),
+        };
+
+        (tx, signer)
+    }
+
+    #[test]
+    fn cancel_all_tx_sign_and_verify() {
+        let (mut tx, signer) = make_cancel_all_tx();
+
+        tx.sign(&signer).expect("sign should succeed");
+
+        // Signer pubkey must be populated after signing
+        assert_eq!(tx.signer, signer.public_key());
+
+        // Signature must not be the default all-zero value
+        assert_ne!(tx.signature, Signature::default());
+
+        eprintln!("cancel_all signature: {}", tx.signature);
+
+        // Verification must pass
+        assert!(
+            tx.verify().expect("verify should not error"),
+            "cancel_all signature verification failed"
+        );
+    }
+
+    #[test]
+    fn cancel_all_tx_tampered_symbols_fails_verify() {
+        let (mut tx, signer) = make_cancel_all_tx();
+        tx.sign(&signer).expect("sign should succeed");
+
+        // Tamper with the symbol list after signing
+        if let Action::CancelAll(ref mut c) = tx.actions[0] {
+            c.symbols.push("SOL-PERP".to_string());
+        }
+
+        let valid = tx.verify().expect("verify should not error");
+        assert!(!valid, "tampered cancel_all should not verify");
+    }
 }
