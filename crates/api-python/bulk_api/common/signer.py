@@ -292,7 +292,7 @@ class TransactionSigner:
 ## Unit Tests
 ##
 
-def _test_faucet():
+def _test_faucet1():
     faucet = {
         'actions': [
             {'faucet': {'u': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS', 'amount': 100.0}}
@@ -304,6 +304,20 @@ def _test_faucet():
     signer = TransactionSigner("1111111111111111111111111111111111111111111")
     signed = signer.sign_transaction(faucet)
     print(signed)
+
+def _test_faucet2():
+    faucet = {
+        'actions': [
+            {'faucet': {'u': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di', 'amount': 100000000.0}}
+        ],
+        'nonce': 1776369131694213039,
+        'account': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di',
+        'signer': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di'
+    }
+    signer = TransactionSigner("9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH")
+    signed = signer.sign_transaction(faucet)
+    print(signed)
+
 
 def _generate_keypair():
     pair = TransactionSigner.generate_account()
@@ -331,6 +345,6 @@ def _test_orders():
     print(signed)
 
 if __name__ == '__main__':
-    _test_faucet()
+    _test_faucet2()
     #_generate_keypair()
     #_test_orders()
