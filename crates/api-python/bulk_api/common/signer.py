@@ -128,16 +128,13 @@ class TransactionSigner:
 
     @staticmethod
     def serialize_action(action: dict) -> bytes:
-        def to_fixedpoint(x: Union[float,str]) -> int:
-            return int(round(float(x) * 1e8))
-
         match action:
             case {"m": order}:
                 return b''.join([
                     TransactionSigner.write_u32(0),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_bool(order['b']),
-                    TransactionSigner.write_u64(to_fixedpoint(order['sz'])),
+                    TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_bool(order['r']),
                 ])
 
@@ -146,10 +143,42 @@ class TransactionSigner:
                     TransactionSigner.write_u32(1),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_bool(order['b']),
-                    TransactionSigner.write_u64(to_fixedpoint(order['px'])),
-                    TransactionSigner.write_u64(to_fixedpoint(order['sz'])),
+                    TransactionSigner.write_fixedpoint(order['px']),
+                    TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
                     TransactionSigner.write_bool(order['r']),
+                ])
+
+            case {"st": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(5),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['d']),
+                    TransactionSigner.write_fixedpoint(order['sz']),
+                    TransactionSigner.write_fixedpoint(order['tr']),
+                    TransactionSigner.write_u8(1),
+                    TransactionSigner.write_optional_fixedpoint(order['lim']),
+                ])
+
+            case {"tp": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(6),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['d']),
+                    TransactionSigner.write_fixedpoint(order['sz']),
+                    TransactionSigner.write_fixedpoint(order['tr']),
+                    TransactionSigner.write_optional_fixedpoint(order['lim']),
+                ])
+
+            case {"trl": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(9),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['b']),
+                    TransactionSigner.write_fixedpoint(order['sz']),
+                    TransactionSigner.write_u32(order['trb']),
+                    TransactionSigner.write_u32(order['stb']),
+                    TransactionSigner.write_optional_fixedpoint(order['lim']),
                 ])
 
             case {"mod": order}:
@@ -245,6 +274,24 @@ class TransactionSigner:
         return struct.pack("<Q", value)
 
     @staticmethod
+    def write_fixedpoint(value: float) -> bytes:
+        """Write fixed point little-endian format"""
+        value = int(round(float(value) * 1e8))
+        return struct.pack("<Q", value)
+
+    @staticmethod
+    def write_optional_fixedpoint(value: Optional[float]) -> bytes:
+        """Write fixed point little-endian format"""
+        if value:
+            value = int(round(float(value) * 1e8))
+            return b''.join([
+                bytes([0x01]),
+                struct.pack("<Q", value)
+            ])
+        else:
+            return bytes([0x00])
+
+    @staticmethod
     def write_i16(value: int) -> bytes:
         """Write a i16 in little-endian format"""
         return struct.pack("<h", value)
@@ -318,6 +365,21 @@ def _test_faucet2():
     signed = signer.sign_transaction(faucet)
     print(signed)
 
+def _test_trailing():
+    orders = {
+        "actions": [
+            {"trl": {"c": "BTC-USD", "b": True, "sz": "0.543894", "trb": 800, "stb": 1000, "lim": "50000"}},
+        ],
+        "nonce": 42,
+        "account": "4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS",
+        "signer": "4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS",
+    }
+    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+
+    signed = signer.sign_transaction(orders)
+    assert signer.verify(orders)
+    print(signed)
+
 
 def _generate_keypair():
     pair = TransactionSigner.generate_account()
@@ -345,6 +407,6 @@ def _test_orders():
     print(signed)
 
 if __name__ == '__main__':
-    _test_faucet2()
+    _test_trailing()
     #_generate_keypair()
     #_test_orders()
