@@ -325,6 +325,103 @@ class CancelAll:
             }
         }
 
+# =======================================================
+# Stop Order
+# =======================================================
+
+@dataclass
+class Stop:
+    """Stop"""
+    symbol: str
+    is_above: bool
+    size: float
+    threshold: float
+    limit: Optional[float] = None
+
+    seqno: Optional[int] = None
+    nonce: Optional[Union[str,int]] = None
+    pubkey: Optional[str] = None
+
+    def to_api(self) -> Dict:
+        """Convert to API format with compact field names"""
+        order = {
+            "st": {
+                'c': self.symbol,
+                'd': self.is_above,
+                'sz': f"{self.size}",
+                'tr': self.threshold,
+                'lim': self.limit,
+            }
+        }
+        return order
+
+
+# =======================================================
+# Take Profit Order
+# =======================================================
+
+@dataclass
+class TakeProfit:
+    """Take Profit"""
+    symbol: str
+    is_above: bool
+    size: float
+    threshold: float
+    limit: Optional[float] = None
+
+    seqno: Optional[int] = None
+    nonce: Optional[Union[str,int]] = None
+    pubkey: Optional[str] = None
+
+    def to_api(self) -> Dict:
+        """Convert to API format with compact field names"""
+        order = {
+            "tp": {
+                'c': self.symbol,
+                'd': self.is_above,
+                'sz': f"{self.size}",
+                'tr': self.threshold,
+                'lim': self.limit,
+            }
+        }
+        return order
+
+
+# =======================================================
+# Trailing Stop Order
+# =======================================================
+
+@dataclass
+class TrailingStop:
+    """Trailing Stop"""
+    symbol: str
+    side: Side
+    size: float
+    trail_bps: int
+    stop_bps: int
+    limit: Optional[float] = None
+
+    seqno: Optional[int] = None
+    nonce: Optional[Union[str,int]] = None
+    oid: Optional[str] = None
+    pubkey: Optional[str] = None
+
+    def to_api(self) -> Dict:
+        """Convert to API format with compact field names"""
+        order = {
+            "trl": {
+                'c': self.symbol,
+                'b': self.side.value == Side.BUY.value,
+                'sz': f"{self.size}",
+                'tdb': self.trail_bps,
+                'stb': self.stop_bps,
+                'lim': self.limit,
+            }
+        }
+        return order
+
+
+
 
 # =======================================================
 # Order Responses

@@ -592,7 +592,7 @@ class BulkHttpClient:
 
         # Use current time in milliseconds if nonce not provided
         if nonce is None:
-            nonce = time.time_ns()
+            nonce = time.time_ns() / 1000000
 
         # Build transaction
         transaction = {
@@ -619,7 +619,7 @@ class BulkHttpClient:
         response.raise_for_status()
         return response.json()
 
-    def request_faucet(self, user: Optional[str] = None, amount = None, nonce: int = time.time_ns()) -> Dict:
+    def request_faucet(self, user: Optional[str] = None, amount = None, nonce: Optional[int] = None) -> Dict:
         """
         Request testnet faucet funds (100,000 USDC)
 
@@ -644,6 +644,10 @@ class BulkHttpClient:
             raise ValueError("Private key required for faucet operations")
 
         target_user = user or self.signer.public_key
+
+        # Use current time in milliseconds if nonce not provided
+        if nonce is None:
+            nonce = time.time_ns() / 1000000
 
         # Build transaction
         if amount is None:

@@ -22,8 +22,8 @@ pub struct StopOrTP {
     pub threshold: f64,
 
     /// Optional limit px if will trigger a limit order
-    #[serde(rename = "lim", with = "crate::msgs::fixed_point", default = "default_limit")]
-    pub limit: f64,
+    #[serde(rename = "lim", with = "crate::msgs::fixed_opt_point", default = "default_limit")]
+    pub limit: Option<f64>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -53,12 +53,12 @@ pub struct Range {
     pub collar_max: f64,
 
     /// Limit price for low trigger (or none)
-    #[serde(rename = "lmin", with = "crate::msgs::fixed_point", default = "default_limit")]
-    pub limit_min: f64,
+    #[serde(rename = "lmin", with = "crate::msgs::fixed_opt_point", default = "default_limit")]
+    pub limit_min: Option<f64>,
 
     /// Limit price for low trigger (or none)
-    #[serde(rename = "lmax", with = "crate::msgs::fixed_point", default = "default_limit")]
-    pub limit_max: f64,
+    #[serde(rename = "lmax", with = "crate::msgs::fixed_opt_point", default = "default_limit")]
+    pub limit_max: Option<f64>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
