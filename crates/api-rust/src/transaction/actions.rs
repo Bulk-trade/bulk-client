@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use solana_hash::Hash;
 use solana_keypair::Pubkey;
 use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
-use crate::msgs::conditional::{Range, StopOrTP, Trigger};
+use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
 
 /// Meta data for an action
 #[derive(Clone, Copy, Debug, Default)]
@@ -16,45 +16,81 @@ pub struct ActionMeta {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Action {
+    // Market = ordinal(0)
     #[serde(rename = "m")]
     MarketOrder(MarketOrder),
+    // Limit = ordinal(1)
     #[serde(rename = "l")]
     LimitOrder(LimitOrder),
+    // Modify = ordinal(2)
     #[serde(rename = "mod")]
     ModifyOrder(ModifyOrder),
+    // Cancel = ordinal(3)
     #[serde(rename = "cx")]
     Cancel(CancelOrder),
+    // CancelAll = ordinal(4)
     #[serde(rename = "cxa")]
     CancelAll(CancelAll),
+    // Stop = ordinal(5)
     #[serde(rename = "st")]
     Stop(StopOrTP),
+    // TakeProfit = ordinal(6)
     #[serde(rename = "tp")]
     TakeProfit(StopOrTP),
+    // Range = ordinal(7)
     #[serde(rename = "rng")]
     Range(Range),
+    // Trigger = ordinal(8)
     #[serde(rename = "trig")]
     Trigger(Trigger),
+    // Trailing = ordinal(9)
+    #[serde(rename = "trl")]
+    Trailing(Trailing),
+    // OnFill = ordinal(10)
+    #[serde(rename = "of")]
+    OnFill(OnFill),
 
+    // Price = ordinal(11)
     #[serde(rename = "px")]
     Price(Price),
+    // Corrs = ordinal(12)
     #[serde(rename = "corrs")]
     Corrs(Matrix),
+    // PythOracle = ordinal(13)
     #[serde(rename = "o")]
     PythOracle(PythOracle),
+    // Beacon = ordinal(14)
+    #[serde(rename = "beacon")]
     Beacon(Beacon),
+    // Join = ordinal(15)
+    #[serde(rename = "join")]
     Join(Join),
 
+    // Faucet = ordinal(16)
     Faucet(Faucet),
+    // AgentWallet = ordinal(17)
     AgentWalletCreation(AgentWalletCreation),
+    // UpdateUserSettings = ordinal(18)
     UpdateUserSettings(UpdateUserSettings),
+
+    // WhitelistFaucet = ordinal(19)
     WhitelistFaucet(WhitelistFaucet),
 
+    // AddMarket = ordinal(21)
     AddMarket(AddMarket),
+    // ConfigFairPrice = ordinal(22)
     ConfigFairPrice(OpaqueAction),
+    // ConfigVolatility = ordinal(23)
     ConfigVolatility(OpaqueAction),
+    // ConfigSecurity = ordinal(24)
     ConfigSecurity(OpaqueAction),
+    // ConfigRegime = ordinal(25)
     ConfigRegime(OpaqueAction),
+    // ConfigRisk = ordinal(26)
     ConfigRisk(OpaqueAction),
+    // ConfigFeePolicy = ordinal(27)
+    #[serde(rename = "cfgf")]
+    ConfigFeePolicy(OpaqueAction),
 }
 
 macro_rules! dispatch {
@@ -69,6 +105,8 @@ macro_rules! dispatch {
             Action::TakeProfit($x) => $body,
             Action::Range($x) => $body,
             Action::Trigger($x) => $body,
+            Action::Trailing($x) => $body,
+            Action::OnFill($x) => $body,
             Action::Price($x) => $body,
             Action::Corrs($x) => $body,
             Action::PythOracle($x) => $body,
@@ -84,6 +122,7 @@ macro_rules! dispatch {
             Action::ConfigSecurity($x) => $body,
             Action::ConfigRegime($x) => $body,
             Action::ConfigRisk($x) => $body,
+            Action::ConfigFeePolicy($x) => $body,
         }
     };
 }
