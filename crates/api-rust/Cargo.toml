@@ -16,7 +16,10 @@ name = "account_query"
 name = "md_query"
 
 [[example]]
-name = "execute"
+name = "execute_limit"
+
+[[example]]
+name = "execute_cond"
 
 [dependencies]
 # Async runtime
