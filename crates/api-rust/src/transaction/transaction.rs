@@ -60,11 +60,12 @@ mod tests {
     use std::sync::Arc;
     use sha2::digest::Mac;
     use crate::common::tif::TimeInForce;
-    use crate::msgs::{CancelAll, LimitOrder};
+    use crate::msgs::{CancelAll, Faucet, LimitOrder};
     use crate::transaction::ActionMeta;
 
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
     const TEST_PRIVATE_KEY_B58: &str = "1111111111111111111111111111111111111111111";
+    const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
 
     // -----------------------------------------------------------------------
     // LimitOrder
@@ -201,5 +202,63 @@ mod tests {
 
         let valid = tx.verify().expect("verify should not error");
         assert!(!valid, "tampered cancel_all should not verify");
+    }
+
+    // -----------------------------------------------------------------------
+    // Faucet (no amount)
+    // -----------------------------------------------------------------------
+
+    fn make_faucet_tx() -> (Transaction, TransactionSigner) {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY2).expect("valid test key");
+
+        let account = signer.public_key();
+
+        let action = Action::Faucet(Faucet {
+            user: account,
+            amount: None,
+            meta: Default::default()
+        });
+
+        let tx = Transaction {
+            actions: vec![action],
+            nonce: 1776678783594,
+            account,
+            signer: signer.public_key(),
+            signature: Signature::default(),
+        };
+
+        (tx, signer)
+    }
+
+    #[test]
+    fn faucet_tx_sign_and_verify() {
+        let (mut tx, signer) = make_faucet_tx();
+
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert_eq!(tx.signer, signer.public_key());
+        assert_ne!(tx.signature, Signature::default());
+
+        eprintln!("faucet signature: {}, account: {}", tx.signature, signer.public_key());
+
+        assert!(
+            tx.verify().expect("verify should not error"),
+            "faucet signature verification failed"
+        );
+    }
+
+    #[test]
+    fn faucet_tx_tampered_user_fails_verify() {
+        let (mut tx, signer) = make_faucet_tx();
+        tx.sign(&signer).expect("sign should succeed");
+
+        // Tamper with the user pubkey after signing
+        if let Action::Faucet(ref mut f) = tx.actions[0] {
+            f.user = Pubkey::new_unique();
+        }
+
+        let valid = tx.verify().expect("verify should not error");
+        assert!(!valid, "tampered faucet user should not verify");
     }
 }

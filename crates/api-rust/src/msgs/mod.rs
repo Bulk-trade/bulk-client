@@ -16,7 +16,7 @@ pub use oracle::*;
 pub use order::*;
 
 pub(crate) mod serde_hash {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use solana_hash::Hash;
     use std::str::FromStr;
 
@@ -24,7 +24,7 @@ pub(crate) mod serde_hash {
         if serializer.is_human_readable() {
             serializer.serialize_str(&val.to_string())
         } else {
-            serializer.serialize_bytes(val.as_bytes())
+            val.as_bytes().serialize(serializer)
         }
     }
 
@@ -33,13 +33,17 @@ pub(crate) mod serde_hash {
             let s = String::deserialize(deserializer)?;
             Hash::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
         } else {
-            Hash::deserialize(deserializer)
+            let bytes = <Vec<u8>>::deserialize(deserializer)?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("expected 32 bytes for Hash"))?;
+            Ok(Hash::new_from_array(arr))
         }
     }
 }
 
 pub(crate) mod serde_pubkey {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use solana_pubkey::Pubkey;
     use std::str::FromStr;
 
@@ -47,7 +51,7 @@ pub(crate) mod serde_pubkey {
         if serializer.is_human_readable() {
             serializer.serialize_str(&val.to_string())
         } else {
-            serializer.serialize_bytes(val.as_array())
+            val.as_array().serialize(serializer)
         }
     }
 
@@ -56,13 +60,17 @@ pub(crate) mod serde_pubkey {
             let s = String::deserialize(deserializer)?;
             Pubkey::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
         } else {
-            Pubkey::deserialize(deserializer)
+            let bytes = <Vec<u8>>::deserialize(deserializer)?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("expected 32 bytes for Pubkey"))?;
+            Ok(Pubkey::from(arr))
         }
     }
 }
 
 pub(crate) mod serde_signature {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use solana_signature::Signature;
     use std::str::FromStr;
 
@@ -70,7 +78,7 @@ pub(crate) mod serde_signature {
         if serializer.is_human_readable() {
             serializer.serialize_str(&val.to_string())
         } else {
-            serializer.serialize_bytes(val.as_array())
+            val.as_array().serialize(serializer)
         }
     }
 
@@ -79,7 +87,11 @@ pub(crate) mod serde_signature {
             let s = String::deserialize(deserializer)?;
             Signature::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
         } else {
-            Signature::deserialize(deserializer)
+            let bytes = <Vec<u8>>::deserialize(deserializer)?;
+            let arr: [u8; 64] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("expected 64 bytes for Signature"))?;
+            Ok(Signature::from(arr))
         }
     }
 }
