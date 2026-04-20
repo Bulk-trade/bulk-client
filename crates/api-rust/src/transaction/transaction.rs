@@ -61,10 +61,11 @@ mod tests {
     use sha2::digest::Mac;
     use crate::common::tif::TimeInForce;
     use crate::msgs::{CancelAll, Faucet, LimitOrder};
+    use crate::msgs::conditional::StopOrTP;
     use crate::transaction::ActionMeta;
 
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
-    const TEST_PRIVATE_KEY_B58: &str = "1111111111111111111111111111111111111111111";
+    const TEST_PRIVATE_KEY1: &str = "1111111111111111111111111111111111111111111";
     const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
 
     // -----------------------------------------------------------------------
@@ -73,7 +74,7 @@ mod tests {
 
     fn make_limit_order_tx() -> (Transaction, TransactionSigner) {
         let signer =
-            TransactionSigner::from_private_key(TEST_PRIVATE_KEY_B58).expect("valid test key");
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
 
         let account = signer.public_key();
 
@@ -144,7 +145,7 @@ mod tests {
 
     fn make_cancel_all_tx() -> (Transaction, TransactionSigner) {
         let signer =
-            TransactionSigner::from_private_key(TEST_PRIVATE_KEY_B58).expect("valid test key");
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
 
         let account = signer.public_key();
 
@@ -260,5 +261,121 @@ mod tests {
 
         let valid = tx.verify().expect("verify should not error");
         assert!(!valid, "tampered faucet user should not verify");
+    }
+
+    // -----------------------------------------------------------------------
+    // TakeProfit (market trigger, no limit)
+    // -----------------------------------------------------------------------
+
+    fn make_take_profit_tx() -> (Transaction, TransactionSigner) {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
+
+        let account = signer.public_key();
+
+        let action = Action::TakeProfit(StopOrTP {
+            symbol: Arc::from("BTC-USD"),
+            is_above: true, // triggers when price rises above threshold
+            size: 2.0,
+            threshold: 60_000.0,
+            limit: Some(60_010.0),
+            meta: Default::default(),
+        });
+
+        let tx = Transaction {
+            actions: vec![action],
+            nonce: 42,
+            account,
+            signer: signer.public_key(),
+            signature: Signature::default(),
+        };
+
+        (tx, signer)
+    }
+
+    fn make_take_profit_tx2() -> (Transaction, TransactionSigner) {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
+
+        let account = signer.public_key();
+
+        let action = Action::TakeProfit(StopOrTP {
+            symbol: Arc::from("BTC-USD"),
+            is_above: true, // triggers when price rises above threshold
+            size: 2.0,
+            threshold: 60_000.0,
+            limit: None,
+            meta: Default::default(),
+        });
+
+        let tx = Transaction {
+            actions: vec![action],
+            nonce: 42,
+            account,
+            signer: signer.public_key(),
+            signature: Signature::default(),
+        };
+
+        (tx, signer)
+    }
+
+    #[test]
+    fn take_profit_tx_sign_and_verify1() {
+        let (mut tx, signer) = make_take_profit_tx();
+
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert_eq!(tx.signer, signer.public_key());
+        assert_ne!(tx.signature, Signature::default());
+
+        eprintln!("take_profit1 signature: {}", tx.signature);
+
+        assert!(
+            tx.verify().expect("verify should not error"),
+            "take_profit signature verification failed"
+        );
+    }
+
+    #[test]
+    fn take_profit_tx_sign_and_verify2() {
+        let (mut tx, signer) = make_take_profit_tx2();
+
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert_eq!(tx.signer, signer.public_key());
+        assert_ne!(tx.signature, Signature::default());
+
+        eprintln!("take_profit2 signature: {}", tx.signature);
+
+        assert!(
+            tx.verify().expect("verify should not error"),
+            "take_profit signature verification failed"
+        );
+    }
+
+    #[test]
+    fn take_profit_tx_tampered_threshold_fails_verify() {
+        let (mut tx, signer) = make_take_profit_tx();
+        tx.sign(&signer).expect("sign should succeed");
+
+        if let Action::TakeProfit(ref mut tp) = tx.actions[0] {
+            tp.threshold = 80_000.0;
+        }
+
+        let valid = tx.verify().expect("verify should not error");
+        assert!(!valid, "tampered take_profit threshold should not verify");
+    }
+
+    #[test]
+    fn take_profit_tx_tampered_size_fails_verify() {
+        let (mut tx, signer) = make_take_profit_tx();
+        tx.sign(&signer).expect("sign should succeed");
+
+        if let Action::TakeProfit(ref mut tp) = tx.actions[0] {
+            tp.size = 1.0;
+        }
+
+        let valid = tx.verify().expect("verify should not error");
+        assert!(!valid, "tampered take_profit size should not verify");
     }
 }
