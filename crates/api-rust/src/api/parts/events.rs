@@ -1,6 +1,6 @@
 use serde_json::Value;
 use crate::msgs::account::{Fill, LeverageSetting, Margin, OrderState, PositionInfo};
-use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
+use crate::msgs::md::{Candle, L2Snapshot, Ticker};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
