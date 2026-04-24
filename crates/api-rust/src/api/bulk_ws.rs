@@ -1026,7 +1026,7 @@ impl Actor {
             }
 
             "trades" => {
-                if let Ok(trades) = serde_json::from_value::<Vec<Trade>>(data["data"].clone()) {
+                if let Ok(trades) = serde_json::from_value::<Vec<Fill>>(data["data"].clone()) {
                     self.emit(Topic::Trades, &Event::Trades(trades));
                 } else {
                     error!("Could not parse trades event: {:?}", data["data"]);

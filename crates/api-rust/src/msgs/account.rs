@@ -214,6 +214,9 @@ pub struct Fill {
     pub side: Side,
     #[serde(rename = "maker", default)]
     pub is_maker: bool,
+    #[serde(rename = "counterpartyHint", default)]
+    pub cpty: String,
+    pub reason: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

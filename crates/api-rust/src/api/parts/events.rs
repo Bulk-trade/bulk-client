@@ -37,7 +37,7 @@ pub enum Topic {
 #[allow(unused)]
 pub enum Event {
     Ticker(Ticker),
-    Trades(Vec<Trade>),
+    Trades(Vec<Fill>),
     L2Snapshot(L2Snapshot),
     L2Delta(L2Snapshot),
     Candle(Candle),
