@@ -84,7 +84,7 @@ use crate::api::parts::{make_nonce, Event, Topic};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder, Price};
-use crate::msgs::md::{Candle, L2Snapshot, Ticker, Trade};
+use crate::msgs::md::{Candle, L2Snapshot, Ticker};
 use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot: the full state picture pushed over a single watch channel
