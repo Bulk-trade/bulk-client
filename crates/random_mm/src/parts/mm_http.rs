@@ -258,6 +258,7 @@ impl RandomHttpMarketMaker {
                     size: bid_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    iso: false,
                     meta: Default::default(),
                 };
                 orders.push(bid_order.into());
@@ -270,6 +271,7 @@ impl RandomHttpMarketMaker {
                     size: ask_sz,
                     tif: TimeInForce::ALO,
                     reduce_only: false,
+                    iso: false,
                     meta: Default::default(),
                 };
                 orders.push(ask_order.into());

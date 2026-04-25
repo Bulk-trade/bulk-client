@@ -23,6 +23,9 @@ pub struct MarketOrder {
     #[serde(rename = "r")]
     pub reduce_only: bool,
 
+    #[serde(rename = "i", default)]
+    pub iso: bool,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -71,6 +74,9 @@ pub struct LimitOrder {
 
     #[serde(rename = "r")]
     pub reduce_only: bool,
+
+    #[serde(rename = "i", default)]
+    pub iso: bool,
 
     #[serde(skip)]
     pub meta: ActionMeta,
