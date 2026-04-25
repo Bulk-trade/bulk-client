@@ -269,6 +269,7 @@ mod tests {
             size: 1.0,
             tif: TimeInForce::ALO,
             reduce_only: false,
+            iso: false,
             meta: ActionMeta {
                 account: Default::default(),
                 nonce: 1_776_128_000_000_000_000,
@@ -282,7 +283,7 @@ mod tests {
 
         assert_eq!(
             hash.to_string(),
-            "82GJrc8KoJYSPQfRH2T7B2L4eMZ3PLitdi1h7kuXMmMc"
+            "9BreqftLa7ZAsYLkvJDRBRxiSukzGoTfbQNMBWWkUAUJ"
         );
     }
 }

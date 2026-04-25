@@ -56,6 +56,7 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
+            iso: false,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -70,6 +71,7 @@ async fn main() -> eyre::Result<()> {
             size: 0.0001,
             tif: TimeInForce::IOC,
             reduce_only: false,
+            iso: false,
             meta: ActionMeta {
                 account,
                 nonce,

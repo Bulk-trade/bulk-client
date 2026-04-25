@@ -85,6 +85,7 @@ mod tests {
             size: 0.5,
             tif: TimeInForce::GTC,
             reduce_only: false,
+            iso: false,
             meta: ActionMeta {
                 account,
                 nonce: 42,

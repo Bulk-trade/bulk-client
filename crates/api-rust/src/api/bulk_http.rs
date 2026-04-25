@@ -368,6 +368,7 @@ impl BulkHttpClient {
             size,
             tif,
             reduce_only,
+            iso: false,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -409,6 +410,7 @@ impl BulkHttpClient {
             is_buy: side == Side::Buy,
             size,
             reduce_only,
+            iso: false,
             meta: ActionMeta {
                 account,
                 nonce,
