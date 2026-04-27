@@ -1,3 +1,5 @@
+use std::str::FromStr;
+use solana_hash::Hash;
 use bulk_api::common::side::Side;
 use bulk_api::common::tif::TimeInForce;
 use crate::common::QtyPrice;
@@ -31,4 +33,22 @@ pub struct PlaceArgs {
     /// Arbitrary client-supplied tag carried on the order record.
     #[arg(long)]
     pub tag: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct ModifyArgs {
+    /// Instrument the order is on.
+    pub symbol: String,
+
+    /// Order-id to modify. May be prefixed with `oid=` for scripting clarity.
+    #[arg(value_parser = parse_oid)]
+    pub order_id: Hash,
+
+    /// New absolute size for the order.
+    pub size: f64,
+}
+
+fn parse_oid(s: &str) -> Result<Hash, String> {
+    let raw = s.strip_prefix("oid=").unwrap_or(s);
+    Hash::from_str(raw).map_err(|e| e.to_string())
 }
