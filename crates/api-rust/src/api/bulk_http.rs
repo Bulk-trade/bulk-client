@@ -101,6 +101,17 @@ impl BulkHttpClient {
         }
     }
 
+    /// Channel configuration
+    pub fn config(&self) -> &HttpConfig {
+        &self.config
+    }
+    
+    /// Pubkeyt associated with this channel
+    pub fn public_key(&self) -> Option<Pubkey> {
+        self.config.signer.as_ref()
+            .map(|x| x.public_key())
+    }
+
     // =====================================================================
     // MARKET DATA ENDPOINTS (PUBLIC, UNSIGNED)
     // =====================================================================

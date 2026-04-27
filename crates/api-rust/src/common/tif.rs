@@ -1,3 +1,5 @@
+use std::str::FromStr;
+use eyre::bail;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde::de::Error;
 
@@ -19,6 +21,22 @@ impl From<u8> for TimeInForce {
         }
     }
 }
+
+impl FromStr for TimeInForce {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        match s.to_uppercase().as_str() {
+            "GTC" => Ok(TimeInForce::GTC),
+            "IOC" => Ok(TimeInForce::IOC),
+            "ALO" | "POSTONLY" => Ok(TimeInForce::ALO),
+            _ => bail!(
+                "unknown time-in-force '{s}'\n  → expected GTC, IOC, ALO"
+            ),
+        }
+    }
+}
+
 
 impl Default for TimeInForce {
     fn default() -> TimeInForce {
