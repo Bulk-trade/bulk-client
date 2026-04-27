@@ -2,4 +2,5 @@ pub mod orders;
 pub mod cancel;
 pub mod multisig;
 pub mod account;
+pub mod conditional;
 

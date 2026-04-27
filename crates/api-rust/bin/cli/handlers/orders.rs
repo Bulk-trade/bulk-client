@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use bulk_api::BulkHttpClient;
 use bulk_api::common::side::Side;
-use bulk_api::msgs::{LimitOrder, MarketOrder};
+use bulk_api::msgs::{LimitOrder, MarketOrder, ModifyOrder};
 use bulk_api::transaction::{Action};
-use crate::commands::PlaceArgs;
+use crate::commands::{ModifyArgs, PlaceArgs};
 
 pub async fn handle_place(
     api: &mut BulkHttpClient,
@@ -46,5 +46,26 @@ pub async fn handle_place(
 
     let results = api.place_tx(vec![action], None, None).await?;
     eprintln!("results: {:?}\n", results);
+    Ok(())
+}
+
+pub async fn handle_modify(
+    api: &mut BulkHttpClient,
+    args: ModifyArgs,
+) -> eyre::Result<()> {
+    println!(
+        "Modifying order {} on {} → size {}",
+        args.order_id, args.symbol, args.size
+    );
+
+    let action = Action::ModifyOrder(ModifyOrder {
+        order_id: args.order_id,
+        symbol: args.symbol,
+        amount: args.size,
+        meta: Default::default(),
+    });
+
+    let results = api.place_tx(vec![action], None, None).await?;
+    eprintln!("results: {:?}", results);
     Ok(())
 }
