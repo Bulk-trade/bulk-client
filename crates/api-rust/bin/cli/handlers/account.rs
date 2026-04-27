@@ -1,7 +1,7 @@
 use bulk_api::BulkHttpClient;
-use bulk_api::msgs::{CancelOrder, Faucet};
+use bulk_api::msgs::{Faucet};
 use bulk_api::transaction::Action;
-use crate::commands::{CancelArgs, FaucetArgs};
+use crate::commands::{FaucetArgs};
 
 pub async fn handle_faucet(
     api: &mut BulkHttpClient,

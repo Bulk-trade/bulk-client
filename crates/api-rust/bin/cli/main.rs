@@ -2,8 +2,9 @@ pub mod commands;
 pub mod common;
 pub mod handlers;
 
+use std::time::Duration;
 use clap::{Parser, Subcommand};
-use eyre::{eyre, Context};
+use eyre::{Context};
 use bulk_api::BulkHttpClient;
 use bulk_api::parts::HttpConfig;
 use bulk_api::transaction::TransactionSigner;
@@ -36,7 +37,7 @@ struct Cli {
     private_key: String,
 
     /// Exchange API base URL. Defaults to BULK_API_URL env var, then the built-in default.
-    #[arg(long, env = "BULK_API_URL", default_value = "https://localhost:12000")]
+    #[arg(long, env = "BULK_API_URL", default_value = "http://localhost:12000/api/v1")]
     api_url: String,
 }
 
@@ -82,7 +83,7 @@ async fn main() -> eyre::Result<()> {
     let config = HttpConfig {
         base_url: api_url,
         signer: Some(TransactionSigner::from_private_key(&key)?),
-        default_timeout: Default::default(),
+        default_timeout: Duration::from_secs(15),
     };
     let mut api = BulkHttpClient::new(&config)?;
 
