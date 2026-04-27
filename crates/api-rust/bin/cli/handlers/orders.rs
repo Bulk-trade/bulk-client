@@ -2,8 +2,7 @@ use std::sync::Arc;
 use bulk_api::BulkHttpClient;
 use bulk_api::common::side::Side;
 use bulk_api::msgs::{LimitOrder, MarketOrder};
-use bulk_api::parts::make_nonce;
-use bulk_api::transaction::{Action, ActionMeta};
+use bulk_api::transaction::{Action};
 use crate::commands::PlaceArgs;
 
 pub async fn handle_place(
