@@ -1,6 +1,8 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+use eyre::bail;
 
 /// Buy / Sell
 #[derive(
@@ -51,6 +53,21 @@ impl From<bool> for Side {
         }
     }
 }
+
+impl FromStr for Side {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        match s {
+            "Buy" | "buy" | "BUY" | "b" | "B" => Ok(Side::Buy),
+            "Sell" | "sell" | "SELL" | "s" | "S" => Ok(Side::Sell),
+            _ => bail!(
+                "unknown side '{s}'\n  → expected Buy or Sell"
+            ),
+        }
+    }
+}
+
 
 // Custom serialization to store as u8 (binary) or String (human-readable)
 impl Serialize for Side {

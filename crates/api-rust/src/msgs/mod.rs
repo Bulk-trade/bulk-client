@@ -6,6 +6,8 @@ pub mod meta;
 pub mod oracle;
 pub mod order;
 pub mod conditional;
+pub mod multisig;
+pub mod subaccounts;
 
 pub use md::*;
 pub use subscription::*;

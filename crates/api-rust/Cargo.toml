@@ -21,6 +21,10 @@ name = "execute_limit"
 [[example]]
 name = "execute_cond"
 
+[[bin]]
+name = "bulk"
+path = "bin/cli/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -47,8 +51,10 @@ solana-pubkey = { version = "3.0.0", features = ["serde"] }
 solana-keypair = "=3.0.1"
 
 tracing = "0.1.44"
-clap = { version = "4.5.58", features = ["derive"] }
+clap = { version = "4.5.58", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+rust_decimal = "1.41.0"
+cond = "1.0.5"
 
 [build]
 incremental = true

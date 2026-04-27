@@ -3,6 +3,8 @@ use solana_hash::Hash;
 use solana_keypair::Pubkey;
 use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
+use crate::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose, MultisigReject, UpdateMultisigPolicy};
+use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, Transfer};
 
 /// Meta data for an action
 #[derive(Clone, Copy, Debug, Default)]
@@ -91,6 +93,34 @@ pub enum Action {
     // ConfigFeePolicy = ordinal(27)
     #[serde(rename = "cfgf")]
     ConfigFeePolicy(OpaqueAction),
+
+    // CreateSubAccount = ordinal(28)
+    CreateSubAccount(CreateSubAccount),
+    // RemoveSubAccount = ordinal(29)
+    RemoveSubAccount(RemoveSubAccount),
+    // Transfer = ordinal(30)
+    Transfer(Transfer),
+    // CreateMultisig = ordinal(31)
+    CreateMultisig(CreateMultisig),
+
+    // MultisigPropose = ordinal(32)
+    #[serde(rename = "msp")]
+    MultisigPropose(MultisigPropose),
+    // MultisigApprove = ordinal(33)
+    #[serde(rename = "msa")]
+    MultisigApprove(MultisigApprove),
+    // MultisigReject = ordinal(34)
+    #[serde(rename = "msr")]
+    MultisigReject(MultisigReject),
+    // MultisigCancel = ordinal(35)
+    #[serde(rename = "msc")]
+    MultisigCancel(MultisigCancel),
+    // MultisigExecute = ordinal(36)
+    #[serde(rename = "mse")]
+    MultisigExecute(MultisigExecute),
+    // UpdateMultisigPolicy = ordinal(37)
+    #[serde(rename = "msu")]
+    UpdateMultisigPolicy(UpdateMultisigPolicy),
 }
 
 macro_rules! dispatch {
@@ -112,10 +142,12 @@ macro_rules! dispatch {
             Action::PythOracle($x) => $body,
             Action::Beacon($x) => $body,
             Action::Join($x) => $body,
+
             Action::Faucet($x) => $body,
             Action::AgentWalletCreation($x) => $body,
             Action::UpdateUserSettings($x) => $body,
             Action::WhitelistFaucet($x) => $body,
+
             Action::AddMarket($x) => $body,
             Action::ConfigFairPrice($x) => $body,
             Action::ConfigVolatility($x) => $body,
@@ -123,6 +155,18 @@ macro_rules! dispatch {
             Action::ConfigRegime($x) => $body,
             Action::ConfigRisk($x) => $body,
             Action::ConfigFeePolicy($x) => $body,
+
+            Action::CreateSubAccount($x) => $body,
+            Action::RemoveSubAccount($x) => $body,
+            Action::Transfer($x) => $body,
+
+            Action::CreateMultisig($x) => $body,
+            Action::MultisigPropose($x) => $body,
+            Action::MultisigApprove($x) => $body,
+            Action::MultisigReject($x) => $body,
+            Action::MultisigCancel($x) => $body,
+            Action::MultisigExecute($x) => $body,
+            Action::UpdateMultisigPolicy($x) => $body,
         }
     };
 }
