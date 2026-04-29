@@ -1,0 +1,29 @@
+[package]
+name = "cli"
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "bulk"
+path = "src/main.rs"
+
+[dependencies]
+bulk-api = { path = "../api-rust" }
+bulk-sdk-core = { path = "../../../bulk-sdk/core", optional = true }
+
+eyre = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.5.58", features = ["derive"] }
+
+solana-hash = { version = "3.0.1", features = ["serde"] }
+solana-signature = { version = "3.0.1", features = ["serde"] }
+solana-signer = "3.0.0"
+solana-pubkey = { version = "3.0.0", features = ["serde"] }
+solana-keypair = "=3.0.1"
