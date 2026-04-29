@@ -91,6 +91,7 @@ impl RandomWsMarketMaker {
     }
 
     /// Signal the MM to stop after the current tick.
+    #[allow(unused)]
     pub fn stop(&self) {
         let _ = self.stop_tx.send(false);
     }

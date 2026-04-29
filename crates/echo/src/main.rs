@@ -262,9 +262,9 @@ fn handle_post(
             out_tx.send(Message::Text(response.to_string().into()))?;
 
             // ── 2. Send the post response ─────────────────────────────────
-            let reponsess = make_order_states(orders.unwrap());
-            for x in reponsess {
-                out_tx.send(Message::Text(response.to_string().into()))?;
+            let reponses = make_order_states(orders.unwrap());
+            for x in reponses {
+                out_tx.send(Message::Text(x.into()))?;
             }
 
             if state.order_count % 500 == 0 {

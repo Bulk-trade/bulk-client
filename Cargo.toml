@@ -1,5 +1,5 @@
 [workspace]
-members =  [ "crates/api-rust", "crates/api-python", "crates/random_mm", "crates/random_oracle", "crates/echo" ]
+members =  [ "crates/api-rust", "crates/api-python", "crates/random_mm", "crates/random_oracle", "crates/echo", "crates/cli" , "crates/md_listener"]
 
 [workspace.package]
 authors = ["Bulk"]
