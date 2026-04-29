@@ -2,17 +2,14 @@
 //! Random Market Maker
 //! ═══════════════════════════════════════════════════════════════════════════
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use chrono::Utc;
-use rand::distr::{Distribution, Uniform};
 use tokio::sync::watch;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use bulk_api::api::BulkWsClient;
 use bulk_api::api::parts::config::WSConfig;
-use bulk_api::common::tif::TimeInForce;
-use bulk_api::msgs::{CancelAll, LimitOrder, Price};
-use bulk_api::transaction::{Action, TransactionSigner};
+use bulk_api::msgs::{Price};
+use bulk_api::transaction::{TransactionSigner};
 use crate::parts::config::OracleConfig;
 use crate::parts::price_process::OuProcess;
 
@@ -65,6 +62,7 @@ impl RandomOracle {
     }
 
     /// Signal the MM to stop after the current tick.
+    #[allow(unused)]
     pub fn stop(&self) {
         let _ = self.stop_tx.send(false);
     }
