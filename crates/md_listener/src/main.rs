@@ -133,7 +133,7 @@ async fn main() -> eyre::Result<()> {
                         SDKSide::Sell,
                         level));
                 }
-                info!("[L2] Updated delta: {:#?}", delta);
+                //info!("[L2] Updated delta: {:#?}", delta);
                 report_book(&book);
             }
         }).await;
