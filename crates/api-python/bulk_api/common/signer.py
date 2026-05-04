@@ -10,6 +10,10 @@ TIME_IN_FORCE_MAP = {
     "GTC": 0,
     "IOC": 1,
     "ALO": 2,
+
+    "gtc": 0,
+    "ioc": 1,
+    "alo": 2,
 }
 
 class TransactionSigner:
@@ -136,6 +140,7 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['b']),
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_bool(order['r']),
+                    TransactionSigner.write_bool(order.get('i', False))
                 ])
 
             case {"l": order}:
@@ -147,6 +152,7 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
                     TransactionSigner.write_bool(order['r']),
+                    TransactionSigner.write_bool(order.get('i', False))
                 ])
 
             case {"st": order}:
@@ -185,8 +191,8 @@ class TransactionSigner:
                 return b''.join([
                     TransactionSigner.write_u32(2),
                     TransactionSigner.decode_and_validate_key(order['oid']),
-                    TransactionSigner.write_string(order['symbol']),
-                    TransactionSigner.write_f64(order['amount']),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_f64(order['sz']),
                 ])
 
             case {"cx": order}:
