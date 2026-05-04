@@ -20,6 +20,9 @@ class OrderState:
     size_orig: float
     is_maker: bool
     error: Optional[str] = None
+    order_type: Optional[str] = None   # ← NEW: 'ot' field
+    reduce_only: bool = False          # ← NEW: 'r' field
+    tif: Optional[str] = None         # ← NEW: 'tif' field
 
     def get_side(self) -> Side:
         """Get the order side"""
@@ -31,19 +34,23 @@ class OrderState:
 
     @classmethod
     def from_api(cls, data: Dict) -> 'OrderState':
+        signed_sz = data.get('sz', 0.0)
         return cls(
-            timestamp=data.get('timestamp'),
-            symbol=data.get('symbol'),
-            order_id=data.get('orderId'),
+            timestamp=data.get('ts'),                              # 'timestamp' → 'ts'
+            symbol=data.get('sym'),                                # 'symbol'    → 'sym'
+            order_id=data.get('oid'),                              # 'orderId'   → 'oid'
             status=OrderStatus.from_string(data.get('status')),
-            side=Side.BUY if data.get('isBuy') else Side.SELL,
-            price=data.get('price'),
-            vwap=data.get('vwap'),
-            size=data.get('size'),
-            size_done=data.get('filledSize', 0.0),
-            size_orig=data.get('originalSize', data.get('size')),
-            is_maker=data.get('maker', False),
-            error = data.get('reason')
+            side=Side.BUY if signed_sz >= 0 else Side.SELL,        # derived from sign of 'sz'
+            price=data.get('px'),                                  # 'price'     → 'px'
+            vwap=data.get('vwap', 0.0),
+            size=abs(signed_sz),                                   # magnitude of signed 'sz'
+            size_done=data.get('fillSz', 0.0),                     # 'filledSize' → 'fillSz'
+            size_orig=data.get('origSz', abs(signed_sz)),          # 'originalSize' → 'origSz'
+            is_maker=data.get('mk', False),                        # 'maker'     → 'mk'
+            error=data.get('reason'),
+            order_type=data.get('ot'),
+            reduce_only=data.get('r', False),
+            tif=data.get('tif'),
         )
 
 @dataclass
@@ -127,7 +134,7 @@ class LeverageSetting:
     @classmethod
     def from_api(cls, data: Dict) -> 'LeverageSetting':
         return cls(
-            symbol=data.get('symbol', ''),
+            symbol=data.get('symbol') or data.get('coin', ''),   # ← handle 'coin' alias
             leverage=data.get('leverage', 1.0)
         )
 

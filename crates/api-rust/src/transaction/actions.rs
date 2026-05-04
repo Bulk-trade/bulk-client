@@ -78,47 +78,47 @@ pub enum Action {
     // WhitelistFaucet = ordinal(19)
     WhitelistFaucet(WhitelistFaucet),
 
-    // AddMarket = ordinal(21)
+    // AddMarket = ordinal(20)
     AddMarket(AddMarket),
-    // ConfigFairPrice = ordinal(22)
+    // ConfigFairPrice = ordinal(21)
     ConfigFairPrice(OpaqueAction),
-    // ConfigVolatility = ordinal(23)
+    // ConfigVolatility = ordinal(22)
     ConfigVolatility(OpaqueAction),
-    // ConfigSecurity = ordinal(24)
+    // ConfigSecurity = ordinal(23)
     ConfigSecurity(OpaqueAction),
-    // ConfigRegime = ordinal(25)
+    // ConfigRegime = ordinal(24)
     ConfigRegime(OpaqueAction),
-    // ConfigRisk = ordinal(26)
+    // ConfigRisk = ordinal(25)
     ConfigRisk(OpaqueAction),
-    // ConfigFeePolicy = ordinal(27)
+    // ConfigFeePolicy = ordinal(26)
     #[serde(rename = "cfgf")]
     ConfigFeePolicy(OpaqueAction),
 
-    // CreateSubAccount = ordinal(28)
+    // CreateSubAccount = ordinal(27)
     CreateSubAccount(CreateSubAccount),
-    // RemoveSubAccount = ordinal(29)
+    // RemoveSubAccount = ordinal(28)
     RemoveSubAccount(RemoveSubAccount),
-    // Transfer = ordinal(30)
+    // Transfer = ordinal(29)
     Transfer(Transfer),
-    // CreateMultisig = ordinal(31)
+    // CreateMultisig = ordinal(30)
     CreateMultisig(CreateMultisig),
 
-    // MultisigPropose = ordinal(32)
+    // MultisigPropose = ordinal(31)
     #[serde(rename = "msp")]
     MultisigPropose(MultisigPropose),
-    // MultisigApprove = ordinal(33)
+    // MultisigApprove = ordinal(32)
     #[serde(rename = "msa")]
     MultisigApprove(MultisigApprove),
-    // MultisigReject = ordinal(34)
+    // MultisigReject = ordinal(33)
     #[serde(rename = "msr")]
     MultisigReject(MultisigReject),
-    // MultisigCancel = ordinal(35)
+    // MultisigCancel = ordinal(34)
     #[serde(rename = "msc")]
     MultisigCancel(MultisigCancel),
-    // MultisigExecute = ordinal(36)
+    // MultisigExecute = ordinal(35)
     #[serde(rename = "mse")]
     MultisigExecute(MultisigExecute),
-    // UpdateMultisigPolicy = ordinal(37)
+    // UpdateMultisigPolicy = ordinal(36)
     #[serde(rename = "msu")]
     UpdateMultisigPolicy(UpdateMultisigPolicy),
 }

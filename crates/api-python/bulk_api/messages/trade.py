@@ -108,6 +108,7 @@ class LimitOrder:
     size: float
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
+    iso: bool = False
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -134,6 +135,7 @@ class LimitOrder:
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_u32(TIME_IN_FORCE_MAP[self.time_in_force]),
             _write_bool(self.reduce_only),
+            _write_bool(self.iso),             # ← NEW: matches Rust field order
             _write_pubkey(self.pubkey),
             _write_u64(int(self.nonce)),
         ])
@@ -152,8 +154,9 @@ class LimitOrder:
                 'b': self.side.value == Side.BUY.value,
                 'px': f"{self.price}",
                 'sz': f"{self.size}",
+                'tif': str(self.time_in_force).lower(),   # ← lowercase to match wire ("gtc" not "GTC")
                 'r': self.reduce_only,
-                'tif': str(self.time_in_force)
+                'i': self.iso,                             # ← NEW
             }
         }
         return order
@@ -203,6 +206,7 @@ class MarketOrder:
     side: Side
     size: float
     reduce_only: bool = False
+    iso: bool = False
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -398,7 +402,7 @@ class TrailingStop:
     side: Side
     size: float
     trail_bps: int
-    stop_bps: int
+    step_bps: int
     limit: Optional[float] = None
 
     seqno: Optional[int] = None
@@ -414,7 +418,7 @@ class TrailingStop:
                 'b': self.side.value == Side.BUY.value,
                 'sz': f"{self.size}",
                 'tdb': self.trail_bps,
-                'stb': self.stop_bps,
+                'stb': self.step_bps,
                 'lim': self.limit,
             }
         }
