@@ -24,10 +24,11 @@ name = "execute_limit"
 name = "execute_cond"
 
 [features]
-with-sdk = ["dep:bulk-sdk-core"]
+# with-sdk = ["dep:bulk-sdk-core"]
+with-sdk = []
 
 [dependencies]
-bulk-sdk-core = { version = "0.1.0", optional = true }
+# bulk-sdk-core = { version = "0.1.0", optional = true }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

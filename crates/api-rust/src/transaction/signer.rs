@@ -9,11 +9,10 @@ use solana_signer::Signer;
 ///
 /// # Example
 ///
-/// ```rust,no_run
-/// let signer = TransactionSigner::from_private_key(...)
-///
-/// let mut tx = { ... };
-/// tx.sign (signer);
+/// ```text
+/// let signer = TransactionSigner::from_private_key("base58_key")?;
+/// let mut tx = Transaction { .. };
+/// tx.sign(&signer)?;
 /// ```
 #[derive(Debug)]
 #[allow(unused)]

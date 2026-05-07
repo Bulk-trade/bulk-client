@@ -23,12 +23,16 @@
 //!
 //! ```rust,no_run
 //! use bulk_client::*;
+//! use bulk_client::common::side::Side;
+//! use bulk_client::common::tif::TimeInForce;
+//! use bulk_client::transaction::TransactionSigner;
+//! use bulk_client::parts::WSConfig;
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
-//!     let signer = TransactionSigner::from_private_key("...")?;
+//!     let signer = TransactionSigner::from_private_key("your_base58_key")?;
 //!
-//!     let client = BulkWsClient::connect(Config {
+//!     let client = BulkWsClient::connect(WSConfig {
 //!         url: "wss://exchange-wss.bulk.trade".into(),
 //!         symbols: vec!["BTC-USD".into(), "ETH-USD".into()],
 //!         signer: Some(signer),
@@ -36,14 +40,14 @@
 //!     }).await?;
 //!
 //!     // Zero-cost read — no lock, no channel round-trip
-//!     if let Some(ticker) = client.ticker("BTC-USD") {
+//!     if let Some(ticker) = client.get_ticker("BTC-USD") {
 //!         println!("BTC mark price: {}", ticker.mark_price);
 //!     }
 //!
 //!     // Place an order — goes through actor → ws
 //!     let resp = client.place_limit_order(
 //!         "BTC-USD", Side::Buy, 95_000.0, 0.01,
-//!         TimeInForce::GTC, false,
+//!         TimeInForce::GTC, false, None, None,
 //!     ).await?;
 //!
 //!     client.shutdown().await;
@@ -715,7 +719,7 @@ impl BulkWsClient {
     /// Use this as a *poison pill* for any tasks you spawned that should stop
     /// when the connection is lost:
     ///
-    /// ```rust,no_run
+    /// ```text
     /// let mut rx = client.subscribe_disconnect();
     /// tokio::spawn(async move {
     ///     let _ = rx.recv().await; // blocks until disconnect
