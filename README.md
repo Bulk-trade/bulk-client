@@ -33,12 +33,12 @@ pip install bulk-client
 
 ## Features
 
-- **WebSocket** — Actor + Watch architecture for zero-cost ticker reads and low-latency order placement
-- **HTTP** — Full REST API coverage (market data, account queries, signed trading)
-- **Batch transactions** — Bundle multiple actions (orders, cancels, conditionals) into a single signed transaction
-- **Conditional orders** — Stop, take-profit, OCO/range, trailing stop, trigger baskets, on-fill consequents
-- **Sub-accounts & multisig** — First-class support for sub-account management and multisig smart accounts
-- **Ed25519 signing** — Native signing with wincode binary serialization
+- **WebSocket** - Actor + Watch architecture for zero-cost ticker reads and low-latency order placement
+- **HTTP** - Full REST API coverage (market data, account queries, signed trading)
+- **Batch transactions** - Bundle multiple actions (orders, cancels, conditionals) into a single signed transaction
+- **Conditional orders** - Stop, take-profit, OCO/range, trailing stop, trigger baskets, on-fill consequents
+- **Sub-accounts & multisig** - First-class support for sub-account management and multisig smart accounts
+- **Ed25519 signing** - Native signing with wincode binary serialization
 
 ## Architecture
 
@@ -48,7 +48,7 @@ BULK client is built for latency-sensitive trading. Here's what makes it fast:
 
 The WebSocket client uses an **actor + watch** pattern. A single background actor owns the
 socket and deserializes the stream into shared state. Consumers read via `tokio::watch`
-channels — **zero-copy, no lock contention, readers never block the writer**. Getting the
+channels - **zero-copy, no lock contention, readers never block the writer**. Getting the
 latest ticker is a `.borrow()`, not an async round-trip.
 
 ```text
@@ -64,21 +64,14 @@ latest ticker is a `.borrow()`, not an async round-trip.
 ### Binary Signing (Wincode)
 
 Transactions are serialized to a **compact little-endian binary** format, not JSON.
-Prices and sizes are **fixed-point `u64`** (1e8 scale) — no floating-point ambiguity,
+Prices and sizes are **fixed-point `u64`** (1e8 scale) - no floating-point ambiguity,
 significantly faster than text serialization. Ed25519 signatures are computed over this
 canonical binary representation.
 
 ### Batch Transactions
 
 Multiple actions go into a **single signed transaction** with one signature and one
-network round-trip. An OCO entry with a limit order + stop-loss + take-profit is
-**1 transaction, not 3**.
-
-### Pure Python for I/O-bound Workloads
-
-The Python client is **pure Python** — no native compilation, no wheel matrix. Install
-with `pip install bulk-client` on any platform. REST and WebSocket are I/O-bound anyway;
-quants can read, fork, and extend the source directly.
+network round-trip. 
 
 ## Quickstart (Rust)
 
@@ -95,7 +88,7 @@ async fn main() -> eyre::Result<()> {
         ..Default::default()
     }).await?;
 
-    // Zero-cost read — no lock, no async round-trip
+    // Zero-cost read - no lock, no async round-trip
     if let Some(ticker) = client.get_ticker("BTC-USD") {
         println!("BTC mark: {}", ticker.mark_price);
     }
