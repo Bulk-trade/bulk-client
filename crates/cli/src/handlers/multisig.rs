@@ -1,7 +1,7 @@
 use eyre::bail;
-use bulk_api::BulkHttpClient;
-use bulk_api::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigReject, UpdateMultisigPolicy};
-use bulk_api::transaction::Action;
+use bulk_client::BulkHttpClient;
+use bulk_client::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigReject, UpdateMultisigPolicy};
+use bulk_client::transaction::Action;
 use crate::commands::{CreateMultisigArgs, MultisigProposalArgs, UpdateMultisigPolicyArgs};
 
 // ---------------------------------------------------------------------------

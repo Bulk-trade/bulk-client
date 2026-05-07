@@ -5,7 +5,7 @@
 
 use std::str::FromStr;
 use solana_keypair::Pubkey;
-use bulk_api::msgs::subaccounts::TransferKind;
+use bulk_client::msgs::subaccounts::TransferKind;
 
 #[derive(clap::Args, Debug)]
 pub struct FaucetArgs {

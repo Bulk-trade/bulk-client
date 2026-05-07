@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use bulk_api::BulkHttpClient;
-use bulk_api::msgs::{AgentWalletCreation, Faucet, UpdateUserSettings};
-use bulk_api::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, Transfer};
-use bulk_api::transaction::Action;
+use bulk_client::BulkHttpClient;
+use bulk_client::msgs::{AgentWalletCreation, Faucet, UpdateUserSettings};
+use bulk_client::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, Transfer};
+use bulk_client::transaction::Action;
 use crate::commands::{AgentWalletArgs, CreateSubAccountArgs, FaucetArgs, RemoveSubAccountArgs, TransferArgs, UpdateLeverageArgs};
 
 pub async fn handle_faucet(

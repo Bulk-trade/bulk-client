@@ -1,6 +1,6 @@
-use bulk_api::BulkHttpClient;
-use bulk_api::msgs::{CancelAll, CancelOrder};
-use bulk_api::transaction::Action;
+use bulk_client::BulkHttpClient;
+use bulk_client::msgs::{CancelAll, CancelOrder};
+use bulk_client::transaction::Action;
 use crate::commands::{CancelAllArgs, CancelArgs};
 
 pub async fn handle_cancel(

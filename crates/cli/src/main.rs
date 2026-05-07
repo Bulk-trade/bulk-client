@@ -4,9 +4,9 @@ pub mod handlers;
 
 use std::time::Duration;
 use clap::{Parser, Subcommand};
-use bulk_api::BulkHttpClient;
-use bulk_api::parts::HttpConfig;
-use bulk_api::transaction::TransactionSigner;
+use bulk_client::BulkHttpClient;
+use bulk_client::parts::HttpConfig;
+use bulk_client::transaction::TransactionSigner;
 use crate::commands::{AgentWalletArgs, CancelAllArgs, CancelArgs, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs};
 use crate::handlers::account::{handle_agent_wallet, handle_create_subaccount, handle_faucet, handle_remove_subaccount, handle_transfer, handle_update_leverage};
 use crate::handlers::cancel::{handle_cancel, handle_cancel_all};

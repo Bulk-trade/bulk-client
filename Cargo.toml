@@ -1,9 +1,9 @@
 [workspace]
-members =  [ "crates/api-rust", "crates/api-python", "crates/random_mm", "crates/cli"]
+members = ["crates/api-rust", "crates/api-python", "crates/cli"]
 
 [workspace.package]
 authors = ["Bulk"]
-repository = "https://github.com/Bulk-trade/bulk-api"
+repository = "https://github.com/Bulk-trade/bulk-client"
 license = "Apache-2.0"
 edition = "2021"
 

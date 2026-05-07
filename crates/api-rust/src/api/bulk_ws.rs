@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use bulk_sdk::*;
+//! use bulk_client::*;
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
@@ -472,7 +472,7 @@ impl BulkWsClient {
         actions: Vec<Price>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
-    ) -> eyre::Result<Vec<Response>> {
+    ) -> eyre::Result<()> {
         let signer = self
             .signer
             .as_ref()
@@ -485,7 +485,6 @@ impl BulkWsClient {
         };
 
         let nonce = nonce.unwrap_or_else(make_nonce);
-        let pk = signer.public_key();
 
         // Build + sign the transaction
         let mut tx = Transaction {
@@ -508,21 +507,12 @@ impl BulkWsClient {
             body, request_id
         );
 
-        let (resp_tx, resp_rx) = oneshot::channel();
         self.cmd_tx
-            .send(Command::Tx {
-                request_id,
+            .send(Command::AsyncTx {
                 json,
-                respond: resp_tx,
             })
             .await
-            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))?;
-
-        match time::timeout(self.default_timeout, resp_rx).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => bail!("response channel dropped"),
-            Err(_) => bail!("oracle update request {request_id} timed out"),
-        }
+            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))
 
     }
 

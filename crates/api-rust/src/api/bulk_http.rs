@@ -9,7 +9,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use bulk_sdk::*;
+//! use bulk_client::*;
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
