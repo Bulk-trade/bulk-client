@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="bulkclient.png" alt="Bulk Client" width="400" />
+  <img src="bulkclient.png" alt="Bulk Client" width="100%" />
 </p>
 
 <p align="center">
@@ -9,8 +9,8 @@
 <p align="center">
   <a href="https://crates.io/crates/bulk-client"><img src="https://img.shields.io/crates/v/bulk-client.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/bulk-cli"><img src="https://img.shields.io/crates/v/bulk-cli.svg?label=bulk-cli" alt="bulk-cli" /></a>
-  <a href="https://pypi.org/project/bulk-client"><img src="https://img.shields.io/pypi/v/bulk-client.svg" alt="PyPI" /></a>
-  <a href="https://docs.rs/bulk-client"><img src="https://docs.rs/bulk-client/badge.svg" alt="docs.rs" /></a>
+  <a href="https://pypi.org/project/bulk-client"><img src="https://img.shields.io/pypi/v/bulk-client.svg?v=0.1.0" alt="PyPI" /></a>
+  <a href="https://docs.rs/bulk-client"><img src="https://img.shields.io/docsrs/bulk-client.svg?v=0.1.0" alt="docs.rs" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License" /></a>
 </p>
 
@@ -71,7 +71,14 @@ canonical binary representation.
 ### Batch Transactions
 
 Multiple actions go into a **single signed transaction** with one signature and one
-network round-trip. 
+network round-trip. An OCO entry with a limit order + stop-loss + take-profit is
+**1 transaction, not 3**.
+
+### Pure Python for I/O-bound Workloads
+
+The Python client is **pure Python** - no native compilation, no wheel matrix. Install
+with `pip install bulk-client` on any platform. REST and WebSocket are I/O-bound anyway;
+quants can read, fork, and extend the source directly.
 
 ## Quickstart (Rust)
 
