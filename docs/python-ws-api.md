@@ -420,7 +420,7 @@ client.off(Topic.TICKER, on_ticker)
 | `Topic.LEVERAGE` | `List[LeverageSetting]` | Leverage settings change |
 | `Topic.ERROR` | `dict` | Exchange returns an error response |
 
-### Full example — market-making skeleton
+### Full example combining market data and trading
 
 ```python
 import asyncio

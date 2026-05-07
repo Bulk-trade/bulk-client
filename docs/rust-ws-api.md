@@ -1,34 +1,19 @@
 # `BulkWsClient` — WebSocket API Reference
 
-## Architecture Overview
+`BulkWsClient` provides a persistent, event-driven connection to the Bulk exchange.
+Unlike the HTTP client, it maintains live local state that can be read synchronously
+without round-trips:
 
-`BulkWsClient` uses an **Actor + Watch** architecture. All mutable state lives
-inside a single background `Actor` task. The `BulkWsClient` handle you hold is
-a lightweight, cheaply-cloneable struct that talks to the actor over three
-channels:
-
-```
- ┌──────────────┐         mpsc::channel           ┌───────────────┐
- │ BulkWsClient │ ───── Command ────────────────▶ │     Actor     │
- │   (handle)   │ ◀──── watch::Receiver ────────  │  (owns state) │
- └──────────────┘                                 └───────┬───────┘
-       │                                                  │
-       │ oneshot for order responses                      │ tokio::select!
-       └─────────────────────────────────────────────────▶│◀── ws_read
-```
-
-| Channel | Direction | Used for |
-|---|---|---|
-| `watch` | Actor → Handle | Tickers, prices, account state — zero-cost `.borrow()` |
-| `mpsc` | Handle → Actor | Subscribe, place orders, cancel |
-| `oneshot` | Actor → Handle | Per-request order responses |
+- **Market data** — ticker prices, L2 snapshots and deltas, trades, candles
+- **Account state** — margin, positions, open orders, leverage (auto-subscribed when a signer is present)
+- **Trading** — signed transactions sent over the socket with per-response callbacks
 
 ---
 
 ## 1. Instantiating `BulkWsClient`
 
-All construction goes through `BulkWsClient::connect(config)`. The call blocks
-until the WebSocket handshake completes, then returns a handle immediately.
+All construction goes through `BulkWsClient::connect(config)`, which completes the
+WebSocket handshake before returning a handle.
 
 ### `WSConfig` fields
 
@@ -43,9 +28,9 @@ until the WebSocket handshake completes, then returns a handle immediately.
 
 ### Without a signer — market data only
 
-No private key is needed for read-only market data access. Omit the `signer`
-field (it defaults to `None`). Attempts to call any trading method on a
-signer-less client will return an `Err` immediately.
+No private key is needed for read-only access. Omit the `signer` field (it defaults
+to `None`). Attempts to call any trading method on a signer-less client will return
+an `Err` immediately.
 
 ```rust
 use bulk_sdk::{BulkWsClient, WSConfig};
@@ -55,16 +40,10 @@ async fn main() -> eyre::Result<()> {
     let client = BulkWsClient::connect(WSConfig {
         url: "wss://exchange-wss.bulk.trade".into(),
         symbols: vec!["BTC-USD".into(), "ETH-USD".into()],
-        ..Default::default()          // signer: None
+        ..Default::default()    // signer: None
     })
     .await?;
 
-    // Tickers for `symbols` are auto-subscribed on connect.
-    if let Some(ticker) = client.get_ticker("BTC-USD") {
-        println!("BTC mark price: {}", ticker.mark_price);
-    }
-
-    client.shutdown().await;
     Ok(())
 }
 ```
@@ -72,8 +51,8 @@ async fn main() -> eyre::Result<()> {
 ### With a signer — trading enabled
 
 Pass a `TransactionSigner` built from a base-58-encoded private key. The client
-will auto-subscribe to the account stream (margin, positions, open orders,
-leverage) alongside the tickers for `symbols`.
+will auto-subscribe to the account stream (margin, positions, open orders, leverage)
+alongside the tickers for `symbols`.
 
 ```rust
 use bulk_sdk::{BulkWsClient, WSConfig, TransactionSigner};
@@ -97,18 +76,6 @@ async fn main() -> eyre::Result<()> {
     client.shutdown().await;
     Ok(())
 }
-```
-
-### Cloning the handle
-
-`BulkWsClient` is `Clone`. Every clone shares the same underlying actor and
-connection — safe to hand off to multiple tasks without any additional wrapping.
-
-```rust
-let client2 = client.clone();
-tokio::spawn(async move {
-    // client2 talks to the same actor
-});
 ```
 
 ### Connection lifecycle helpers
@@ -162,7 +129,7 @@ Action::OnFill(OnFill)               // Post-fill action
 
 Every concrete action type (e.g. `LimitOrder`) has an embedded `ActionMeta`
 carrying `account`, `nonce`, `seqno`, and an optional cached hash. When you use
-the convenience wrappers on `BulkWsClient` (§ 3), the client populates `meta`
+the convenience wrappers on `BulkWsClient` (§3), the client populates `meta`
 for you automatically.
 
 ### Single-action transactions
@@ -178,20 +145,18 @@ client.cancel_order("BTC-USD", &order_id, None, None).await?;
 
 ### Multi-action transactions (batching)
 
-`place_orders(actions, account, nonce)` lets you bundle multiple `Action`
-values into a single signed transaction. The exchange processes them atomically
-in order, and you receive one `Response` per action back.
+`place_tx(actions, account, nonce)` lets you bundle multiple `Action` values into
+a single signed transaction. The exchange processes them atomically in order, and
+you receive one `Response` per action back.
 
 This is particularly useful for:
 
-- **Ladder entry**: placing several limit orders at different price levels in
-  one round-trip.
-- **Atomic replace**: cancelling an existing order and placing a new one in the
-  same transaction, with no window where neither order is live.
+- **Ladder entry**: placing several limit orders at different price levels in one round-trip.
+- **Atomic replace**: cancelling an existing order and placing a new one in the same
+  transaction, with no window where neither order is live.
 
 ```rust
-use bulk_sdk::{Action, LimitOrder, CancelOrder, ActionMeta};
-use bulk_sdk::{Side, TimeInForce};
+use bulk_sdk::{Action, LimitOrder, CancelOrder, ActionMeta, Side, TimeInForce};
 use std::sync::Arc;
 
 // --- Ladder: three limit buys at different price levels ---
@@ -211,7 +176,7 @@ let actions: Vec<Action> = [94_000.0, 93_000.0, 92_000.0]
     })
     .collect();
 
-let responses = client.place_orders(actions, None, None).await?;
+let responses = client.place_tx(actions, None, None).await?;
 for resp in &responses {
     println!("order_id={:?} status={}", resp.order_id, resp.status);
 }
@@ -240,17 +205,17 @@ let new_order = Action::LimitOrder(LimitOrder {
 });
 
 // Both actions land in the same signed transaction.
-let responses = client.place_orders(vec![cancel, new_order], None, None).await?;
+let responses = client.place_tx(vec![cancel, new_order], None, None).await?;
 ```
 
 ### Optional `account` and `nonce` parameters
 
 All trading methods accept `account: Option<Pubkey>` and `nonce: Option<u64>`:
 
-- **`account`**: override the signing account (e.g. when operating as an agent
-  wallet on behalf of a sub-account). Defaults to the signer's own public key.
-- **`nonce`**: supply a deterministic nonce (useful in tests or for
-  cross-system coordination). Defaults to a monotonic timestamp-derived value.
+- **`account`**: override the target account (e.g. when operating as an agent wallet
+  on behalf of a sub-account). Defaults to the signer's own public key.
+- **`nonce`**: supply a deterministic nonce (useful in tests or for cross-system
+  coordination). Defaults to a monotonic timestamp-derived value.
 
 Pass `None` for both in normal usage.
 
@@ -260,8 +225,8 @@ Pass `None` for both in normal usage.
 
 ### Convenience wrappers
 
-These are thin wrappers around `place_orders` for the most common cases. Each
-builds exactly one action, sends it, and returns the single `Response`.
+These are thin wrappers around `place_tx` for the most common cases. Each builds
+exactly one action, sends it, and returns the single `Response`.
 
 #### Limit order
 
@@ -342,8 +307,7 @@ let all_orders = client.open_orders(None).await?;
 
 ### Waiting for state changes
 
-When you want to react to the *next* account or ticker change rather than
-polling:
+When you want to react to the *next* account or ticker change rather than polling:
 
 ```rust
 // Block until any ticker changes, then process the snapshot.
@@ -456,10 +420,67 @@ client.on(Topic::Status, |event| {
 }).await;
 ```
 
-Available `Topic` variants: `Ticker`, `Fill`, `Order`, `Margin`, `Position`,
-`Leverage`, `L2Snapshot`, `L2Delta`, `Trade`, `Candle`, `Error`, `Status`.
+### `Topic` / `Event` reference
 
-### Full example — market-making skeleton
+| `Topic` | `Event` variant | Description |
+|---|---|---|
+| `Topic::Ticker` | `Event::Ticker(Ticker)` | Mark price, last price, funding rate, volume |
+| `Topic::Fill` | `Event::Fill(Fill)` | Individual trade fill for the account |
+| `Topic::Order` | `Event::Order(OrderState)` | Order lifecycle update (placed, cancelled, filled) |
+| `Topic::Margin` | `Event::Margin(Margin)` | Account balance and available margin change |
+| `Topic::Position` | `Event::Position(Position)` | Open position update |
+| `Topic::Leverage` | `Event::Leverage(Leverage)` | Per-symbol leverage setting change |
+| `Topic::L2Snapshot` | `Event::L2Snapshot(L2Book)` | Full order book snapshot |
+| `Topic::L2Delta` | `Event::L2Delta(L2Delta)` | Incremental order book update |
+| `Topic::Trade` | `Event::Trade(Trade)` | Public trade feed |
+| `Topic::Candle` | `Event::Candle(Candle)` | OHLCV candle update |
+| `Topic::Error` | `Event::Error(String)` | Exchange or protocol error message |
+| `Topic::Status` | `Event::Connected` / `Event::Disconnected` | Connection state change |
+
+---
+
+## 5. The `Response` Type
+
+Every trading method returns a `Response` (or `Vec<Response>` for `place_tx`).
+
+```rust
+pub struct Response {
+    pub order_id: Option<String>,  // present for resting/working/filled placements
+    pub status:   String,          // see status strings below
+    pub message:  Option<String>,  // error detail when status == "error"
+    pub raw:      Value,           // raw JSON from the exchange
+}
+```
+
+### Status strings
+
+| Status | Meaning |
+|---|---|
+| `"resting"` | Limit order is live on the book |
+| `"working"` | Order is being processed |
+| `"filled"` | Order was fully filled immediately |
+| `"cancelled"` | Cancel accepted |
+| `"error"` | Generic rejection — check `message` for detail |
+| `"rejectedRiskLimit"` | Rejected: would exceed risk/leverage limits |
+| `"rejectedInvalid"` | Rejected: malformed or invalid parameters |
+| `"rejectedDuplicate"` | Rejected: duplicate order ID |
+| `"rejectedCrossing"` | Rejected: would cross own orders |
+
+### Helper methods
+
+```rust
+if resp.is_error() {
+    eprintln!("order rejected: {:?}", resp.message);
+}
+
+if resp.is_placement() {
+    println!("order live: oid={:?}", resp.order_id);
+}
+```
+
+---
+
+## 6. Full Example — Combining Market Data and Trading
 
 ```rust
 use bulk_sdk::{BulkWsClient, WSConfig, TransactionSigner, Topic, Event, Side, TimeInForce};

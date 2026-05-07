@@ -472,7 +472,7 @@ impl BulkWsClient {
         actions: Vec<Price>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
-    ) -> eyre::Result<()> {
+    ) -> eyre::Result<Vec<Response>> {
         let signer = self
             .signer
             .as_ref()
@@ -508,12 +508,22 @@ impl BulkWsClient {
             body, request_id
         );
 
+        let (resp_tx, resp_rx) = oneshot::channel();
         self.cmd_tx
-            .send(Command::AsyncTx {
+            .send(Command::Tx {
+                request_id,
                 json,
+                respond: resp_tx,
             })
             .await
-            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))
+            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))?;
+
+        match time::timeout(self.default_timeout, resp_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => bail!("response channel dropped"),
+            Err(_) => bail!("oracle update request {request_id} timed out"),
+        }
+
     }
 
     // ── Convenience wrappers ─────────────────────────────────────────────
