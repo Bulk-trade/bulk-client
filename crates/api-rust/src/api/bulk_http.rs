@@ -10,20 +10,27 @@
 //!
 //! ```rust,no_run
 //! use bulk_client::*;
+//! use bulk_client::common::side::Side;
+//! use bulk_client::common::tif::TimeInForce;
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
 //!     // Read-only client (market data + account queries)
-//!     let client = BulkHttpClient::new(None)?;
+//!     let client = BulkHttpClient::with_url(
+//!         "https://exchange-api.bulk.trade/api/v1", None,
+//!     )?;
 //!
 //!     let ticker = client.get_ticker("BTC-USD").await?;
 //!     println!("BTC mark: {}", ticker.mark_price);
 //!
 //!     // Authenticated client (trading)
-//!     let client = BulkHttpClient::new(Some("your_base58_private_key"))?;
+//!     let client = BulkHttpClient::with_url(
+//!         "https://exchange-api.bulk.trade/api/v1",
+//!         Some("your_base58_private_key"),
+//!     )?;
 //!     let resp = client.place_limit_order(
 //!         "BTC-USD", Side::Buy, 95_000.0, 0.001,
-//!         TimeInForce::GTC, false,
+//!         TimeInForce::GTC, false, None, None,
 //!     ).await?;
 //!     Ok(())
 //! }
@@ -293,11 +300,11 @@ impl BulkHttpClient {
     /// Accepts any mix of limit orders, market orders, cancels, and cancel-alls.
     ///
     /// # Example
-    /// ```rust,no_run
-    /// let resp = client.place_orders(vec![
-    ///     LimitOrder { ... },
-    ///     CancelAll { ... },
-    /// ], None).await?;
+    /// ```text
+    /// let resp = client.place_tx(vec![
+    ///     Action::LimitOrder(LimitOrder { .. }),
+    ///     Action::CancelAll(CancelAll { .. }),
+    /// ], None, None).await?;
     /// ```
     pub async fn place_tx(
         &self,

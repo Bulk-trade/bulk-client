@@ -1,0 +1,75 @@
+name: Publish Python Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Python dist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14.4"
+
+      - name: Verify workspace versions are aligned
+        shell: bash
+        run: |
+          set -euo pipefail
+          rust_version="$(python - <<'PY'
+          import tomllib
+          with open("crates/api-rust/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )"
+          py_version="$(python - <<'PY'
+          import tomllib
+          with open("crates/api-python/pyproject.toml", "rb") as f:
+              print(tomllib.load(f)["project"]["version"])
+          PY
+          )"
+          echo "Rust version:   ${rust_version}"
+          echo "Python version: ${py_version}"
+          test "${rust_version}" = "${py_version}"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade build
+
+      - name: Build package
+        working-directory: crates/api-python
+        run: python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: crates/api-python/dist/
+
+  publish:
+    name: Publish to PyPI (OIDC)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+      - name: Publish with trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

@@ -1,6 +1,8 @@
 [package]
 name = "bulk-cli"
 version = "0.1.0"
+description = "Command-line interface for trading on BULK"
+keywords = ["trading", "exchange", "cli", "bulk"]
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
@@ -11,8 +13,7 @@ name = "bulk"
 path = "src/main.rs"
 
 [dependencies]
-bulk-client = { path = "../api-rust" }
-bulk-sdk-core = { version = "0.1.0", optional = true }
+bulk-client = { version = "0.1.0", path = "../api-rust" }
 
 eyre = "0.6"
 serde = { version = "1", features = ["derive"] }
