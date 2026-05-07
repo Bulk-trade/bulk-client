@@ -11,12 +11,12 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::{info};
 use tracing_subscriber::EnvFilter;
-use bulk_api::api::{BulkHttpClient};
-use bulk_api::api::parts::HttpConfig;
-use bulk_api::common::tif::TimeInForce;
-use bulk_api::msgs::LimitOrder;
-use bulk_api::parts::make_nonce;
-use bulk_api::transaction::{Action, ActionMeta, TransactionSigner};
+use bulk_client::api::{BulkHttpClient};
+use bulk_client::api::parts::HttpConfig;
+use bulk_client::common::tif::TimeInForce;
+use bulk_client::msgs::LimitOrder;
+use bulk_client::parts::make_nonce;
+use bulk_client::transaction::{Action, ActionMeta, TransactionSigner};
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]

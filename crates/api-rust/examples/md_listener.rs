@@ -11,8 +11,8 @@ use std::process;
 use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
-use bulk_api::api::{BulkWsClient, Event, Topic};
-use bulk_api::api::parts::config::WSConfig;
+use bulk_client::api::{BulkWsClient, Event, Topic};
+use bulk_client::api::parts::config::WSConfig;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_listener", about = "Listen to ticker and L2 book updates")]

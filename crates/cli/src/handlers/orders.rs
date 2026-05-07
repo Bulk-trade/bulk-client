@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use bulk_api::BulkHttpClient;
-use bulk_api::common::side::Side;
-use bulk_api::msgs::{LimitOrder, MarketOrder, ModifyOrder};
-use bulk_api::transaction::{Action};
+use bulk_client::BulkHttpClient;
+use bulk_client::common::side::Side;
+use bulk_client::msgs::{LimitOrder, MarketOrder, ModifyOrder};
+use bulk_client::transaction::{Action};
 use crate::commands::{ModifyArgs, PlaceArgs};
 
 pub async fn handle_place(

@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use bulk_api::BulkHttpClient;
-use bulk_api::msgs::conditional::{Range, StopOrTP, Trailing};
-use bulk_api::transaction::Action;
+use bulk_client::BulkHttpClient;
+use bulk_client::msgs::conditional::{Range, StopOrTP, Trailing};
+use bulk_client::transaction::Action;
 use crate::commands::{RangeArgs, StopArgs, TrailingArgs};
 // ---------------------------------------------------------------------------
 // Stop

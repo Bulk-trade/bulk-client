@@ -12,8 +12,8 @@ use clap::Parser;
 use solana_pubkey::Pubkey;
 use tracing::{info};
 use tracing_subscriber::EnvFilter;
-use bulk_api::api::{BulkHttpClient};
-use bulk_api::api::parts::HttpConfig;
+use bulk_client::api::{BulkHttpClient};
+use bulk_client::api::parts::HttpConfig;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]

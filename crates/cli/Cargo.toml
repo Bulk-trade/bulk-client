@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "bulk-cli"
 version = "0.1.0"
 authors.workspace = true
 repository.workspace = true
@@ -11,8 +11,8 @@ name = "bulk"
 path = "src/main.rs"
 
 [dependencies]
-bulk-api = { path = "../api-rust" }
-bulk-sdk-core = { path = "../../../bulk-sdk/core", optional = true }
+bulk-client = { path = "../api-rust" }
+bulk-sdk-core = { version = "0.1.0", optional = true }
 
 eyre = "0.6"
 serde = { version = "1", features = ["derive"] }
