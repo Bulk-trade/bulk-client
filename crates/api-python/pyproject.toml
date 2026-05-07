@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bulk-client"
 version = "0.1.0"
-description = "High-performance Python SDK for the Bulk exchange"
+description = "High-performance Python SDK for BULK"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2.0",
