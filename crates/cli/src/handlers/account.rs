@@ -85,7 +85,6 @@ pub async fn handle_create_subaccount(
 
     let action = Action::CreateSubAccount(CreateSubAccount {
         name: Arc::from(args.name.as_str()),
-        margin_symbol: args.margin_symbol.map(|s| Arc::from(s.as_str())),
         margin_amount: args.margin_amount,
         meta: Default::default(),
     });
@@ -132,7 +131,6 @@ pub async fn handle_transfer(
         kind: args.kind,
         from: args.from,
         to: args.to,
-        margin_symbol: Arc::from(args.symbol.as_str()),
         margin_amount: args.amount,
         meta: Default::default(),
     });

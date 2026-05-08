@@ -32,9 +32,6 @@ impl Default for TransferKind {
 pub struct CreateSubAccount {
     /// sub-account name
     pub name: Arc<str>,
-    /// which asset in margin to transfer to sub-account
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub margin_symbol: Option<Arc<str>>,
     /// amount of margin to transfer
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin_amount: Option<f64>,
@@ -68,9 +65,6 @@ pub struct Transfer {
     /// pubkey of account to transfer to
     #[serde(with = "crate::msgs::serde_pubkey")]
     pub to: Pubkey,
-
-    /// which asset in margin to transfer
-    pub margin_symbol: Arc<str>,
     /// amount of instrument to transfer
     pub margin_amount: f64,
 
