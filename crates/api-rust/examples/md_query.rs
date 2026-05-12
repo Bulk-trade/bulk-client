@@ -7,9 +7,7 @@
 //! ```
 
 use std::process;
-use std::str::FromStr;
 use clap::Parser;
-use solana_pubkey::Pubkey;
 use tracing::{info};
 use tracing_subscriber::EnvFilter;
 use bulk_client::api::{BulkHttpClient};
