@@ -7,6 +7,9 @@ repository = "https://github.com/Bulk-trade/bulk-client"
 license = "Apache-2.0"
 edition = "2021"
 
+[patch.crates-io]
+bulk-sdk-core = { path = "../bulk-sdk/core" }
+
 [workspace.metadata.release]
 pre-release-commit-message = "Publish {{crate_name}} v{{version}}"
 tag-message = "Publish {{crate_name}} v{{version}}"
