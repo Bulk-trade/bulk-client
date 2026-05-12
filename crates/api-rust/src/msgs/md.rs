@@ -174,63 +174,63 @@ where
 // ============================================================================
 // Optional SDK integration
 // ============================================================================
-//
-//
-// #[cfg(feature = "with-sdk")]
-// use bulk_sdk_core::{
-//     markets::MktId,
-//     data::L2Snapshot as SDKL2Snapshot,
-//     data::PriceLevel as SDKPriceLevel,
-//     data::L2Delta as SDKL2Delta,
-// };
-//
-// #[cfg(feature = "with-sdk")]
-// impl From<&L2Snapshot> for SDKL2Snapshot {
-//     fn from(snap: &L2Snapshot) -> Self {
-//         let (bids, asks) = &snap.levels;
-//
-//         let instrument = MktId::new(snap.symbol.as_str()).unwrap();
-//         let newbids = bids.iter().map(|x| {
-//             SDKPriceLevel {
-//                 amount: x.size,
-//                 price: x.price,
-//                 num_orders: x.num_orders,
-//                 cum_vwap: 0.0,
-//                 cum_amount: 0.0,
-//             }
-//         }).collect();
-//         let newasks = asks.iter().map(|x| {
-//             SDKPriceLevel {
-//                 amount: x.size,
-//                 price: x.price,
-//                 num_orders: x.num_orders,
-//                 cum_vwap: 0.0,
-//                 cum_amount: 0.0,
-//             }
-//         }).collect();
-//
-//         SDKL2Snapshot {
-//             stamp: snap.timestamp,
-//             instrument,
-//             bids: newbids,
-//             asks: newasks,
-//             trackable_id: Default::default(),
-//         }
-//     }
-// }
-//
-// #[cfg(feature = "with-sdk")]
-// impl From<&OrderBookLevel> for SDKL2Delta {
-//     fn from(level: &OrderBookLevel) -> Self {
-//         SDKL2Delta {
-//             stamp: 0,
-//             instrument: Default::default(),
-//             side: Default::default(),
-//             amount: level.size,
-//             price: level.price,
-//         }
-//     }
-// }
+
+
+#[cfg(feature = "with-sdk")]
+use bulk_sdk_core::{
+    markets::MktId,
+    data::L2Snapshot as SDKL2Snapshot,
+    data::PriceLevel as SDKPriceLevel,
+    data::L2Delta as SDKL2Delta,
+};
+
+#[cfg(feature = "with-sdk")]
+impl From<&L2Snapshot> for SDKL2Snapshot {
+    fn from(snap: &L2Snapshot) -> Self {
+        let (bids, asks) = &snap.levels;
+
+        let instrument = MktId::new(snap.symbol.as_str()).unwrap();
+        let newbids = bids.iter().map(|x| {
+            SDKPriceLevel {
+                amount: x.size,
+                price: x.price,
+                num_orders: x.num_orders,
+                cum_vwap: 0.0,
+                cum_amount: 0.0,
+            }
+        }).collect();
+        let newasks = asks.iter().map(|x| {
+            SDKPriceLevel {
+                amount: x.size,
+                price: x.price,
+                num_orders: x.num_orders,
+                cum_vwap: 0.0,
+                cum_amount: 0.0,
+            }
+        }).collect();
+
+        SDKL2Snapshot {
+            stamp: snap.timestamp,
+            instrument,
+            bids: newbids,
+            asks: newasks,
+            trackable_id: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "with-sdk")]
+impl From<&OrderBookLevel> for SDKL2Delta {
+    fn from(level: &OrderBookLevel) -> Self {
+        SDKL2Delta {
+            stamp: 0,
+            instrument: Default::default(),
+            side: Default::default(),
+            amount: level.size,
+            price: level.price,
+        }
+    }
+}
 
 //
 // Unit Tests
