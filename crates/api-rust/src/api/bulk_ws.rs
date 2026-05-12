@@ -463,20 +463,27 @@ impl BulkWsClient {
         }
     }
 
-    /// Send oracle price updates
+    /// Send oracle price updates and return the exchange's responses.
+    ///
+    /// Waits for the exchange to acknowledge the transaction so that any
+    /// rejection (e.g. invalid price, authorisation failure) is surfaced to
+    /// the caller rather than silently dropped.
     ///
     /// # Arguments
-    /// - `actions`: list of oracle update
-    /// - `nonce`: nonce to be used
+    /// - `actions`: list of oracle price updates
+    /// - `account`: optional override for the signing account
+    /// - `nonce`: optional nonce override; a fresh one is generated when `None`
     ///
     /// # Returns
-    /// - list of responses
+    /// - `Ok(responses)` — one [`Response`] per submitted price; callers should
+    ///   inspect each entry with [`Response::is_error`] to detect rejections.
+    /// - `Err(_)` — transport-level failure (send error, timeout, dropped channel).
     pub async fn update_oracle(
         &self,
         actions: Vec<Price>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
-    ) -> eyre::Result<()> {
+    ) -> eyre::Result<Vec<Response>> {
         let signer = self
             .signer
             .as_ref()
@@ -511,13 +518,22 @@ impl BulkWsClient {
             body, request_id
         );
 
+        let (resp_tx, resp_rx) = oneshot::channel();
+
         self.cmd_tx
-            .send(Command::AsyncTx {
+            .send(Command::Tx {
+                request_id,
                 json,
+                respond: resp_tx,
             })
             .await
-            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))
+            .map_err(|_| eyre::eyre!("client is disconnected — call connect() to reconnect"))?;
 
+        match time::timeout(self.default_timeout, resp_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => bail!("oracle update response channel dropped"),
+            Err(_) => bail!("oracle update request {request_id} timed out"),
+        }
     }
 
     // ── Convenience wrappers ─────────────────────────────────────────────

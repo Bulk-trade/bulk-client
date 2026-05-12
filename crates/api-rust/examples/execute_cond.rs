@@ -15,10 +15,7 @@ use tracing::{info};
 use tracing_subscriber::EnvFilter;
 use bulk_client::api::{BulkHttpClient};
 use bulk_client::api::parts::HttpConfig;
-use bulk_client::common::tif::TimeInForce;
 use bulk_client::msgs::conditional::StopOrTP;
-use bulk_client::msgs::LimitOrder;
-use bulk_client::parts::make_nonce;
 use bulk_client::transaction::{Action, ActionMeta, TransactionSigner};
 
 #[derive(Parser, Debug)]
@@ -55,7 +52,7 @@ async fn main() -> eyre::Result<()> {
     };
     let nonce = 1776682154418;
 
-    let mut orders = vec![
+    let orders = vec![
         Action::TakeProfit(StopOrTP {
             symbol: Arc::from("BTC-USD"),
             is_above: false,
