@@ -58,7 +58,6 @@ impl Transaction {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use sha2::digest::Mac;
     use crate::common::tif::TimeInForce;
     use crate::msgs::{CancelAll, Faucet, LimitOrder};
     use crate::msgs::conditional::StopOrTP;
