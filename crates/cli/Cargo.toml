@@ -28,3 +28,4 @@ solana-signature = { version = "3.0.1", features = ["serde"] }
 solana-signer = "3.0.0"
 solana-pubkey = { version = "3.0.0", features = ["serde"] }
 solana-keypair = "=3.0.1"
+json5 = "1.3.1"
