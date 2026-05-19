@@ -1,5 +1,7 @@
+use crate::msgs::sig_bytes;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use solana_keypair::Pubkey;
 use crate::transaction::ActionMeta;
 
 /// Per-market configuration returned by the exchange.
@@ -66,6 +68,33 @@ pub struct AddMarket {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpaqueAction {
     pub payload: Vec<u8>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+/// A single admin's ed25519 signature over the `UpdateValidatorSet` message digest.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdminSignature {
+    pub admin_index: u8,
+    #[serde(with = "sig_bytes")]
+    pub signature: [u8; 64],
+}
+
+/// Delta-form admin-signed validator-set mutation.
+///
+/// Adds already in the set and removes not in the set are no-ops. A pubkey
+/// appearing in both `added` and `removed` rejects the tx. `version` must
+/// equal the current `ValidatorSet` version + 1.
+///
+/// Threshold-signed by `ADMIN_THRESHOLD` of `ADMIN_PUBKEYS`. Verification
+/// and activation live in `bulk_consensus_proto::admin_txn`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateValidatorSet {
+    pub added: Vec<Pubkey>,
+    pub removed: Vec<Pubkey>,
+    pub version: u64,
+    pub admin_sigs: Vec<AdminSignature>,
 
     #[serde(skip)]
     pub meta: ActionMeta,

@@ -8,6 +8,7 @@ pub mod order;
 pub mod conditional;
 pub mod multisig;
 pub mod subaccounts;
+pub mod risk;
 
 pub use md::*;
 pub use subscription::*;
@@ -16,6 +17,20 @@ pub use responses::*;
 pub use meta::*;
 pub use oracle::*;
 pub use order::*;
+
+pub(crate) mod sig_bytes {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(sig: &[u8; 64], s: S) -> Result<S::Ok, S::Error> {
+        sig.as_slice().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 64], D::Error> {
+        let v = <Vec<u8>>::deserialize(d)?;
+        v.try_into()
+            .map_err(|_| serde::de::Error::custom("expected 64-byte signature"))
+    }
+}
 
 pub(crate) mod serde_hash {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

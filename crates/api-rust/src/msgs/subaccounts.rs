@@ -71,3 +71,17 @@ pub struct Transfer {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameSubAccount {
+    /// sub-account to be renamed
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "a", alias = "account")]
+    pub account: Pubkey,
+    /// new display name
+    #[serde(rename = "n", alias = "name")]
+    pub name: Arc<str>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}

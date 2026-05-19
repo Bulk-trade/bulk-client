@@ -8,11 +8,13 @@ use bulk_client::BulkHttpClient;
 use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::TransactionSigner;
 use crate::commands::{AgentWalletArgs, CancelAllArgs, CancelArgs, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs};
+use crate::commands::risk::RiskConfigArgs;
 use crate::handlers::account::{handle_agent_wallet, handle_create_subaccount, handle_faucet, handle_remove_subaccount, handle_transfer, handle_update_leverage};
 use crate::handlers::cancel::{handle_cancel, handle_cancel_all};
 use crate::handlers::conditional::{handle_range, handle_stop, handle_take_profit, handle_trailing};
 use crate::handlers::multisig::{handle_create_multisig, handle_multisig_approve, handle_multisig_cancel, handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy};
 use crate::handlers::orders::{handle_modify, handle_place};
+use crate::handlers::risk::handle_risk_config;
 // ---------------------------------------------------------------------------
 // Top-level CLI
 // ---------------------------------------------------------------------------
@@ -173,6 +175,13 @@ enum Command {
     /// Example: bulk multisig-execute <multisig> <proposal-id>
     #[command(name = "multisig-execute")]
     MultisigExecute(MultisigProposalArgs),
+
+
+    /// Update risk configuration
+    ///
+    /// Example: bulk risk-config json|json-file
+    #[command(name = "risk-config")]
+    RiskConfig(RiskConfigArgs),
 }
 
 
@@ -222,6 +231,8 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigReject(args)   => handle_multisig_reject(&mut api, args).await,
         Command::MultisigCancel(args)   => handle_multisig_cancel(&mut api, args).await,
         Command::MultisigExecute(args)  => handle_multisig_execute(&mut api, args).await,
+
+        Command::RiskConfig(args)       => handle_risk_config(&mut api, args).await,
     }
 }
 

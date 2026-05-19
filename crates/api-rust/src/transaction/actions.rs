@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use solana_hash::Hash;
 use solana_keypair::Pubkey;
-use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, WhitelistFaucet};
+use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet};
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
 use crate::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose, MultisigReject, UpdateMultisigPolicy};
-use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, Transfer};
+use crate::msgs::risk::RiskConfigChange;
+use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAccount, Transfer};
 
 /// Meta data for an action
 #[derive(Clone, Copy, Debug, Default)]
@@ -121,6 +122,17 @@ pub enum Action {
     // UpdateMultisigPolicy = ordinal(36)
     #[serde(rename = "msu")]
     UpdateMultisigPolicy(UpdateMultisigPolicy),
+
+    // RenameSubAccount = ordinal(37)
+    #[serde(rename = "rsa", alias = "renameSubAccount")]
+    RenameSubAccount(RenameSubAccount),
+    // UpdateValidatorSet = ordinal(39)
+    #[serde(rename = "uvs")]
+    UpdateValidatorSet(UpdateValidatorSet),
+
+    // UpdateRiskConfig = ordinal(40)
+    #[serde(rename = "risk")]
+    UpdateRiskConfig(RiskConfigChange),
 }
 
 macro_rules! dispatch {
@@ -167,6 +179,11 @@ macro_rules! dispatch {
             Action::MultisigCancel($x) => $body,
             Action::MultisigExecute($x) => $body,
             Action::UpdateMultisigPolicy($x) => $body,
+
+            Action::RenameSubAccount($x) => $body,
+            Action::UpdateValidatorSet($x) => $body,
+
+            Action::UpdateRiskConfig($x) => $body,
         }
     };
 }
