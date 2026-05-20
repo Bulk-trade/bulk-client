@@ -5,6 +5,7 @@ from nacl.signing import SigningKey, VerifyKey
 import struct
 import base58
 import time
+import math
 
 TIME_IN_FORCE_MAP = {
     "GTC": 0,
@@ -127,7 +128,7 @@ class TransactionSigner:
             parts.append(TransactionSigner.serialize_action(action))
 
         parts.append(TransactionSigner.write_u64(int(nonce)))
-        parts.append(TransactionSigner.decode_and_validate_key(account))
+        parts.append(TransactionSigner.decode_and_validate_32_bytes(account))
         return b''.join(parts)
 
     @staticmethod
@@ -190,7 +191,7 @@ class TransactionSigner:
             case {"mod": order}:
                 return b''.join([
                     TransactionSigner.write_u32(2),
-                    TransactionSigner.decode_and_validate_key(order['oid']),
+                    TransactionSigner.decode_and_validate_32_bytes(order['oid']),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_f64(order['sz']),
                 ])
@@ -199,7 +200,7 @@ class TransactionSigner:
                 return b''.join([
                     TransactionSigner.write_u32(3),
                     TransactionSigner.write_string(order['c']),
-                    TransactionSigner.decode_and_validate_key(order['oid']),
+                    TransactionSigner.decode_and_validate_32_bytes(order['oid']),
                 ])
 
             case {"cxa": order}:
@@ -220,7 +221,7 @@ class TransactionSigner:
                 oracles = order["oracles"]
                 parts = [
                     TransactionSigner.write_u32(13),
-                    TransactionSigner.write_u32(len(oracles)),
+                    TransactionSigner.write_u64(len(oracles)),
                 ]
                 for x in oracles:
                     parts.append(TransactionSigner.write_u64(x['t']))
@@ -234,21 +235,21 @@ class TransactionSigner:
                 if "amount" in order:
                     return b''.join([
                         TransactionSigner.write_u32(16),
-                        TransactionSigner.decode_and_validate_key(order['u']),
+                        TransactionSigner.write_pubkey_serde_bytes(order['u']),
                         TransactionSigner.write_bool(True),
                         TransactionSigner.write_f64(order['amount']),
                     ])
                 else:
                     return b''.join([
                         TransactionSigner.write_u32(16),
-                        TransactionSigner.decode_and_validate_key(order['u']),
+                        TransactionSigner.write_pubkey_serde_bytes(order['u']),
                         TransactionSigner.write_bool(False),
                     ])
 
             case {"agentWalletCreation": order}:
                 return b''.join([
                     TransactionSigner.write_u32(17),
-                    TransactionSigner.decode_and_validate_key(order['a']),
+                    TransactionSigner.write_pubkey_serde_bytes(order['a']),
                     TransactionSigner.write_bool(order['d']),
                 ])
 
@@ -256,7 +257,7 @@ class TransactionSigner:
                 settings = order["m"]
                 parts = [
                     TransactionSigner.write_u32(18),
-                    TransactionSigner.write_u32(len(settings)),
+                    TransactionSigner.write_u64(len(settings)),
                 ]
                 for key,value in settings:
                     parts.append(TransactionSigner.write_string(key))
@@ -267,12 +268,19 @@ class TransactionSigner:
             case {"whiteListFaucet": order}:
                 return b''.join([
                     TransactionSigner.write_u32(19),
-                    TransactionSigner.decode_and_validate_key(order['target']),
+                    TransactionSigner.write_pubkey_serde_bytes(order['target']),
                     TransactionSigner.write_bool(order['whitelist']),
                 ])
             case _:
                 raise Exception("Unknown tx type")
         
+
+    @staticmethod
+    def round_half_away_from_zero(value: float) -> int:
+        """Match Rust f64::round semantics (half-away-from-zero)."""
+        if value >= 0:
+            return int(math.floor(value + 0.5))
+        return int(math.ceil(value - 0.5))
 
     @staticmethod
     def write_u64(value: int) -> bytes:
@@ -282,14 +290,14 @@ class TransactionSigner:
     @staticmethod
     def write_fixedpoint(value: float) -> bytes:
         """Write fixed point little-endian format"""
-        value = int(round(float(value) * 1e8))
+        value = TransactionSigner.round_half_away_from_zero(float(value) * 1e8)
         return struct.pack("<Q", value)
 
     @staticmethod
     def write_optional_fixedpoint(value: Optional[float]) -> bytes:
         """Write fixed point little-endian format"""
         if value:
-            value = int(round(float(value) * 1e8))
+            value = TransactionSigner.round_half_away_from_zero(float(value) * 1e8)
             return b''.join([
                 bytes([0x01]),
                 struct.pack("<Q", value)
@@ -311,7 +319,7 @@ class TransactionSigner:
     @staticmethod
     def write_strings(value: List[str]) -> bytes:
         """Write a string in little-endian format"""
-        parts = [TransactionSigner.write_u32(len(value))]
+        parts = [TransactionSigner.write_u64(len(value))]
         for x in value:
             parts.append(TransactionSigner.write_string(x))
         return b''.join(parts)
@@ -332,13 +340,22 @@ class TransactionSigner:
         return struct.pack("<I", value)
     
     @staticmethod
-    def decode_and_validate_key(key: str) -> bytes:
-        """Decode a base58 public key"""
+    def decode_and_validate_32_bytes(key: str) -> bytes:
+        """Decode a base58 32-byte value (pubkey/hash raw bytes)."""
         key_bytes = base58.b58decode(key)
         
         if len(key_bytes) != 32:
             raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
         return key_bytes
+
+    @staticmethod
+    def write_pubkey_serde_bytes(key: str) -> bytes:
+        """
+        Encode Pubkey with bincode `serialize_bytes` shape:
+        u64 byte-length prefix + raw bytes.
+        """
+        key_bytes = TransactionSigner.decode_and_validate_32_bytes(key)
+        return TransactionSigner.write_u64(len(key_bytes)) + key_bytes
 
 
 ##
