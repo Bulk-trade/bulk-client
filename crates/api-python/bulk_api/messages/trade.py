@@ -154,7 +154,7 @@ class LimitOrder:
                 'b': self.side.value == Side.BUY.value,
                 'px': f"{self.price}",
                 'sz': f"{self.size}",
-                'tif': str(self.time_in_force).lower(),   # ← lowercase to match wire ("gtc" not "GTC")
+                'tif': self.time_in_force.value,
                 'r': self.reduce_only,
                 'i': self.iso,                             # ← NEW
             }

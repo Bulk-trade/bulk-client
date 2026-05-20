@@ -13,6 +13,9 @@ pub struct FaucetArgs {
     pub amount: Option<f64>,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct LedgerInfoArgs {}
+
 // ---------------------------------------------------------------------------
 // Leverage
 // ---------------------------------------------------------------------------
