@@ -418,7 +418,7 @@ class BulkHttpClient:
             raise ValueError("Private key required for trading operations")
         
         order_objects = []
-        account = self.signer.public_key()
+        account = self.signer.public_key
         for ith, tx in enumerate(txns):
             tx.seqno = ith
             tx.nonce = nonce
@@ -438,7 +438,7 @@ class BulkHttpClient:
         # package into a transaction
         transaction = {
             "actions": order_objects,
-            "nonce": f"{order_objects[0].nonce}",
+            "nonce": nonce,
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
