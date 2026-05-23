@@ -108,6 +108,23 @@ impl BulkHttpClient {
         }
     }
 
+    /// Create bulk HTTP client with a pre-built signer (software key or Ledger).
+    ///
+    /// # Example
+    /// ```text
+    /// let signer = TransactionSigner::from_ledger("usb://ledger", None)?;
+    /// let client = BulkHttpClient::with_signer("https://exchange-api.bulk.trade/api/v1", signer)?;
+    /// let resp = client.request_faucet(None, None, None).await?;
+    /// ```
+    pub fn with_signer(base_url: &str, signer: TransactionSigner) -> eyre::Result<Self> {
+        let config = HttpConfig {
+            base_url: base_url.to_string(),
+            signer: Some(signer),
+            default_timeout: Duration::from_secs(10),
+        };
+        Self::new(&config)
+    }
+
     /// Channel configuration
     pub fn config(&self) -> &HttpConfig {
         &self.config
@@ -340,14 +357,14 @@ impl BulkHttpClient {
         // Build JSON body via tx serialization
         let body = serde_json::to_string(&tx)?;
 
-        let resp = self
+        let mut request = self
             .client
             .post(format!("{}/order", self.config.base_url))
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await?
-            .error_for_status()?;
+            .header("content-type", "application/json");
+        if let Some(mode) = signer.tx_signature_mode_hint_header_value() {
+            request = request.header("X-Bulk-Sig-Mode", mode);
+        }
+        let resp = request.body(body).send().await?.error_for_status()?;
 
         let data: Value = resp.json().await?;
         Ok(Response::parse_responses(&data))
@@ -731,7 +748,7 @@ impl BulkHttpClient {
         // but for generic endpoints (leverage, faucet, agent wallet, etc.)
         // the exchange expects a signature over the canonical JSON.
         let message = serde_json::to_string(action)?;
-        let sig = signer.sign_bytes(message.as_bytes());
+        let sig = signer.sign_bytes(message.as_bytes())?;
         Ok(bs58::encode(sig).into_string())
     }
 }

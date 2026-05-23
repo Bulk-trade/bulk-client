@@ -690,6 +690,8 @@ class BulkWebSocketClient:
                 await self._handle_account_update(data)
             case "post":
                 await self._handle_post_response(data)
+            case "error":
+                await self._handle_error_response(data)
             case _:
                 self.logger.debug(f"Unhandled message type: {msg_type}")
 
@@ -1005,6 +1007,24 @@ class BulkWebSocketClient:
             if future and not future.done():
                 future.set_result(order_responses)
 
+    async def _handle_error_response(self, data: Dict):
+        """
+        Handle WS protocol / validation errors that are not wrapped as `type=post`.
+        These should fail any in-flight request immediately instead of timing out.
+        """
+        error_data = data.get("error", {})
+        message = error_data.get("message", "websocket error")
+        self.logger.error(f"WebSocket request error: {message}")
+
+        if self.pending_requests:
+            pending = list(self.pending_requests.items())
+            self.pending_requests.clear()
+            for _request_id, future in pending:
+                if not future.done():
+                    future.set_exception(RuntimeError(message))
+
+        await self._emit_event(Topic.ERROR, error_data)
+
     async def _emit_event(self, event_type: Topic, event_data: Any):
         """Emit an event to registered handlers"""
         if event_type in self.handlers:
@@ -1046,4 +1066,3 @@ class BulkWebSocketClient:
 
             if action_oid and oid not in oids:
                 raise RuntimeError(f"Response {i}, non-matching {oid} , response: {response}, action: {action}")
-

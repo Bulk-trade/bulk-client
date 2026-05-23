@@ -2,10 +2,12 @@ use bulk_client::BulkHttpClient;
 use bulk_client::msgs::{CancelAll, CancelOrder};
 use bulk_client::transaction::Action;
 use crate::commands::{CancelAllArgs, CancelArgs};
+use crate::common::{submit_actions, SubmitOptions};
 
 pub async fn handle_cancel(
     api: &mut BulkHttpClient,
-    args: CancelArgs
+    args: CancelArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Cancelling order {}", args.order_id);
 
@@ -15,14 +17,13 @@ pub async fn handle_cancel(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 pub async fn handle_cancel_all(
     api: &mut BulkHttpClient,
-    args: CancelAllArgs
+    args: CancelAllArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     let symbols = match &args.instrument {
         Some(inst) => {
@@ -40,7 +41,5 @@ pub async fn handle_cancel_all(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }

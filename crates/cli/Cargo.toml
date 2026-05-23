@@ -1,6 +1,6 @@
 [package]
 name = "bulk-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Command-line interface for trading on BULK"
 keywords = ["trading", "exchange", "cli", "bulk"]
 authors.workspace = true
@@ -13,7 +13,7 @@ name = "bulk"
 path = "src/main.rs"
 
 [dependencies]
-bulk-client = { version = "0.1.0", path = "../api-rust" }
+bulk-client = { version = "0.1.1", path = "../api-rust", features = ["ledger"] }
 
 eyre = "0.6"
 serde = { version = "1", features = ["derive"] }
@@ -22,6 +22,7 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.5.58", features = ["derive"] }
+sha2 = "0.10.9"
 
 solana-hash = { version = "3.0.1", features = ["serde"] }
 solana-signature = { version = "3.0.1", features = ["serde"] }
