@@ -3,6 +3,7 @@ use bulk_client::BulkHttpClient;
 use bulk_client::msgs::conditional::{Range, StopOrTP, Trailing};
 use bulk_client::transaction::Action;
 use crate::commands::{RangeArgs, StopArgs, TrailingArgs};
+use crate::common::{submit_actions, SubmitOptions};
 // ---------------------------------------------------------------------------
 // Stop
 // ---------------------------------------------------------------------------
@@ -10,6 +11,7 @@ use crate::commands::{RangeArgs, StopArgs, TrailingArgs};
 pub async fn handle_stop(
     api: &mut BulkHttpClient,
     args: StopArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Placing Stop on {} | size={} threshold={} above={} limit={:?}",
@@ -25,9 +27,7 @@ pub async fn handle_stop(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,7 @@ pub async fn handle_stop(
 pub async fn handle_take_profit(
     api: &mut BulkHttpClient,
     args: StopArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Placing TakeProfit on {} | size={} threshold={} above={} limit={:?}",
@@ -52,9 +53,7 @@ pub async fn handle_take_profit(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +63,7 @@ pub async fn handle_take_profit(
 pub async fn handle_range(
     api: &mut BulkHttpClient,
     args: RangeArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Placing Range on {} | size={} [{}, {}] buy={} limit_min={:?} limit_max={:?}",
@@ -82,9 +82,7 @@ pub async fn handle_range(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +92,7 @@ pub async fn handle_range(
 pub async fn handle_trailing(
     api: &mut BulkHttpClient,
     args: TrailingArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Placing TrailingStop on {} | size={} buy={} trail_bps={} step_bps={} limit={:?}",
@@ -110,7 +109,5 @@ pub async fn handle_trailing(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }

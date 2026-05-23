@@ -5,10 +5,12 @@ use bulk_client::msgs::{AgentWalletCreation, Faucet, UpdateUserSettings};
 use bulk_client::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, Transfer};
 use bulk_client::transaction::Action;
 use crate::commands::{AgentWalletArgs, CreateSubAccountArgs, FaucetArgs, RemoveSubAccountArgs, TransferArgs, UpdateLeverageArgs};
+use crate::common::{submit_actions, SubmitOptions};
 
 pub async fn handle_faucet(
     api: &mut BulkHttpClient,
     args: FaucetArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     let account = api.public_key().unwrap();
     println!("Faucet request for account {}", account);
@@ -19,9 +21,7 @@ pub async fn handle_faucet(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -31,6 +31,7 @@ pub async fn handle_faucet(
 pub async fn handle_update_leverage(
     api: &mut BulkHttpClient,
     args: UpdateLeverageArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     for (sym, lev) in &args.settings {
         println!("  {sym} → {lev}x");
@@ -43,9 +44,7 @@ pub async fn handle_update_leverage(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +54,7 @@ pub async fn handle_update_leverage(
 pub async fn handle_agent_wallet(
     api: &mut BulkHttpClient,
     args: AgentWalletArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     let verb = if args.delete { "Removing" } else { "Adding" };
     println!("{verb} agent wallet {}", args.agent);
@@ -65,9 +65,7 @@ pub async fn handle_agent_wallet(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +75,7 @@ pub async fn handle_agent_wallet(
 pub async fn handle_create_subaccount(
     api: &mut BulkHttpClient,
     args: CreateSubAccountArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Creating sub-account '{}' margin_symbol={:?} margin_amount={:?}",
@@ -89,9 +88,7 @@ pub async fn handle_create_subaccount(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +98,7 @@ pub async fn handle_create_subaccount(
 pub async fn handle_remove_subaccount(
     api: &mut BulkHttpClient,
     args: RemoveSubAccountArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Removing sub-account {}", args.pubkey);
 
@@ -109,9 +107,7 @@ pub async fn handle_remove_subaccount(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +117,7 @@ pub async fn handle_remove_subaccount(
 pub async fn handle_transfer(
     api: &mut BulkHttpClient,
     args: TransferArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
         "Transferring {} {} from {} → {} ({:?})",
@@ -135,7 +132,5 @@ pub async fn handle_transfer(
         meta: Default::default(),
     });
 
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }

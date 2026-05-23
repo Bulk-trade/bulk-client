@@ -30,13 +30,25 @@ impl Transaction {
     /// # Arguments
     /// - `signer`: tx signer
     pub fn sign(&mut self, signer: &TransactionSigner) -> eyre::Result<()> {
-        // get serialized form: actions nonce + account
-        let mut serialized = bincode::serialize(&self.actions)?;
-        serialized.extend_from_slice(&self.nonce.to_le_bytes());
-        serialized.extend_from_slice(self.account.as_ref());
+        use crate::transaction::signer::TxSignatureMode;
 
-        // compute signature
-        self.signature = signer.sign_bytes(&serialized);
+        match signer.tx_signature_mode() {
+            TxSignatureMode::Offchain => {
+                let clear_text =
+                    crate::transaction::clear_sign::canonical_message(
+                        self.account,
+                        self.nonce,
+                        &self.actions,
+                    )?;
+                self.signature = signer.sign_transaction_clear(&clear_text)?;
+            }
+            TxSignatureMode::Raw => {
+                let mut serialized = bincode::serialize(&self.actions)?;
+                serialized.extend_from_slice(&self.nonce.to_le_bytes());
+                serialized.extend_from_slice(self.account.as_ref());
+                self.signature = signer.sign_transaction_bytes(&serialized)?;
+            }
+        }
         self.signer = signer.public_key();
         Ok(())
     }

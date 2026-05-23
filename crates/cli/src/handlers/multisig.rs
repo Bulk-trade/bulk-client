@@ -3,6 +3,7 @@ use bulk_client::BulkHttpClient;
 use bulk_client::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigReject, UpdateMultisigPolicy};
 use bulk_client::transaction::Action;
 use crate::commands::{CreateMultisigArgs, MultisigProposalArgs, UpdateMultisigPolicyArgs};
+use crate::common::{submit_actions, SubmitOptions};
 
 // ---------------------------------------------------------------------------
 // CreateMultisig
@@ -11,6 +12,7 @@ use crate::commands::{CreateMultisigArgs, MultisigProposalArgs, UpdateMultisigPo
 pub async fn handle_create_multisig(
     api: &mut BulkHttpClient,
     args: CreateMultisigArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     if args.threshold == 0 {
         bail!("--threshold must be at least 1");
@@ -41,9 +43,7 @@ pub async fn handle_create_multisig(
         proposal_lifetime_secs: args.lifetime,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +53,7 @@ pub async fn handle_create_multisig(
 pub async fn handle_update_multisig_policy(
     api: &mut BulkHttpClient,
     args: UpdateMultisigPolicyArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     if args.threshold == 0 {
         bail!("--threshold must be at least 1");
@@ -82,9 +83,7 @@ pub async fn handle_update_multisig_policy(
         proposal_lifetime_secs: args.lifetime,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +93,7 @@ pub async fn handle_update_multisig_policy(
 pub async fn handle_multisig_approve(
     api: &mut BulkHttpClient,
     args: MultisigProposalArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Approving proposal {} on multisig {}", args.proposal_id, args.multisig);
 
@@ -102,9 +102,7 @@ pub async fn handle_multisig_approve(
         proposal_id: args.proposal_id,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +112,7 @@ pub async fn handle_multisig_approve(
 pub async fn handle_multisig_reject(
     api: &mut BulkHttpClient,
     args: MultisigProposalArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Rejecting proposal {} on multisig {}", args.proposal_id, args.multisig);
 
@@ -122,9 +121,7 @@ pub async fn handle_multisig_reject(
         proposal_id: args.proposal_id,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +131,7 @@ pub async fn handle_multisig_reject(
 pub async fn handle_multisig_cancel(
     api: &mut BulkHttpClient,
     args: MultisigProposalArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Cancelling proposal {} on multisig {}", args.proposal_id, args.multisig);
 
@@ -142,9 +140,7 @@ pub async fn handle_multisig_cancel(
         proposal_id: args.proposal_id,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +150,7 @@ pub async fn handle_multisig_cancel(
 pub async fn handle_multisig_execute(
     api: &mut BulkHttpClient,
     args: MultisigProposalArgs,
+    submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!("Executing proposal {} on multisig {}", args.proposal_id, args.multisig);
 
@@ -162,7 +159,5 @@ pub async fn handle_multisig_execute(
         proposal_id: args.proposal_id,
         meta: Default::default(),
     });
-    let results = api.place_tx(vec![action], None, None).await?;
-    eprintln!("results: {:?}", results);
-    Ok(())
+    submit_actions(api, submit, vec![action]).await
 }
