@@ -36,7 +36,7 @@ struct Cli {
     command: Command,
 
     /// Private key (base58), required unless --ledger is used.
-    #[arg(long, hide_env_values = true, global = true)]
+    #[arg(long, env = "BULK_PRIVATE_KEY", hide_env_values = true, global = true)]
     private_key: Option<String>,
 
     /// Exchange API base URL.
@@ -219,6 +219,60 @@ enum Command {
 }
 
 
+fn handle_ledger_info(cli: &Cli) -> eyre::Result<()> {
+    let devices = TransactionSigner::list_ledger_devices()?;
+    println!("Found {} Ledger device(s).", devices.len());
+    for (idx, device) in devices.iter().enumerate() {
+        println!(
+            "[{}] model={} serial={} host_path={} base_pubkey={}",
+            idx + 1,
+            device.model,
+            if device.serial.is_empty() { "<unknown>" } else { device.serial.as_str() },
+            if device.host_device_path.is_empty() { "<unknown>" } else { device.host_device_path.as_str() },
+            device.pubkey,
+        );
+    }
+
+    let resolved = TransactionSigner::resolve_ledger_with_options(
+        &cli.ledger_locator,
+        cli.ledger_derivation_path.as_deref(),
+        cli.ledger_confirm_key,
+        "bulk-cli",
+    )?;
+    println!();
+    println!("Resolved signer:");
+    println!("  locator: {}", resolved.locator);
+    println!("  derivation_path: {}", resolved.derivation_path);
+    println!("  resolved_path: {}", resolved.path);
+    println!("  pubkey: {}", resolved.pubkey);
+    Ok(())
+}
+
+fn handle_config(args: &ConfigArgs, config: &mut CliConfig) -> eyre::Result<()> {
+    match &args.command {
+        ConfigCommand::Show => {
+            let path = crate::common::config_path()?;
+            println!("config_path: {}", path.display());
+            match config.api_url.as_deref() {
+                Some(url) => println!("api_url: {}", url.trim_end_matches('/')),
+                None => println!("api_url: <default>"),
+            }
+        }
+        ConfigCommand::SetApiUrl { url } => {
+            let value = url.trim_end_matches('/').to_string();
+            config.api_url = Some(value.clone());
+            config.save()?;
+            println!("saved api_url={value}");
+        }
+        ConfigCommand::ResetApiUrl => {
+            config.api_url = None;
+            config.save()?;
+            println!("reset api_url to default");
+        }
+    }
+    Ok(())
+}
+
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -297,59 +351,9 @@ async fn main() -> eyre::Result<()> {
     }
 }
 
-fn handle_ledger_info(cli: &Cli) -> eyre::Result<()> {
-    let devices = TransactionSigner::list_ledger_devices()?;
-    println!("Found {} Ledger device(s).", devices.len());
-    for (idx, device) in devices.iter().enumerate() {
-        println!(
-            "[{}] model={} serial={} host_path={} base_pubkey={}",
-            idx + 1,
-            device.model,
-            if device.serial.is_empty() { "<unknown>" } else { device.serial.as_str() },
-            if device.host_device_path.is_empty() { "<unknown>" } else { device.host_device_path.as_str() },
-            device.pubkey,
-        );
-    }
-
-    let resolved = TransactionSigner::resolve_ledger_with_options(
-        &cli.ledger_locator,
-        cli.ledger_derivation_path.as_deref(),
-        cli.ledger_confirm_key,
-        "bulk-cli",
-    )?;
-    println!();
-    println!("Resolved signer:");
-    println!("  locator: {}", resolved.locator);
-    println!("  derivation_path: {}", resolved.derivation_path);
-    println!("  resolved_path: {}", resolved.path);
-    println!("  pubkey: {}", resolved.pubkey);
-    Ok(())
-}
-
-fn handle_config(args: &ConfigArgs, config: &mut CliConfig) -> eyre::Result<()> {
-    match &args.command {
-        ConfigCommand::Show => {
-            let path = crate::common::config_path()?;
-            println!("config_path: {}", path.display());
-            match config.api_url.as_deref() {
-                Some(url) => println!("api_url: {}", url.trim_end_matches('/')),
-                None => println!("api_url: <default>"),
-            }
-        }
-        ConfigCommand::SetApiUrl { url } => {
-            let value = url.trim_end_matches('/').to_string();
-            config.api_url = Some(value.clone());
-            config.save()?;
-            println!("saved api_url={value}");
-        }
-        ConfigCommand::ResetApiUrl => {
-            config.api_url = None;
-            config.save()?;
-            println!("reset api_url to default");
-        }
-    }
-    Ok(())
-}
+//
+// Unit Tests
+//
 
 #[cfg(test)]
 mod tests {
