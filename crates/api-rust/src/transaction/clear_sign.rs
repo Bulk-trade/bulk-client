@@ -225,8 +225,8 @@ fn action_line(action: &Action) -> String {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8}",
-            action.max_loss, action.eloss_floor, action.max_pliq, action.margin_buffer
+            "UpdateRiskConfig {:?}",
+            action
         ),
     }
 }
