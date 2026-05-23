@@ -1,0 +1,27 @@
+{
+    "max_loss": 10000.0,
+    "eloss_floor": 500.0,
+    "max_pliq": 0.98,
+    "margin_buffer": 0.05,
+
+    "vault": {
+        "owner": "9J8TUdEWrrcADK913r1Cs7DdqX63VdVU88imfDzT1ypt",
+        "allocations": {
+            "default": 100.0,
+            "instruments": { }
+        },
+        "liquidity": {
+            "default": 200.0,
+            "instruments": {
+                "BTC-USD": 50.0,
+            }
+        }
+    },
+
+    "liquidation": {
+        "adl_bias": 0.5,
+        "maxdepth": 10000.0,
+        "sweep_residual": 2,
+        "settlement_ccy": "USD"
+    }
+}

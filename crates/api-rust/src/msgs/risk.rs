@@ -1,3 +1,4 @@
+use crate::msgs::serde_pubkey;
 use serde::{Deserialize, Serialize};
 use solana_keypair::Pubkey;
 use crate::common::instrument_config::InstrumentConfig;
@@ -33,7 +34,7 @@ pub struct LiquidationConfig {
 /// - ...
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RiskVaultConfig {
-    #[cfg_attr(feature = "serde", serde(with = "crate::deser::serde_pubkey"))]
+    #[serde(with = "serde_pubkey")]
     pub owner: Pubkey,
     // allocation per instrument
     pub allocations: InstrumentConfig<f64>,
