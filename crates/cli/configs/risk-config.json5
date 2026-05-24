@@ -1,7 +1,7 @@
 {
     "max_loss": 10000.0,
     "eloss_floor": 500.0,
-    "max_pliq": 0.98,
+    "max_pliq": 1.0,
     "margin_buffer": 0.05,
 
     "vault": {
