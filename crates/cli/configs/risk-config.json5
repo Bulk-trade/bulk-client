@@ -22,6 +22,7 @@
         "adl_bias": 0.5,
         "maxdepth": 10000.0,
         "sweep_residual": 2,
-        "settlement_ccy": "USD"
+        "settlement_ccy": "USD",
+        "price_to_sweep": true
     }
 }

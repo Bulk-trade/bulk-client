@@ -25,6 +25,10 @@ pub struct LiquidationConfig {
     pub maxdepth: f64,
     // minimum number of levels to leave on book when sweeping
     pub sweep_residual: usize,
+
+    // indicate whether should use the sweep price when considering if an account needs
+    // liquidation or just the fair-price
+    pub price_to_sweep: bool,
 }
 
 /// Risk Vault configuration
