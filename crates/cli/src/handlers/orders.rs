@@ -33,6 +33,7 @@ pub async fn handle_place(
             tif: args.tif,
             reduce_only: args.reduce_only,
             iso: args.iso,
+            commission: None,
             meta: Default::default(),
         })
     } else {
@@ -42,6 +43,7 @@ pub async fn handle_place(
             size: args.qty_price.qty,
             reduce_only: args.reduce_only,
             iso: args.iso,
+            commission: None,
             meta: Default::default(),
         })
     };

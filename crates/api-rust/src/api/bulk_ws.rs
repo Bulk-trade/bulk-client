@@ -581,6 +581,7 @@ impl BulkWsClient {
             tif,
             reduce_only,
             iso: false,
+            commission: None,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -629,6 +630,7 @@ impl BulkWsClient {
             size,
             reduce_only,
             iso: false,
+            commission: None,
             meta: ActionMeta {
                 account,
                 nonce,

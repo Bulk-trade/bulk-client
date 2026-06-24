@@ -331,6 +331,7 @@ mod tests {
             tif: TimeInForce::ALO,
             reduce_only: false,
             iso: false,
+            commission: None,
             meta: ActionMeta {
                 account: Default::default(),
                 nonce: 1_776_128_000_000_000_000,
@@ -344,7 +345,7 @@ mod tests {
 
         assert_eq!(
             hash.to_string(),
-            "9BreqftLa7ZAsYLkvJDRBRxiSukzGoTfbQNMBWWkUAUJ"
+            "HmFM2FaKdZf8gWx1p1M5ajjpk1WaCG1Z3vjDD82vYMV5"
         );
     }
 }
