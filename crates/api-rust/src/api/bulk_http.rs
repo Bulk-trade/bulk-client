@@ -95,14 +95,14 @@ impl BulkHttpClient {
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: Some(signer),
-                default_timeout: Duration::from_secs(10)
+                default_timeout: Duration::from_secs(120)
             };
             Self::new(&config)
         } else {
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: None,
-                default_timeout: Duration::from_secs(10)
+                default_timeout: Duration::from_secs(120)
             };
             Self::new(&config)
         }
@@ -120,7 +120,7 @@ impl BulkHttpClient {
         let config = HttpConfig {
             base_url: base_url.to_string(),
             signer: Some(signer),
-            default_timeout: Duration::from_secs(10),
+            default_timeout: Duration::from_secs(120),
         };
         Self::new(&config)
     }
@@ -364,7 +364,13 @@ impl BulkHttpClient {
         if let Some(mode) = signer.tx_signature_mode_hint_header_value() {
             request = request.header("X-Bulk-Sig-Mode", mode);
         }
-        let resp = request.body(body).send().await?.error_for_status()?;
+        let resp = request.body(body).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let txt = resp.text().await.unwrap_or_default();
+            let snip: String = txt.chars().take(600).collect();
+            return Err(eyre::eyre!("HTTP {} from /order: {}", status, snip));
+        }
 
         let data: Value = resp.json().await?;
         Ok(Response::parse_responses(&data))

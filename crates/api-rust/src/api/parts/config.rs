@@ -26,7 +26,7 @@ impl Default for WSConfig {
             url: "wss://exchange-wss.bulk.trade".into(),
             symbols: vec!["BTC-USD".into(), "ETH-USD".into(), "SOL-USD".into()],
             signer: None,
-            default_timeout: Duration::from_secs(10),
+            default_timeout: Duration::from_secs(120),
             track_ticker: true,
             track_account: true,
         }
@@ -38,7 +38,7 @@ impl Default for HttpConfig {
         Self {
             base_url: "https://exchange-api2.bulk.trade/api/v1".into(),
             signer: None,
-            default_timeout: Duration::from_secs(10),
+            default_timeout: Duration::from_secs(120),
         }
     }
 }

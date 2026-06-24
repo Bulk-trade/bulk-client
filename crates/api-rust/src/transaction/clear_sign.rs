@@ -174,27 +174,27 @@ fn action_line(action: &Action) -> String {
         Action::AddMarket(action) => format!("AddMarket {}", action.symbol),
         Action::ConfigFairPrice(action) => format!(
             "ConfigFairPrice payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::ConfigVolatility(action) => format!(
             "ConfigVolatility payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::ConfigSecurity(action) => format!(
             "ConfigSecurity payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::ConfigRegime(action) => format!(
             "ConfigRegime payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::ConfigRisk(action) => format!(
             "ConfigRiskMatrix payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::ConfigFeePolicy(action) => format!(
             "ConfigFeePolicy payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
+            sha256_hex(action.payload.as_slice())
         ),
         Action::Price(action) => format!(
             "Price asset={} px={:.8} ts={}",
