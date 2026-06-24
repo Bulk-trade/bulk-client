@@ -16,6 +16,8 @@ use crate::handlers::conditional::{handle_range, handle_stop, handle_take_profit
 use crate::handlers::multisig::{handle_create_multisig, handle_multisig_approve, handle_multisig_cancel, handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy};
 use crate::handlers::orders::{handle_modify, handle_place};
 use crate::handlers::risk::handle_risk_config;
+use crate::handlers::deploy::{handle_add_market, handle_config_fairprice, handle_config_regime, handle_config_risk, handle_config_security, handle_config_volatility, handle_corrs};
+use crate::commands::{AddMarketArgs, ConfigModelArgs, ConfigRiskMatrixArgs, ConfigSecurityArgs, CorrsArgs};
 // ---------------------------------------------------------------------------
 // Top-level CLI
 // ---------------------------------------------------------------------------
@@ -42,6 +44,10 @@ struct Cli {
     /// Exchange API base URL.
     #[arg(long, global = true)]
     api_url: Option<String>,
+
+    /// Register securities into the CLI registry first (so config-* model/risk commands can resolve coin/perp MktIds).
+    #[arg(long, global = true)]
+    securities: Option<String>,
 
     /// Show transaction preview before signing.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set, global = true)]
@@ -216,6 +222,20 @@ enum Command {
     /// Example: bulk risk-config risk.json
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
+    #[command(name = "config-security")]
+    ConfigSecurity(ConfigSecurityArgs),
+    #[command(name = "config-fairprice")]
+    ConfigFairPrice(ConfigModelArgs),
+    #[command(name = "config-regime")]
+    ConfigRegime(ConfigModelArgs),
+    #[command(name = "config-volatility")]
+    ConfigVolatility(ConfigModelArgs),
+    #[command(name = "config-risk")]
+    ConfigRisk(ConfigRiskMatrixArgs),
+    #[command(name = "corrs")]
+    Corrs(CorrsArgs),
+    #[command(name = "add-market")]
+    AddMarket(AddMarketArgs),
 }
 
 
@@ -313,6 +333,10 @@ async fn main() -> eyre::Result<()> {
     };
     let mut api = BulkHttpClient::new(&config)?;
 
+    if let Some(sec_path) = cli.securities.as_deref() {
+        crate::handlers::deploy::register_securities(sec_path)?;
+    }
+
     match cli.command {
         // Account
         Command::Faucet(args)           => handle_faucet(&mut api, args, &submit).await,
@@ -346,6 +370,13 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigCancel(args)   => handle_multisig_cancel(&mut api, args, &submit).await,
         Command::MultisigExecute(args)  => handle_multisig_execute(&mut api, args, &submit).await,
         Command::RiskConfig(args)       => handle_risk_config(&mut api, args, &submit).await,
+        Command::ConfigSecurity(args)   => handle_config_security(&mut api, args, &submit).await,
+        Command::ConfigFairPrice(args)  => handle_config_fairprice(&mut api, args, &submit).await,
+        Command::ConfigRegime(args)     => handle_config_regime(&mut api, args, &submit).await,
+        Command::ConfigVolatility(args) => handle_config_volatility(&mut api, args, &submit).await,
+        Command::ConfigRisk(args)       => handle_config_risk(&mut api, args, &submit).await,
+        Command::Corrs(args)            => handle_corrs(&mut api, args, &submit).await,
+        Command::AddMarket(args)        => handle_add_market(&mut api, args, &submit).await,
         Command::LedgerInfo(_)          => unreachable!("handled before API setup"),
         Command::Config(_)              => unreachable!("handled before API setup"),
     }

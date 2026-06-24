@@ -90,6 +90,7 @@ pub enum Action {
     // ConfigRegime = ordinal(24)
     ConfigRegime(OpaqueAction),
     // ConfigRisk = ordinal(25)
+    #[serde(rename = "configRiskMatrix")]
     ConfigRisk(OpaqueAction),
     // ConfigFeePolicy = ordinal(26)
     #[serde(rename = "cfgf")]
