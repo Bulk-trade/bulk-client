@@ -13,3 +13,5 @@ pub use account::*;
 pub use conditional::*;
 pub use config::*;
 pub use risk::*;
+pub mod deploy;
+pub use deploy::*;

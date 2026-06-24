@@ -5,3 +5,4 @@ pub mod account;
 pub mod conditional;
 pub mod risk;
 
+pub mod deploy;
