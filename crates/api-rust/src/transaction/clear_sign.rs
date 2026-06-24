@@ -1,9 +1,9 @@
-use std::fmt::Write as _;
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
 use crate::msgs::multisig::{CreateMultisig, UpdateMultisigPolicy};
 use crate::msgs::UpdateUserSettings;
 use crate::transaction::Action;
 use solana_pubkey::Pubkey;
+use std::fmt::Write as _;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ClearSignMessageOptions {
@@ -66,18 +66,30 @@ fn fmt_opt(value: Option<f64>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
+fn commission(commission: Option<crate::msgs::order::Commission>) -> String {
+    commission
+        .map(|commission| {
+            format!(
+                " commission_to={} commission_fee={}bps",
+                commission.to, commission.fee
+            )
+        })
+        .unwrap_or_default()
+}
+
 fn action_line(action: &Action) -> String {
     match action {
         Action::MarketOrder(order) => format!(
-            "Market {} {} sz={:.8} ro={} iso={}",
+            "Market {} {} sz={:.8} ro={} iso={}{}",
             order.symbol,
             if order.is_buy { "Buy" } else { "Sell" },
             order.size,
             order.reduce_only,
             order.iso,
+            commission(order.commission),
         ),
         Action::LimitOrder(order) => format!(
-            "Limit {} {} px={:.8} sz={:.8} tif={:?} ro={} iso={}",
+            "Limit {} {} px={:.8} sz={:.8} tif={:?} ro={} iso={}{}",
             order.symbol,
             if order.is_buy { "Buy" } else { "Sell" },
             order.price,
@@ -85,6 +97,7 @@ fn action_line(action: &Action) -> String {
             order.tif,
             order.reduce_only,
             order.iso,
+            commission(order.commission),
         ),
         Action::ModifyOrder(order) => {
             format!(
@@ -355,6 +368,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
+            commission: None,
             meta: ActionMeta::default(),
         })];
         let first = canonical_message(account, 42, actions.as_slice()).expect("build message");
@@ -390,6 +404,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: true,
             iso: false,
+            commission: None,
             meta: ActionMeta::default(),
         })];
         let message = canonical_message(account, 99, actions.as_slice()).expect("build message");

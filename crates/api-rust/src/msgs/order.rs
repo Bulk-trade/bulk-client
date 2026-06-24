@@ -1,15 +1,33 @@
-use solana_hash::Hash;
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use sha2::Digest;
-use solana_pubkey::Pubkey;
 use crate::common::tif::TimeInForce;
 use crate::transaction::ActionMeta;
+use serde::ser::{SerializeStruct, SerializeTuple};
+use serde::{Deserialize, Serialize};
+use sha2::Digest;
+use solana_hash::Hash;
+use solana_pubkey::Pubkey;
+use std::sync::Arc;
+
+struct FixedF64(f64);
+
+impl Serialize for FixedF64 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        crate::msgs::fixed_point::serialize(&self.0, serializer)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Commission {
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    pub to: Pubkey,
+    pub fee: u8,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Market Order
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct MarketOrder {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
@@ -26,8 +44,38 @@ pub struct MarketOrder {
     #[serde(rename = "i", default)]
     pub iso: bool,
 
+    #[serde(default)]
+    pub commission: Option<Commission>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+impl Serialize for MarketOrder {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            let mut state = serializer
+                .serialize_struct("MarketOrder", 5 + usize::from(self.commission.is_some()))?;
+            state.serialize_field("c", &self.symbol)?;
+            state.serialize_field("b", &self.is_buy)?;
+            state.serialize_field("sz", &FixedF64(self.size))?;
+            state.serialize_field("r", &self.reduce_only)?;
+            state.serialize_field("i", &self.iso)?;
+            if let Some(commission) = &self.commission {
+                state.serialize_field("commission", commission)?;
+            }
+            state.end()
+        } else {
+            let mut tuple = serializer.serialize_tuple(6)?;
+            tuple.serialize_element(&self.symbol)?;
+            tuple.serialize_element(&self.is_buy)?;
+            tuple.serialize_element(&FixedF64(self.size))?;
+            tuple.serialize_element(&self.reduce_only)?;
+            tuple.serialize_element(&self.iso)?;
+            tuple.serialize_element(&self.commission)?;
+            tuple.end()
+        }
+    }
 }
 
 impl MarketOrder {
@@ -55,7 +103,7 @@ impl MarketOrder {
 // Limit Order
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct LimitOrder {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
@@ -78,8 +126,42 @@ pub struct LimitOrder {
     #[serde(rename = "i", default)]
     pub iso: bool,
 
+    #[serde(default)]
+    pub commission: Option<Commission>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+impl Serialize for LimitOrder {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            let mut state = serializer
+                .serialize_struct("LimitOrder", 7 + usize::from(self.commission.is_some()))?;
+            state.serialize_field("c", &self.symbol)?;
+            state.serialize_field("b", &self.is_buy)?;
+            state.serialize_field("px", &FixedF64(self.price))?;
+            state.serialize_field("sz", &FixedF64(self.size))?;
+            state.serialize_field("tif", &self.tif)?;
+            state.serialize_field("r", &self.reduce_only)?;
+            state.serialize_field("i", &self.iso)?;
+            if let Some(commission) = &self.commission {
+                state.serialize_field("commission", commission)?;
+            }
+            state.end()
+        } else {
+            let mut tuple = serializer.serialize_tuple(8)?;
+            tuple.serialize_element(&self.symbol)?;
+            tuple.serialize_element(&self.is_buy)?;
+            tuple.serialize_element(&FixedF64(self.price))?;
+            tuple.serialize_element(&FixedF64(self.size))?;
+            tuple.serialize_element(&self.tif)?;
+            tuple.serialize_element(&self.reduce_only)?;
+            tuple.serialize_element(&self.iso)?;
+            tuple.serialize_element(&self.commission)?;
+            tuple.end()
+        }
+    }
 }
 
 impl LimitOrder {
@@ -149,3 +231,65 @@ pub struct CancelAll {
     pub meta: ActionMeta,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limit_order_without_commission_omits_json_field() {
+        assert!(!serde_json::to_value(LimitOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            price: 100.0,
+            size: 1.0,
+            tif: TimeInForce::GTC,
+            reduce_only: false,
+            iso: false,
+            commission: None,
+            meta: ActionMeta::default(),
+        })
+        .expect("limit order should serialize")
+        .as_object()
+        .expect("limit order json should be an object")
+        .contains_key("commission"));
+    }
+
+    #[test]
+    fn limit_order_with_commission_includes_json_field() {
+        assert_eq!(
+            serde_json::to_value(LimitOrder {
+                symbol: Arc::from("BTC-USD"),
+                is_buy: true,
+                price: 100.0,
+                size: 1.0,
+                tif: TimeInForce::GTC,
+                reduce_only: false,
+                iso: false,
+                commission: Some(Commission {
+                    to: Pubkey::new_unique(),
+                    fee: 5,
+                }),
+                meta: ActionMeta::default(),
+            })
+            .expect("limit order should serialize")["commission"]["fee"],
+            5
+        );
+    }
+
+    #[test]
+    fn market_order_without_commission_omits_json_field() {
+        assert!(!serde_json::to_value(MarketOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: false,
+            size: 1.0,
+            reduce_only: false,
+            iso: false,
+            commission: None,
+            meta: ActionMeta::default(),
+        })
+        .expect("market order should serialize")
+        .as_object()
+        .expect("market order json should be an object")
+        .contains_key("commission"));
+    }
+}

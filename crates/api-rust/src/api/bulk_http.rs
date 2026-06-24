@@ -404,6 +404,7 @@ impl BulkHttpClient {
             tif,
             reduce_only,
             iso: false,
+            commission: None,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -446,6 +447,7 @@ impl BulkHttpClient {
             size,
             reduce_only,
             iso: false,
+            commission: None,
             meta: ActionMeta {
                 account,
                 nonce,
