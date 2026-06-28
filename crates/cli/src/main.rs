@@ -9,13 +9,13 @@ use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::TransactionSigner;
 use crate::common::{resolve_api_url, CliConfig};
 use crate::common::submit::SubmitOptions;
-use crate::commands::{AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs};
+use crate::commands::{AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, LiquidatorConfigArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs};
 use crate::handlers::account::{handle_agent_wallet, handle_create_subaccount, handle_faucet, handle_remove_subaccount, handle_transfer, handle_update_leverage};
 use crate::handlers::cancel::{handle_cancel, handle_cancel_all};
 use crate::handlers::conditional::{handle_range, handle_stop, handle_take_profit, handle_trailing};
 use crate::handlers::multisig::{handle_create_multisig, handle_multisig_approve, handle_multisig_cancel, handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy};
 use crate::handlers::orders::{handle_modify, handle_place};
-use crate::handlers::risk::handle_risk_config;
+use crate::handlers::risk::{handle_liquidator_config, handle_risk_config};
 // ---------------------------------------------------------------------------
 // Top-level CLI
 // ---------------------------------------------------------------------------
@@ -216,6 +216,13 @@ enum Command {
     /// Example: bulk risk-config risk.json
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
+
+    /// Update liquidator configuration (JSON or file path).
+    ///
+    /// Example: bulk liq-config '{"max_loss":15000,...}'
+    /// Example: bulk liq-config liquidator.json
+    #[command(name = "liq-config")]
+    LiqConfig(LiquidatorConfigArgs),
 }
 
 
@@ -345,7 +352,8 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigReject(args)   => handle_multisig_reject(&mut api, args, &submit).await,
         Command::MultisigCancel(args)   => handle_multisig_cancel(&mut api, args, &submit).await,
         Command::MultisigExecute(args)  => handle_multisig_execute(&mut api, args, &submit).await,
-        Command::RiskConfig(args)       => handle_risk_config(&mut api, args, &submit).await,
+        Command::RiskConfig(args)           => handle_risk_config(&mut api, args, &submit).await,
+        Command::LiqConfig(args)       => handle_liquidator_config(&mut api, args, &submit).await,
         Command::LedgerInfo(_)          => unreachable!("handled before API setup"),
         Command::Config(_)              => unreachable!("handled before API setup"),
     }
