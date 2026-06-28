@@ -258,7 +258,10 @@ impl Serialize for RawSignableAction<'_> {
                 serializer.serialize_newtype_variant("Action", 38, "UpdateValidatorSet", action)
             }
             Action::UpdateRiskConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 39, "UpdateRiskConfig", action)
+                serializer.serialize_newtype_variant("Action", 40, "UpdateRiskConfig", action)
+            }
+            Action::UpdateLiquidatorConfig(action) => {
+                serializer.serialize_newtype_variant("Action", 41, "UpdateLiquidatorConfig", action)
             }
         }
     }

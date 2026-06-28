@@ -3,6 +3,7 @@ use solana_hash::Hash;
 use solana_keypair::Pubkey;
 use crate::msgs::{AddMarket, AgentWalletCreation, Beacon, CancelAll, CancelOrder, Faucet, Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet};
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
+use crate::msgs::liquidator::LiqConfig;
 use crate::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose, MultisigReject, UpdateMultisigPolicy};
 use crate::msgs::risk::RiskConfigChange;
 use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAccount, Transfer};
@@ -133,6 +134,10 @@ pub enum Action {
     // UpdateRiskConfig = ordinal(40)
     #[serde(rename = "risk")]
     UpdateRiskConfig(RiskConfigChange),
+
+    // UpdateLiquidatorConfig = ordinal(41)
+    #[serde(rename = "liq")]
+    UpdateLiquidatorConfig(LiqConfig),
 }
 
 macro_rules! dispatch {
@@ -184,6 +189,7 @@ macro_rules! dispatch {
             Action::UpdateValidatorSet($x) => $body,
 
             Action::UpdateRiskConfig($x) => $body,
+            Action::UpdateLiquidatorConfig($x) => $body,
         }
     };
 }

@@ -241,6 +241,9 @@ fn action_line(action: &Action) -> String {
             "UpdateRiskConfig {:?}",
             action
         ),
+        Action::UpdateLiquidatorConfig(action) => format!(
+            "UpdateLiquidatorConfig({:?}", action
+        )
     }
 }
 

@@ -9,6 +9,7 @@ pub mod conditional;
 pub mod multisig;
 pub mod subaccounts;
 pub mod risk;
+pub mod liquidator;
 
 pub use md::*;
 pub use subscription::*;
