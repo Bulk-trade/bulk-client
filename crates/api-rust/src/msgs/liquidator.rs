@@ -30,11 +30,8 @@ pub struct LiqConfig {
     pub scoring_skew: f64,
     /// % of volume to take <- strategy specific
     pub percent_volume: f64,
-
-    /// default instrument config
-    pub defaults: LiqConfigByInstrument,
     /// configuration per instrument
-    pub overrides: HashMap<String, LiqConfigByInstrument>,
+    pub instrument: HashMap<String, LiqConfigByInstrument>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
