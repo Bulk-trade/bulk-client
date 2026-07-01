@@ -28,7 +28,9 @@ pub struct RiskConfigChange {
     pub max_pliq: f64,
     // margin buffer (5% = 0.05)
     pub margin_buffer: f64,
-    
+    // correlation discount [0-1], lower value reduces portfolio correlations -> higher risk
+    pub corr_discount: f64,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
