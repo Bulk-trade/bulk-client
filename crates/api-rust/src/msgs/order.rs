@@ -23,11 +23,120 @@ pub struct Commission {
     pub fee: u8,
 }
 
+pub type BuilderCode = Commission;
+
+fn deserialize_commission<'de, D>(deserializer: D) -> Result<Option<Commission>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    if !deserializer.is_human_readable() {
+        return <Option<Commission> as Deserialize>::deserialize(deserializer);
+    }
+
+    struct CommissionVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for CommissionVisitor {
+        type Value = Option<Commission>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an omitted builderCode field or a builderCode object")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Err(E::custom("builderCode must be omitted or an object"))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Err(E::custom("builderCode must be omitted or an object"))
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            <Commission as Deserialize>::deserialize(deserializer).map(Some)
+        }
+    }
+
+    deserializer.deserialize_option(CommissionVisitor)
+}
+
+struct OrderHashSafeF64(f64);
+
+impl Serialize for OrderHashSafeF64 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        crate::msgs::fixed_point::serialize(&self.0, serializer)
+    }
+}
+
+struct OrderHashMarketOrder<'a>(&'a MarketOrder);
+
+impl Serialize for OrderHashMarketOrder<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple = serializer.serialize_tuple(5)?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_buy)?;
+        tuple.serialize_element(&OrderHashSafeF64(self.0.size))?;
+        tuple.serialize_element(&self.0.reduce_only)?;
+        tuple.serialize_element(&self.0.iso)?;
+        tuple.end()
+    }
+}
+
+struct OrderHashLimitOrder<'a>(&'a LimitOrder);
+
+impl Serialize for OrderHashLimitOrder<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple = serializer.serialize_tuple(7)?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_buy)?;
+        tuple.serialize_element(&OrderHashSafeF64(self.0.price))?;
+        tuple.serialize_element(&OrderHashSafeF64(self.0.size))?;
+        tuple.serialize_element(&self.0.tif)?;
+        tuple.serialize_element(&self.0.reduce_only)?;
+        tuple.serialize_element(&self.0.iso)?;
+        tuple.end()
+    }
+}
+
+struct OrderHashMarketAction<'a>(&'a MarketOrder);
+
+impl Serialize for OrderHashMarketAction<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_newtype_variant(
+            "Action",
+            0,
+            "MarketOrder",
+            &OrderHashMarketOrder(self.0),
+        )
+    }
+}
+
+struct OrderHashLimitAction<'a>(&'a LimitOrder);
+
+impl Serialize for OrderHashLimitAction<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_newtype_variant(
+            "Action",
+            1,
+            "LimitOrder",
+            &OrderHashLimitOrder(self.0),
+        )
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Market Order
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarketOrder {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
@@ -44,7 +153,11 @@ pub struct MarketOrder {
     #[serde(rename = "i", default)]
     pub iso: bool,
 
-    #[serde(default)]
+    #[serde(
+        rename = "builderCode",
+        default,
+        deserialize_with = "deserialize_commission"
+    )]
     pub commission: Option<Commission>,
 
     #[serde(skip)]
@@ -62,7 +175,7 @@ impl Serialize for MarketOrder {
             state.serialize_field("r", &self.reduce_only)?;
             state.serialize_field("i", &self.iso)?;
             if let Some(commission) = &self.commission {
-                state.serialize_field("commission", commission)?;
+                state.serialize_field("builderCode", commission)?;
             }
             state.end()
         } else {
@@ -88,7 +201,7 @@ impl MarketOrder {
     pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
         let mut bin = Vec::<u8>::new();
         bin.extend(seqno.to_le_bytes());
-        bin.extend(bincode::serialize(&self).unwrap());
+        bin.extend(bincode::serialize(&OrderHashMarketAction(self)).unwrap());
         bin.extend_from_slice(account.as_ref());
         bin.extend_from_slice(&nonce.to_le_bytes());
 
@@ -104,6 +217,7 @@ impl MarketOrder {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LimitOrder {
     #[serde(rename = "c")]
     pub symbol: Arc<str>,
@@ -126,7 +240,11 @@ pub struct LimitOrder {
     #[serde(rename = "i", default)]
     pub iso: bool,
 
-    #[serde(default)]
+    #[serde(
+        rename = "builderCode",
+        default,
+        deserialize_with = "deserialize_commission"
+    )]
     pub commission: Option<Commission>,
 
     #[serde(skip)]
@@ -146,7 +264,7 @@ impl Serialize for LimitOrder {
             state.serialize_field("r", &self.reduce_only)?;
             state.serialize_field("i", &self.iso)?;
             if let Some(commission) = &self.commission {
-                state.serialize_field("commission", commission)?;
+                state.serialize_field("builderCode", commission)?;
             }
             state.end()
         } else {
@@ -174,7 +292,7 @@ impl LimitOrder {
     pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
         let mut bin = Vec::<u8>::new();
         bin.extend(seqno.to_le_bytes());
-        bin.extend(bincode::serialize(&self).unwrap());
+        bin.extend(bincode::serialize(&OrderHashLimitAction(self)).unwrap());
         bin.extend_from_slice(account.as_ref());
         bin.extend_from_slice(&nonce.to_le_bytes());
 
@@ -236,7 +354,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn limit_order_without_commission_omits_json_field() {
+    fn limit_order_without_builder_code_omits_json_field() {
         assert!(!serde_json::to_value(LimitOrder {
             symbol: Arc::from("BTC-USD"),
             is_buy: true,
@@ -251,11 +369,11 @@ mod tests {
         .expect("limit order should serialize")
         .as_object()
         .expect("limit order json should be an object")
-        .contains_key("commission"));
+        .contains_key("builderCode"));
     }
 
     #[test]
-    fn limit_order_with_commission_includes_json_field() {
+    fn limit_order_with_builder_code_includes_json_field() {
         assert_eq!(
             serde_json::to_value(LimitOrder {
                 symbol: Arc::from("BTC-USD"),
@@ -271,13 +389,13 @@ mod tests {
                 }),
                 meta: ActionMeta::default(),
             })
-            .expect("limit order should serialize")["commission"]["fee"],
+            .expect("limit order should serialize")["builderCode"]["fee"],
             5
         );
     }
 
     #[test]
-    fn market_order_without_commission_omits_json_field() {
+    fn market_order_without_builder_code_omits_json_field() {
         assert!(!serde_json::to_value(MarketOrder {
             symbol: Arc::from("BTC-USD"),
             is_buy: false,
@@ -290,6 +408,77 @@ mod tests {
         .expect("market order should serialize")
         .as_object()
         .expect("market order json should be an object")
-        .contains_key("commission"));
+        .contains_key("builderCode"));
+    }
+
+    #[test]
+    fn order_json_rejects_null_builder_code() {
+        assert!(serde_json::from_value::<LimitOrder>(serde_json::json!({
+            "c": "BTC-USD",
+            "b": true,
+            "px": 100.0,
+            "sz": 1.0,
+            "tif": "GTC",
+            "r": false,
+            "i": false,
+            "builderCode": null
+        }))
+        .is_err());
+
+        assert!(serde_json::from_value::<MarketOrder>(serde_json::json!({
+            "c": "BTC-USD",
+            "b": true,
+            "sz": 1.0,
+            "r": false,
+            "i": false,
+            "builderCode": null
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn order_id_ignores_commission() {
+        let account = Pubkey::new_unique();
+        let to = Pubkey::new_unique();
+
+        let without = LimitOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            price: 100.0,
+            size: 1.0,
+            tif: TimeInForce::GTC,
+            reduce_only: false,
+            iso: false,
+            commission: None,
+            meta: ActionMeta::default(),
+        };
+        let with = LimitOrder {
+            commission: Some(Commission { to, fee: 5 }),
+            ..without.clone()
+        };
+
+        assert_eq!(
+            without.order_id(account, 7, 3),
+            with.order_id(account, 7, 3)
+        );
+
+        let market_without = MarketOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: false,
+            size: 2.0,
+            reduce_only: false,
+            iso: true,
+            commission: None,
+            meta: ActionMeta::default(),
+        };
+        let market_with = MarketOrder {
+            commission: Some(Commission { to, fee: 15 }),
+            ..market_without.clone()
+        };
+
+        assert_eq!(
+            market_without.order_id(account, 7, 3),
+            market_with.order_id(account, 7, 3)
+        );
     }
 }

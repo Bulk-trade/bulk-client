@@ -21,7 +21,7 @@ from bulk_api.messages import SubscriptionRequest
 from bulk_api.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk_api.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk_api.messages.trade import OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice
+from bulk_api.messages.trade import ApproveCommissionFee, OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice, RevokeCommissionFee
 from bulk_api.data import OrderBook
 from bulk_api.common import Topic
 
@@ -324,7 +324,7 @@ class BulkWebSocketClient:
 
     async def place_orders(
         self,
-        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder]],
+        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder|ApproveCommissionFee|RevokeCommissionFee]],
         timeout: Optional[float] = None,
         nonce: Optional[int] = None,
     ) -> List[OrderResponse]:
@@ -353,11 +353,11 @@ class BulkWebSocketClient:
             orders.append(action.to_api())
 
         # Compose TX
-        tx = tx = {
-            "actions": [x.to_api() for x in actions],
+        tx = {
+            "actions": orders,
             "nonce": f"{nonce}",
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key,
+            "account": account,
+            "signer": account,
         }
         tx = self.signer.sign_transaction(tx)
 
@@ -483,6 +483,54 @@ class BulkWebSocketClient:
 
         # Build transaction using MarketOrder.to_tx
         results = await self.place_orders([market_order], timeout=timeout, nonce=nonce)
+        return results[0]
+
+    async def approve_commission_fee(
+        self,
+        to: str,
+        fee: int,
+        timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
+    ) -> OrderResponse:
+        """Approve a builder-code recipient; builder codes are commission fees on the wire."""
+        return await self.approve_builder_code(to=to, fee=fee, timeout=timeout, nonce=nonce)
+
+    async def approve_builder_code(
+        self,
+        to: str,
+        fee: int,
+        timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
+    ) -> OrderResponse:
+        """Approve a builder-code recipient."""
+        results = await self.place_orders(
+            [ApproveCommissionFee(to=to, fee=fee)],
+            timeout=timeout,
+            nonce=nonce,
+        )
+        return results[0]
+
+    async def revoke_commission_fee(
+        self,
+        to: str,
+        timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
+    ) -> OrderResponse:
+        """Revoke a builder-code recipient approval."""
+        return await self.revoke_builder_code(to=to, timeout=timeout, nonce=nonce)
+
+    async def revoke_builder_code(
+        self,
+        to: str,
+        timeout: Optional[float] = None,
+        nonce: Optional[int] = None,
+    ) -> OrderResponse:
+        """Revoke a builder-code recipient approval."""
+        results = await self.place_orders(
+            [RevokeCommissionFee(to=to)],
+            timeout=timeout,
+            nonce=nonce,
+        )
         return results[0]
 
     async def cancel_order(

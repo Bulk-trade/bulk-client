@@ -37,6 +37,7 @@ pip install bulk-client
 - **HTTP** - Full REST API coverage (market data, account queries, signed trading)
 - **Batch transactions** - Bundle multiple actions (orders, cancels, conditionals) into a single signed transaction
 - **Conditional orders** - Stop, take-profit, OCO/range, trailing stop, trigger baskets, on-fill consequents
+- **Builder codes** - Optional builder-code fees encoded as commission payloads on routed limit/market orders
 - **Sub-accounts & multisig** - First-class support for sub-account management and multisig smart accounts
 - **Ed25519 signing** - Native signing with wincode binary serialization
 
@@ -73,6 +74,11 @@ canonical binary representation.
 Multiple actions go into a **single signed transaction** with one signature and one
 network round-trip. An OCO entry with a limit order + stop-loss + take-profit is
 **1 transaction, not 3**.
+
+### Builder Codes
+
+Builder codes are optional commission fees for routed order flow. API JSON uses
+`builderCode` on orders and `abc`/`rbc` approval actions.
 
 ### Pure Python for I/O-bound Workloads
 

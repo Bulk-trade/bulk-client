@@ -59,37 +59,40 @@
 // Topic enum (mirrors topics.py)
 // ─────────────────────────────────────────────────────────────────────────────
 
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use eyre::bail;
-use serde_json::{json, Value};
-use crate::msgs::account::{Fill, LeverageSetting, Margin, OrderState, PositionInfo};
+use crate::msgs::account::{
+    CommissionApproval, Fill, LeverageSetting, Margin, OrderState, PositionInfo,
+};
 use crate::msgs::responses::Response;
 use crate::msgs::subscription::SubscriptionRequest;
+use eyre::bail;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
+use crate::api::parts::command::Command;
+use crate::api::parts::config::WSConfig;
+use crate::api::parts::{make_nonce, Event, Topic};
+use crate::common::side::Side;
+use crate::common::tif::TimeInForce;
+use crate::msgs::md::{Candle, L2Snapshot, Ticker};
+use crate::msgs::{
+    ApproveCommissionFee, CancelAll, CancelOrder, LimitOrder, MarketOrder, Price,
+    RevokeCommissionFee,
+};
+use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
 use futures_util::stream::SplitSink;
+use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use solana_hash::Hash;
 use solana_pubkey::Pubkey;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time;
-use tokio_tungstenite::{
-    connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
-use crate::api::parts::command::Command;
-use crate::api::parts::config::WSConfig;
-use crate::api::parts::{make_nonce, Event, Topic};
-use crate::common::side::Side;
-use crate::common::tif::TimeInForce;
-use crate::msgs::{CancelAll, CancelOrder, LimitOrder, MarketOrder, Price};
-use crate::msgs::md::{Candle, L2Snapshot, Ticker};
-use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot: the full state picture pushed over a single watch channel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +106,7 @@ pub struct AccountState {
     pub positions: HashMap<String, PositionInfo>,
     pub open_orders: HashMap<String, OrderState>,
     pub leverage_settings: HashMap<String, LeverageSetting>,
+    pub commission_approvals: Vec<CommissionApproval>,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -232,10 +236,7 @@ impl BulkWsClient {
         }
         if config.track_ticker {
             for sym in &config.symbols {
-                initial_subs.push(SubscriptionRequest::new(
-                    "ticker",
-                    json!({ "symbol": sym }),
-                ));
+                initial_subs.push(SubscriptionRequest::new("ticker", json!({ "symbol": sym })));
             }
         }
 
@@ -279,7 +280,6 @@ impl BulkWsClient {
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
     }
-
 
     // ─────────────────────────────────────────────────────────────────────
     // Hot-path reads (zero-cost — no async, no lock)
@@ -587,10 +587,13 @@ impl BulkWsClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
         let resps = self.place_orders(vec![order.into()], None, None).await?;
-        resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
     }
 
     /// Place market order
@@ -636,11 +639,14 @@ impl BulkWsClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let resps = self.place_orders(vec![order.into()], None, None).await?;
-        resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
     }
 
     /// Cancel order
@@ -678,11 +684,14 @@ impl BulkWsClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let resps = self.place_orders(vec![cancel.into()], None, None).await?;
-        resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
     }
 
     /// Cancel all order
@@ -693,7 +702,7 @@ impl BulkWsClient {
     /// # Returns
     /// - response for order cancel
     pub async fn cancel_all(
-        &self, 
+        &self,
         symbols: Vec<String>,
         account: Option<Pubkey>,
         nonce: Option<u64>,
@@ -717,12 +726,109 @@ impl BulkWsClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
         let resps = self.place_orders(vec![cancel.into()], None, None).await?;
-        resps.into_iter().next().ok_or_else(|| eyre::eyre!("empty response"))
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
     }
 
+    /// Approve a builder-code recipient for routed orders.
+    ///
+    /// Builder codes are encoded as commission fees on the wire.
+    pub async fn approve_builder_code(
+        &self,
+        to: Pubkey,
+        fee: u8,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+        let action = ApproveCommissionFee {
+            to,
+            max_fee: fee,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            },
+        };
+
+        let resps = self.place_orders(vec![action.into()], None, None).await?;
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
+    }
+
+    pub async fn approve_commission_fee(
+        &self,
+        to: Pubkey,
+        fee: u8,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        self.approve_builder_code(to, fee, account, nonce).await
+    }
+
+    /// Revoke a builder-code recipient approval.
+    pub async fn revoke_builder_code(
+        &self,
+        to: Pubkey,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+        let action = RevokeCommissionFee {
+            to,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            },
+        };
+
+        let resps = self.place_orders(vec![action.into()], None, None).await?;
+        resps
+            .into_iter()
+            .next()
+            .ok_or_else(|| eyre::eyre!("empty response"))
+    }
+
+    pub async fn revoke_commission_fee(
+        &self,
+        to: Pubkey,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        self.revoke_builder_code(to, account, nonce).await
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Subscriptions
@@ -753,9 +859,11 @@ impl BulkWsClient {
     /// # Arguments
     /// - `symbol`: symbol to subscrive to
     pub async fn subscribe_ticker(&self, symbol: &str) -> eyre::Result<()> {
-        self.subscribe(vec![
-            SubscriptionRequest::new("ticker", json!({ "symbol": symbol })),
-        ]).await
+        self.subscribe(vec![SubscriptionRequest::new(
+            "ticker",
+            json!({ "symbol": symbol }),
+        )])
+        .await
     }
 
     /// Subscribe to fills for `symbol`.
@@ -783,7 +891,8 @@ impl BulkWsClient {
         if let Some(n) = nlevels {
             params["nlevels"] = json!(n);
         }
-        self.subscribe(vec![SubscriptionRequest::new("l2Snapshot", params)]).await
+        self.subscribe(vec![SubscriptionRequest::new("l2Snapshot", params)])
+            .await
     }
 
     /// Subscribe to L2 deltas for `symbol`.
@@ -791,9 +900,11 @@ impl BulkWsClient {
     /// # Arguments
     /// - `symbol`: symbol to subscribe to
     pub async fn subscribe_l2_delta(&self, symbol: &str) -> eyre::Result<()> {
-        self.subscribe(vec![
-            SubscriptionRequest::new("l2Delta", json!({ "symbol": symbol })),
-        ]).await
+        self.subscribe(vec![SubscriptionRequest::new(
+            "l2Delta",
+            json!({ "symbol": symbol }),
+        )])
+        .await
     }
 
     /// Subscribe to candles for `symbol`.
@@ -806,7 +917,7 @@ impl BulkWsClient {
             "candle",
             json!({ "symbol": symbol, "interval": interval }),
         )])
-            .await
+        .await
     }
 
     /// Subscribe list of subscription requests
@@ -832,7 +943,12 @@ impl BulkWsClient {
     /// - `topic`: topic to subscribe to
     /// - `handler`: callback for topic
     pub async fn on(&self, topic: Topic, handler: impl Fn(&Event) + Send + Sync + 'static) {
-        self.handlers.lock().unwrap().entry(topic).or_default().push(Box::new(handler));
+        self.handlers
+            .lock()
+            .unwrap()
+            .entry(topic)
+            .or_default()
+            .push(Box::new(handler));
     }
 }
 
@@ -847,7 +963,7 @@ struct Actor {
     // WebSocket write half
     ws_write: WsWriter,
     // Event sender
-    event_tx: mpsc::Sender<(Topic,Event)>,
+    event_tx: mpsc::Sender<(Topic, Event)>,
 
     // Inbound commands from the client handle
     cmd_rx: mpsc::Receiver<Command>,
@@ -874,11 +990,7 @@ struct Actor {
 
 impl Actor {
     /// Run loop
-    async fn run(
-        mut self,
-        mut ws_read: WsReader,
-        initial_subs: Vec<SubscriptionRequest>,
-    ) {
+    async fn run(mut self, mut ws_read: WsReader, initial_subs: Vec<SubscriptionRequest>) {
         // Send initial subscriptions
         if !initial_subs.is_empty() {
             if let Err(e) = self.send_subscribe(&initial_subs).await {
@@ -1058,7 +1170,9 @@ impl Actor {
             }
 
             "l2Snapshot" => {
-                if let Ok(l2_snapshot) = serde_json::from_value::<L2Snapshot>(data["data"]["book"].clone()) {
+                if let Ok(l2_snapshot) =
+                    serde_json::from_value::<L2Snapshot>(data["data"]["book"].clone())
+                {
                     self.emit(Topic::L2Snapshot, &Event::L2Snapshot(l2_snapshot));
                 } else {
                     error!("Could not parse l2_snapshot event: msg: {:?}", data["data"]);
@@ -1066,7 +1180,9 @@ impl Actor {
             }
 
             "l2Delta" => {
-                if let Ok(l2_delta) = serde_json::from_value::<L2Snapshot>(data["data"]["book"].clone()) {
+                if let Ok(l2_delta) =
+                    serde_json::from_value::<L2Snapshot>(data["data"]["book"].clone())
+                {
                     self.emit(Topic::L2Delta, &Event::L2Delta(l2_delta));
                 } else {
                     error!("Could not parse l2_delta event: {:?}", data["data"]);
@@ -1109,7 +1225,9 @@ impl Actor {
                     self.emit(Topic::Margin, &Event::Margin(margin))
                 }
 
-                if let Ok(positions) = serde_json::from_value::<Vec<PositionInfo>>(data["positions"].clone()) {
+                if let Ok(positions) =
+                    serde_json::from_value::<Vec<PositionInfo>>(data["positions"].clone())
+                {
                     for position in &positions {
                         self.emit(Topic::Position, &Event::Position(position.clone()))
                     }
@@ -1119,7 +1237,9 @@ impl Actor {
                         .collect();
                 }
 
-                if let Ok(orders) = serde_json::from_value::<Vec<OrderState>>(data["openOrders"].clone()) {
+                if let Ok(orders) =
+                    serde_json::from_value::<Vec<OrderState>>(data["openOrders"].clone())
+                {
                     for order in &orders {
                         self.emit(Topic::Order, &Event::Order(order.clone()))
                     }
@@ -1129,11 +1249,21 @@ impl Actor {
                         .collect();
                 }
 
-                if let Ok(leverages) = serde_json::from_value::<Vec<LeverageSetting>>(data["leverageSettings"].clone()) {
+                if let Ok(leverages) =
+                    serde_json::from_value::<Vec<LeverageSetting>>(data["leverageSettings"].clone())
+                {
                     self.emit(Topic::Leverage, &Event::Leverage(leverages.clone()));
                     for l in leverages {
-                        self.account_state.leverage_settings.insert(l.symbol.clone(), l);
+                        self.account_state
+                            .leverage_settings
+                            .insert(l.symbol.clone(), l);
                     }
+                }
+
+                if let Ok(approvals) = serde_json::from_value::<Vec<CommissionApproval>>(
+                    data["builderCodeApprovals"].clone(),
+                ) {
+                    self.account_state.commission_approvals = approvals;
                 }
 
                 info!(
@@ -1170,7 +1300,9 @@ impl Actor {
 
             "positionUpdate" => {
                 if let Ok(pos) = serde_json::from_value::<PositionInfo>(data.clone()) {
-                    self.account_state.positions.insert(pos.symbol.clone(), pos.clone());
+                    self.account_state
+                        .positions
+                        .insert(pos.symbol.clone(), pos.clone());
                     self.emit(Topic::Position, &Event::Position(pos));
                     self.publish_account();
                 } else {
@@ -1200,9 +1332,13 @@ impl Actor {
             }
 
             "leverageUpdate" => {
-                if let Ok(leverages) = serde_json::from_value::<Vec<LeverageSetting>>(data["leverage"].clone()) {
+                if let Ok(leverages) =
+                    serde_json::from_value::<Vec<LeverageSetting>>(data["leverage"].clone())
+                {
                     for lev in &leverages {
-                        self.account_state.leverage_settings.insert(lev.symbol.clone(), lev.clone());
+                        self.account_state
+                            .leverage_settings
+                            .insert(lev.symbol.clone(), lev.clone());
                     }
                     self.emit(Topic::Leverage, &Event::Leverage(leverages.clone()));
                     self.publish_account();
@@ -1228,7 +1364,7 @@ impl Actor {
         let sender = self.pending.remove(&request_id);
 
         match rtype {
-            "action"=> {
+            "action" => {
                 let payload = &inner["payload"];
                 let status = payload["status"].as_str().unwrap_or("");
 

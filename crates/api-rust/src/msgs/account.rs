@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use solana_pubkey::Pubkey;
 use crate::common::order_status::OrderStatus;
 use crate::common::order_type::OrderType;
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::transaction::ActionMeta;
+use serde::{Deserialize, Serialize};
+use solana_pubkey::Pubkey;
+use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Faucet Request
@@ -20,7 +20,6 @@ pub struct Faucet {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Faucet issuer whitelist
@@ -51,6 +50,30 @@ pub struct AgentWalletCreation {
     pub meta: ActionMeta,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApproveCommissionFee {
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "to")]
+    pub to: Pubkey,
+    #[serde(rename = "fee")]
+    pub max_fee: u8,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+pub type ApproveBuilderCode = ApproveCommissionFee;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RevokeCommissionFee {
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "to")]
+    pub to: Pubkey,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+pub type RevokeBuilderCode = RevokeCommissionFee;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User Leverage Settings
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,7 +86,6 @@ pub struct UpdateUserSettings {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Margin
@@ -231,6 +253,15 @@ pub struct LeverageSetting {
     pub leverage: f64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(unused)]
+pub struct CommissionApproval {
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    pub recipient: Pubkey,
+    pub max_fee: u8,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Full Account (HTTP response)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -245,8 +276,9 @@ pub struct AccountData {
     pub open_orders: Vec<OrderState>,
     pub margin: Margin,
     pub leverage_settings: Vec<LeverageSetting>,
+    #[serde(default, rename = "builderCodeApprovals")]
+    pub commission_approvals: Option<Vec<CommissionApproval>>,
 }
-
 
 //
 // Unit tests
@@ -278,7 +310,10 @@ mod tests {
         let order: OrderState = serde_json::from_str(json).unwrap();
 
         assert_eq!(order.symbol, "BTC-USD");
-        assert_eq!(order.order_id, "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ");
+        assert_eq!(
+            order.order_id,
+            "EF2bxQ5pp3CDFAwRi44ExXb32sRmByByYxjwLYBfvRKQ"
+        );
         assert_eq!(order.status, OrderStatus::RejectedRiskLimit);
         assert!(order.signed_size < 0.0);
         assert!((order.price - 100001.37).abs() < 1e-6);
@@ -296,5 +331,4 @@ mod tests {
         assert!(order.status.is_terminal());
         assert!(order.status.is_rejected());
     }
-
 }
