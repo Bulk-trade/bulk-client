@@ -61,6 +61,58 @@ def _write_pubkey(key: str) -> bytes:
         raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
     return key_bytes
 
+def _write_commission(commission: Optional["Commission"]) -> bytes:
+    if commission is None:
+        return b''
+    if commission.fee < 1 or commission.fee > 15:
+        raise ValueError("commission fee must be 1..=15 bps")
+    return bytes([1]) + _write_pubkey(commission.to) + _write_u8(commission.fee)
+
+@dataclass
+class Commission:
+    to: str
+    fee: int
+
+    def to_api(self) -> Dict:
+        if self.fee < 1 or self.fee > 15:
+            raise ValueError("commission fee must be 1..=15 bps")
+        return {"to": self.to, "fee": self.fee}
+
+BuilderCode = Commission
+
+@dataclass
+class ApproveCommissionFee:
+    to: str
+    fee: int
+    seqno: Optional[int] = None
+    nonce: Optional[Union[str,int]] = None
+    pubkey: Optional[str] = None
+
+    def order_id(self) -> Optional[str]:
+        return None
+
+    def to_api(self) -> Dict:
+        if self.fee < 1 or self.fee > 15:
+            raise ValueError("commission fee must be 1..=15 bps")
+        return {"abc": {"to": self.to, "fee": self.fee}}
+
+ApproveBuilderCode = ApproveCommissionFee
+
+@dataclass
+class RevokeCommissionFee:
+    to: str
+    seqno: Optional[int] = None
+    nonce: Optional[Union[str,int]] = None
+    pubkey: Optional[str] = None
+
+    def order_id(self) -> Optional[str]:
+        return None
+
+    def to_api(self) -> Dict:
+        return {"rbc": {"to": self.to}}
+
+RevokeBuilderCode = RevokeCommissionFee
+
 
 # =======================================================
 # Oracle Prices
@@ -109,6 +161,8 @@ class LimitOrder:
     reduce_only: bool = False
     time_in_force: TimeInForce = TimeInForce.GTC
     iso: bool = False
+    commission: Optional[Commission] = None
+    builder_code: Optional[BuilderCode] = None
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -159,6 +213,12 @@ class LimitOrder:
                 'i': self.iso,                             # ← NEW
             }
         }
+        if self.builder_code is not None and self.commission is not None:
+            raise ValueError("use builder_code or commission, not both")
+        if self.builder_code is not None:
+            order["l"]["builderCode"] = self.builder_code.to_api()
+        elif self.commission is not None:
+            order["l"]["builderCode"] = self.commission.to_api()
         return order
 
     def to_state(self, status: OrderStatus) -> OrderState:
@@ -207,6 +267,8 @@ class MarketOrder:
     size: float
     reduce_only: bool = False
     iso: bool = False
+    commission: Optional[Commission] = None
+    builder_code: Optional[BuilderCode] = None
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -231,6 +293,7 @@ class MarketOrder:
             _write_u8(SIDE_MAP[self.side]),
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
+            _write_bool(self.iso),
             _write_pubkey(self.pubkey),
             _write_u64(int(self.nonce)),
         ])
@@ -248,8 +311,15 @@ class MarketOrder:
                 'b': self.side.value == Side.BUY.value,
                 'sz': f"{self.size}",
                 'r': self.reduce_only,
+                'i': self.iso,
             }
         }
+        if self.builder_code is not None and self.commission is not None:
+            raise ValueError("use builder_code or commission, not both")
+        if self.builder_code is not None:
+            order["m"]["builderCode"] = self.builder_code.to_api()
+        elif self.commission is not None:
+            order["m"]["builderCode"] = self.commission.to_api()
         return order
 
     def to_state(self, status: OrderStatus, price: float = 0.0) -> OrderState:

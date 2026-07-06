@@ -135,16 +135,25 @@ class TransactionSigner:
     def serialize_action(action: dict) -> bytes:
         match action:
             case {"m": order}:
+                if "commission" in order:
+                    raise ValueError("commission was renamed to builderCode")
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(0),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_bool(order['b']),
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_bool(order['r']),
-                    TransactionSigner.write_bool(order.get('i', False))
+                    TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_commission(order.get('builderCode')),
                 ])
 
             case {"l": order}:
+                if "commission" in order:
+                    raise ValueError("commission was renamed to builderCode")
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(1),
                     TransactionSigner.write_string(order['c']),
@@ -153,7 +162,8 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
                     TransactionSigner.write_bool(order['r']),
-                    TransactionSigner.write_bool(order.get('i', False))
+                    TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_commission(order.get('builderCode')),
                 ])
 
             case {"st": order}:
@@ -271,6 +281,20 @@ class TransactionSigner:
                     TransactionSigner.write_pubkey_serde_bytes(order['target']),
                     TransactionSigner.write_bool(order['whitelist']),
                 ])
+            case {"abc": order}:
+                fee = int(order['fee'])
+                if fee < 1 or fee > 15:
+                    raise ValueError("commission fee must be 1..=15 bps")
+                return b''.join([
+                    TransactionSigner.write_u32(40),
+                    TransactionSigner.decode_and_validate_32_bytes(order['to']),
+                    TransactionSigner.write_u8(fee),
+                ])
+            case {"rbc": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(41),
+                    TransactionSigner.decode_and_validate_32_bytes(order['to']),
+                ])
             case _:
                 raise Exception("Unknown tx type")
         
@@ -338,6 +362,24 @@ class TransactionSigner:
     def write_u32(value: int) -> bytes:
         """Write a u32 in little-endian format"""
         return struct.pack("<I", value)
+
+    @staticmethod
+    def write_u8(value: int) -> bytes:
+        """Write a u8"""
+        return struct.pack("B", value)
+
+    @staticmethod
+    def write_commission(value: Optional[Dict]) -> bytes:
+        if value is None:
+            return b''
+        fee = int(value['fee'])
+        if fee < 1 or fee > 15:
+            raise ValueError("commission fee must be 1..=15 bps")
+        return b''.join([
+            bytes([0x01]),
+            TransactionSigner.decode_and_validate_32_bytes(value['to']),
+            TransactionSigner.write_u8(fee),
+        ])
     
     @staticmethod
     def decode_and_validate_32_bytes(key: str) -> bytes:

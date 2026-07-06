@@ -36,20 +36,20 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
-use reqwest::{Client, Url};
-use serde::Deserialize;
-use serde_json::{json, Value};
-use solana_pubkey::Pubkey;
-use solana_hash::Hash;
 use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::*;
 use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
+use reqwest::{Client, Url};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use solana_hash::Hash;
+use solana_pubkey::Pubkey;
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
 
 /// HTTP REST API client for Bulk Labs exchange.
 ///
@@ -70,10 +70,8 @@ impl BulkHttpClient {
     ///
     /// # Arguments
     /// - `config`: http client config
-    pub fn new (config: &HttpConfig) -> eyre::Result<Self> {
-        let client = Client::builder()
-            .timeout(config.default_timeout)
-            .build()?;
+    pub fn new(config: &HttpConfig) -> eyre::Result<Self> {
+        let client = Client::builder().timeout(config.default_timeout).build()?;
 
         let is_localhost = Self::is_localhost(&config.base_url);
 
@@ -89,20 +87,20 @@ impl BulkHttpClient {
     /// # Arguments
     /// - `base_url`: http client url
     /// - `private_key`: optional private key
-    pub fn with_url (base_url: &str, private_key: Option<&str>) -> eyre::Result<Self> {
+    pub fn with_url(base_url: &str, private_key: Option<&str>) -> eyre::Result<Self> {
         if let Some(private_key) = private_key {
             let signer = TransactionSigner::from_private_key(private_key)?;
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: Some(signer),
-                default_timeout: Duration::from_secs(10)
+                default_timeout: Duration::from_secs(10),
             };
             Self::new(&config)
         } else {
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: None,
-                default_timeout: Duration::from_secs(10)
+                default_timeout: Duration::from_secs(10),
             };
             Self::new(&config)
         }
@@ -129,11 +127,10 @@ impl BulkHttpClient {
     pub fn config(&self) -> &HttpConfig {
         &self.config
     }
-    
+
     /// Pubkeyt associated with this channel
     pub fn public_key(&self) -> Option<Pubkey> {
-        self.config.signer.as_ref()
-            .map(|x| x.public_key())
+        self.config.signer.as_ref().map(|x| x.public_key())
     }
 
     // =====================================================================
@@ -410,7 +407,7 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![order.into()], None, None).await?;
@@ -453,7 +450,7 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![order.into()], None, None).await?;
@@ -489,7 +486,7 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![cancel.into()], None, None).await?;
@@ -523,7 +520,7 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![cancel.into()], None, None).await?;
@@ -564,7 +561,7 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![settings.into()], None, None).await?;
@@ -604,11 +601,104 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
-        let results = self.place_tx(vec![Action::AgentWalletCreation(settings)], None, None).await?;
+        let results = self
+            .place_tx(vec![Action::AgentWalletCreation(settings)], None, None)
+            .await?;
         Ok(results[0].clone())
+    }
+
+    /// Approve a builder-code recipient for routed orders.
+    ///
+    /// Builder codes are encoded as commission fees on the wire.
+    pub async fn approve_builder_code(
+        &self,
+        to: Pubkey,
+        fee: u8,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+        let action = ApproveCommissionFee {
+            to,
+            max_fee: fee,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            },
+        };
+
+        let results = self.place_tx(vec![action.into()], None, None).await?;
+        Ok(results[0].clone())
+    }
+
+    pub async fn approve_commission_fee(
+        &self,
+        to: Pubkey,
+        fee: u8,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        self.approve_builder_code(to, fee, account, nonce).await
+    }
+
+    /// Revoke a builder-code recipient approval.
+    pub async fn revoke_builder_code(
+        &self,
+        to: Pubkey,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        let signer = self
+            .config
+            .signer
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("Private key required for trading operations"))?;
+
+        let account = if let Some(account) = account {
+            account
+        } else {
+            signer.public_key()
+        };
+
+        let nonce = nonce.unwrap_or_else(make_nonce);
+        let action = RevokeCommissionFee {
+            to,
+            meta: ActionMeta {
+                account,
+                nonce,
+                seqno: 0,
+                hash: None,
+            },
+        };
+
+        let results = self.place_tx(vec![action.into()], None, None).await?;
+        Ok(results[0].clone())
+    }
+
+    pub async fn revoke_commission_fee(
+        &self,
+        to: Pubkey,
+        account: Option<Pubkey>,
+        nonce: Option<u64>,
+    ) -> eyre::Result<Response> {
+        self.revoke_builder_code(to, account, nonce).await
     }
 
     // =====================================================================
@@ -651,9 +741,11 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
-        let results = self.place_tx(vec![Action::WhitelistFaucet(settings)], None, None).await?;
+        let results = self
+            .place_tx(vec![Action::WhitelistFaucet(settings)], None, None)
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -692,13 +784,12 @@ impl BulkHttpClient {
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         };
 
         let results = self.place_tx(vec![Action::Faucet(req)], None, None).await?;
         Ok(results[0].clone())
     }
-
 
     // =====================================================================
     // Internal helpers
@@ -706,7 +797,9 @@ impl BulkHttpClient {
 
     /// determine if is localhost URL
     fn is_localhost(url_str: &str) -> bool {
-        let Ok(url) = Url::parse(url_str) else { return false };
+        let Ok(url) = Url::parse(url_str) else {
+            return false;
+        };
         match url.host_str() {
             Some("localhost" | "127.0.0.1" | "::1") => true,
             _ => false,

@@ -15,7 +15,7 @@ import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
 from bulk_api.common import TransactionSigner, Side, TimeInForce
-from bulk_api.messages import LimitOrder, CancelOrder, MarketOrder, CancelAll
+from bulk_api.messages import ApproveCommissionFee, LimitOrder, CancelOrder, MarketOrder, CancelAll, RevokeCommissionFee
 
 
 class BulkHttpClient:
@@ -398,7 +398,7 @@ class BulkHttpClient:
 
     def place_orders(
         self,
-        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll]],
+        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll|ApproveCommissionFee|RevokeCommissionFee]],
         nonce: Optional[int] = None,
     ) -> Dict:
         """
@@ -418,7 +418,7 @@ class BulkHttpClient:
             raise ValueError("Private key required for trading operations")
         
         order_objects = []
-        account = self.signer.public_key()
+        account = self.signer.public_key
         for ith, tx in enumerate(txns):
             tx.seqno = ith
             tx.nonce = nonce
@@ -432,15 +432,19 @@ class BulkHttpClient:
                     order_objects.append(tx.to_api())
                 case CancelAll():
                     order_objects.append(tx.to_api())
+                case ApproveCommissionFee():
+                    order_objects.append(tx.to_api())
+                case RevokeCommissionFee():
+                    order_objects.append(tx.to_api())
                 case _:
                     raise ValueError("Invalid txn type: {}".format(tx))
 
         # package into a transaction
         transaction = {
             "actions": order_objects,
-            "nonce": f"{order_objects[0].nonce}",
-            "account": self.signer.public_key,
-            "signer": self.signer.public_key
+            "nonce": f"{nonce}",
+            "account": account,
+            "signer": account
         }
         
         transaction = self.signer.sign_transaction(transaction)
@@ -454,6 +458,40 @@ class BulkHttpClient:
         )
         response.raise_for_status()
         return response.json()
+
+    def approve_commission_fee(
+        self,
+        to: str,
+        fee: int,
+        nonce: Optional[int] = None,
+    ) -> Dict:
+        """Approve a builder-code recipient; builder codes are commission fees on the wire."""
+        return self.approve_builder_code(to=to, fee=fee, nonce=nonce)
+
+    def approve_builder_code(
+        self,
+        to: str,
+        fee: int,
+        nonce: Optional[int] = None,
+    ) -> Dict:
+        """Approve a builder-code recipient."""
+        return self.place_orders([ApproveCommissionFee(to=to, fee=fee)], nonce=nonce)
+
+    def revoke_commission_fee(
+        self,
+        to: str,
+        nonce: Optional[int] = None,
+    ) -> Dict:
+        """Revoke a builder-code recipient approval."""
+        return self.revoke_builder_code(to=to, nonce=nonce)
+
+    def revoke_builder_code(
+        self,
+        to: str,
+        nonce: Optional[int] = None,
+    ) -> Dict:
+        """Revoke a builder-code recipient approval."""
+        return self.place_orders([RevokeCommissionFee(to=to)], nonce=nonce)
 
     def update_leverage(self, leverage_settings: List[tuple]) -> Dict:
         """

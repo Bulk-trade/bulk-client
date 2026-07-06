@@ -138,6 +138,19 @@ class LeverageSetting:
             leverage=data.get('leverage', 1.0)
         )
 
+@dataclass
+class CommissionApproval:
+    """Approved builder-code recipient for account-routed order flow"""
+    recipient: str
+    max_fee: int
+
+    @classmethod
+    def from_api(cls, data: Dict) -> 'CommissionApproval':
+        return cls(
+            recipient=data.get('recipient', ''),
+            max_fee=data.get('maxFee', data.get('max_fee', 0))
+        )
+
 
 @dataclass
 class AccountSnapshot:
@@ -146,6 +159,7 @@ class AccountSnapshot:
     positions: List[Position]
     open_orders: List[OrderState]
     leverage_settings: List[LeverageSetting]
+    commission_approvals: List[CommissionApproval] = field(default_factory=list)
     timestamp: int = field(default_factory=lambda: int(time.time() * 1000))
 
     @classmethod
@@ -154,7 +168,11 @@ class AccountSnapshot:
             margin=Margin.from_api(data.get('margin', {})),
             positions=[Position.from_api(pos) for pos in data.get('positions', [])],
             open_orders=[OrderState.from_api(order) for order in data.get('openOrders', [])],
-            leverage_settings=[LeverageSetting.from_api(lev) for lev in data.get('leverageSettings', [])]
+            leverage_settings=[LeverageSetting.from_api(lev) for lev in data.get('leverageSettings', [])],
+            commission_approvals=[
+                CommissionApproval.from_api(approval)
+                for approval in data.get('builderCodeApprovals', [])
+            ],
         )
 
     def get_position(self, symbol: str) -> Optional[Position]:
