@@ -152,8 +152,8 @@ class LimitOrder:
             "l": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
-                'px': f"{self.price}",
-                'sz': f"{self.size}",
+                'px': float(self.price),
+                'sz': float(self.size),
                 'tif': self.time_in_force.value,
                 'r': self.reduce_only,
                 'i': self.iso,                             # ← NEW
@@ -246,7 +246,7 @@ class MarketOrder:
             "m": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
-                'sz': f"{self.size}",
+                'sz': float(self.size),
                 'r': self.reduce_only,
             }
         }
@@ -352,7 +352,7 @@ class Stop:
             "st": {
                 'c': self.symbol,
                 'd': self.is_above,
-                'sz': f"{self.size}",
+                'sz': float(self.size),
                 'tr': self.threshold,
                 'lim': self.limit,
             }
@@ -383,7 +383,7 @@ class TakeProfit:
             "tp": {
                 'c': self.symbol,
                 'd': self.is_above,
-                'sz': f"{self.size}",
+                'sz': float(self.size),
                 'tr': self.threshold,
                 'lim': self.limit,
             }
@@ -416,7 +416,7 @@ class TrailingStop:
             "trl": {
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
-                'sz': f"{self.size}",
+                'sz': float(self.size),
                 'tdb': self.trail_bps,
                 'stb': self.step_bps,
                 'lim': self.limit,
@@ -481,7 +481,7 @@ class OrderResponse:
 
     @classmethod
     def from_api(cls, data: Dict) -> List['OrderResponse']:
-        rlist = data.get("data",{}).get("payload",{}).get("response",{}).get("data",{}).get("statuses", [])
+        rlist = data.get("response",{}).get("data",{}).get("statuses", [])
         responses = []
         for response in rlist:
             match response:
