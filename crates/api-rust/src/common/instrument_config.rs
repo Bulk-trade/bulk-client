@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A map between instrument and value
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

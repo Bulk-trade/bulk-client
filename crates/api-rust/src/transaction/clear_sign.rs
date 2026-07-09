@@ -66,12 +66,12 @@ fn fmt_opt(value: Option<f64>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-fn commission(commission: Option<crate::msgs::order::Commission>) -> String {
-    commission
-        .map(|commission| {
+fn builder_code(builder_code: Option<crate::msgs::order::BuilderCode>) -> String {
+    builder_code
+        .map(|builder_code| {
             format!(
-                " commission_to={} commission_fee={}bps",
-                commission.to, commission.fee
+                " builder_code_to={} builder_code_fee={}bps",
+                builder_code.to, builder_code.fee
             )
         })
         .unwrap_or_default()
@@ -86,7 +86,7 @@ fn action_line(action: &Action) -> String {
             order.size,
             order.reduce_only,
             order.iso,
-            commission(order.commission),
+            builder_code(order.builder_code),
         ),
         Action::LimitOrder(order) => format!(
             "Limit {} {} px={:.8} sz={:.8} tif={:?} ro={} iso={}{}",
@@ -97,7 +97,7 @@ fn action_line(action: &Action) -> String {
             order.tif,
             order.reduce_only,
             order.iso,
-            commission(order.commission),
+            builder_code(order.builder_code),
         ),
         Action::ModifyOrder(order) => {
             format!(
@@ -237,13 +237,17 @@ fn action_line(action: &Action) -> String {
             action.removed.len(),
             action.admin_sigs.len()
         ),
-        Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig {:?}",
-            action
-        ),
-        Action::UpdateLiquidatorConfig(action) => format!(
-            "UpdateLiquidatorConfig({:?}", action
-        )
+        Action::UpdateRiskConfig(action) => format!("UpdateRiskConfig {:?}", action),
+        Action::ApproveCommissionFee(action) => {
+            format!(
+                "ApproveBuilderCode to={} fee={}bps",
+                action.to, action.max_fee
+            )
+        }
+        Action::RevokeCommissionFee(action) => {
+            format!("RevokeBuilderCode to={}", action.to)
+        }
+        Action::UpdateLiquidatorConfig(action) => format!("UpdateLiquidatorConfig({:?}", action),
     }
 }
 
@@ -348,7 +352,7 @@ fn update_multisig(action: &UpdateMultisigPolicy) -> String {
 mod tests {
     use super::canonical_message;
     use crate::common::tif::TimeInForce;
-    use crate::msgs::{Faucet, LimitOrder};
+    use crate::msgs::{BuilderCode, Faucet, LimitOrder};
     use crate::transaction::{Action, ActionMeta};
     use solana_pubkey::Pubkey;
     use std::sync::Arc;
@@ -371,7 +375,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         })];
         let first = canonical_message(account, 42, actions.as_slice()).expect("build message");
@@ -407,7 +411,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: true,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         })];
         let message = canonical_message(account, 99, actions.as_slice()).expect("build message");
@@ -415,6 +419,31 @@ mod tests {
         assert!(message.contains("Sell"));
         assert!(message.contains("3500.00000000"));
         assert!(message.contains("1.50000000"));
+    }
+
+    #[test]
+    fn message_shows_builder_code_fields() {
+        let account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let actions = vec![Action::LimitOrder(LimitOrder {
+            symbol: Arc::from("ETH-USD"),
+            is_buy: false,
+            price: 3500.0,
+            size: 1.5,
+            tif: TimeInForce::GTC,
+            reduce_only: true,
+            iso: false,
+            builder_code: Some(BuilderCode {
+                to: recipient,
+                fee: 5,
+            }),
+            meta: ActionMeta::default(),
+        })];
+        let message = canonical_message(account, 99, actions.as_slice()).expect("build message");
+        assert!(message.contains(&format!("builder_code_to={recipient}")));
+        assert!(message.contains("builder_code_fee=5bps"));
+        assert!(!message.contains("commission_to"));
+        assert!(!message.contains("commission_fee"));
     }
 
     #[test]

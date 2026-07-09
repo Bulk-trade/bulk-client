@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use bulk_client::BulkHttpClient;
-use bulk_client::msgs::conditional::{Range, StopOrTP, Trailing};
-use bulk_client::transaction::Action;
 use crate::commands::{RangeArgs, StopArgs, TrailingArgs};
 use crate::common::{submit_actions, SubmitOptions};
+use bulk_client::msgs::conditional::{Range, StopOrTP, Trailing};
+use bulk_client::transaction::Action;
+use bulk_client::BulkHttpClient;
+use std::sync::Arc;
 // ---------------------------------------------------------------------------
 // Stop
 // ---------------------------------------------------------------------------
@@ -67,8 +67,7 @@ pub async fn handle_range(
 ) -> eyre::Result<()> {
     println!(
         "Placing Range on {} | size={} [{}, {}] buy={} limit_min={:?} limit_max={:?}",
-        args.symbol, args.size, args.min, args.max, args.buy,
-        args.limit_min, args.limit_max
+        args.symbol, args.size, args.min, args.max, args.buy, args.limit_min, args.limit_max
     );
 
     let action = Action::Range(Range {

@@ -65,7 +65,7 @@ def _write_commission(commission: Optional["Commission"]) -> bytes:
     if commission is None:
         return b''
     if commission.fee < 1 or commission.fee > 15:
-        raise ValueError("commission fee must be 1..=15 bps")
+        raise ValueError("builder-code fee must be 1..=15 bps")
     return bytes([1]) + _write_pubkey(commission.to) + _write_u8(commission.fee)
 
 @dataclass
@@ -75,7 +75,7 @@ class Commission:
 
     def to_api(self) -> Dict:
         if self.fee < 1 or self.fee > 15:
-            raise ValueError("commission fee must be 1..=15 bps")
+            raise ValueError("builder-code fee must be 1..=15 bps")
         return {"to": self.to, "fee": self.fee}
 
 BuilderCode = Commission
@@ -93,7 +93,7 @@ class ApproveCommissionFee:
 
     def to_api(self) -> Dict:
         if self.fee < 1 or self.fee > 15:
-            raise ValueError("commission fee must be 1..=15 bps")
+            raise ValueError("builder-code fee must be 1..=15 bps")
         return {"abc": {"to": self.to, "fee": self.fee}}
 
 ApproveBuilderCode = ApproveCommissionFee

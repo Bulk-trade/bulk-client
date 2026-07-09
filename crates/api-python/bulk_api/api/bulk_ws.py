@@ -492,7 +492,7 @@ class BulkWebSocketClient:
         timeout: Optional[float] = None,
         nonce: Optional[int] = None,
     ) -> OrderResponse:
-        """Approve a builder-code recipient; builder codes are commission fees on the wire."""
+        """Approve a builder-code recipient; builder codes are builder-code fees on the wire."""
         return await self.approve_builder_code(to=to, fee=fee, timeout=timeout, nonce=nonce)
 
     async def approve_builder_code(

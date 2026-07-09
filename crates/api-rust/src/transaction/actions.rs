@@ -423,7 +423,7 @@ mod tests {
             tif: TimeInForce::ALO,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account: Default::default(),
                 nonce: 1_776_128_000_000_000_000,
@@ -457,7 +457,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta,
         });
         let mut with = Action::LimitOrder(LimitOrder {
@@ -468,7 +468,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: Some(crate::msgs::Commission {
+            builder_code: Some(crate::msgs::BuilderCode {
                 to: Pubkey::new_unique(),
                 fee: 5,
             }),

@@ -1,4 +1,4 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,10 +31,7 @@ impl Response {
 
     /// Indicate whether response is a placement
     pub fn is_placement(&self) -> bool {
-        matches!(
-            self.status.as_str(),
-            "resting" | "working" | "filled"
-        )
+        matches!(self.status.as_str(), "resting" | "working" | "filled")
     }
 
     /// Parse the list of statuses from a post response (same logic as Python).

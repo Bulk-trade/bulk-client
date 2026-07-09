@@ -3,14 +3,13 @@
 //! These structs are deserialized from the WebSocket JSON feed and correspond
 //! to the Python definitions in `md.py`.
 
-use serde::{Deserialize, Deserializer, Serialize};
 use crate::common::side::Side;
 use crate::transaction::ActionMeta;
+use serde::{Deserialize, Deserializer, Serialize};
 
 // ============================================================================
 // Matrix MD
 // ============================================================================
-
 
 /// Matrix with named columns and rows
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,16 +62,15 @@ pub struct Ticker {
 // Candles
 // ============================================================================
 
-
 /// OHLCV candlestick data.
 ///
 /// Received on the `"candle"` channel.
 /// The `symbol` and `interval` are populated from the subscription topic,
 /// not from the candle payload itself.
-#[derive(Debug, Clone,Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct Candle {
-    #[serde(rename="t")]
+    #[serde(rename = "t")]
     pub open_time: u64,
     #[serde(rename = "T")]
     pub close_time: u64,
@@ -94,7 +92,6 @@ pub struct Candle {
     pub num_trades: u64,
 }
 
-
 // ============================================================================
 // Trades
 // ============================================================================
@@ -102,18 +99,18 @@ pub struct Candle {
 /// A single public trade.
 ///
 /// Received on the `"trades"` channel (as a list).
-#[derive(Debug, Clone,Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct Trade {
-    #[serde(rename="time")]
+    #[serde(rename = "time")]
     pub timestamp: u64,
-    #[serde(rename="s")]
+    #[serde(rename = "s")]
     pub symbol: String,
-    #[serde(rename="b")]
+    #[serde(rename = "b")]
     pub side: Side,
-    #[serde(rename="sz")]
+    #[serde(rename = "sz")]
     pub size: f64,
-    #[serde(rename="px")]
+    #[serde(rename = "px")]
     pub price: f64,
     pub maker: String,
     pub taker: String,
@@ -128,13 +125,13 @@ pub struct Trade {
 #[allow(unused)]
 pub struct OrderBookLevel {
     /// Price
-    #[serde(rename="px")]
+    #[serde(rename = "px")]
     pub price: f64,
     /// Size (aggregate quantity at this price)
-    #[serde(rename="sz")]
+    #[serde(rename = "sz")]
     pub size: f64,
     /// Number of orders at this level
-    #[serde(rename="n")]
+    #[serde(rename = "n")]
     pub num_orders: u32,
 }
 
@@ -143,7 +140,6 @@ impl std::fmt::Display for OrderBookLevel {
         write!(f, "{} @ {}", self.size, self.price)
     }
 }
-
 
 /// Full L2 order-book snapshot.
 ///
@@ -157,7 +153,6 @@ pub struct L2Snapshot {
     pub levels: (Vec<OrderBookLevel>, Vec<OrderBookLevel>),
 }
 
-
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -170,18 +165,14 @@ where
     Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(f64::NAN))
 }
 
-
 // ============================================================================
 // Optional SDK integration
 // ============================================================================
 
-
 #[cfg(feature = "with-sdk")]
 use bulk_sdk_core::{
-    markets::MktId,
-    data::L2Snapshot as SDKL2Snapshot,
-    data::PriceLevel as SDKPriceLevel,
-    data::L2Delta as SDKL2Delta,
+    data::L2Delta as SDKL2Delta, data::L2Snapshot as SDKL2Snapshot,
+    data::PriceLevel as SDKPriceLevel, markets::MktId,
 };
 
 #[cfg(feature = "with-sdk")]
@@ -190,24 +181,26 @@ impl From<&L2Snapshot> for SDKL2Snapshot {
         let (bids, asks) = &snap.levels;
 
         let instrument = MktId::new(snap.symbol.as_str()).unwrap();
-        let newbids = bids.iter().map(|x| {
-            SDKPriceLevel {
+        let newbids = bids
+            .iter()
+            .map(|x| SDKPriceLevel {
                 amount: x.size,
                 price: x.price,
                 num_orders: x.num_orders,
                 cum_vwap: 0.0,
                 cum_amount: 0.0,
-            }
-        }).collect();
-        let newasks = asks.iter().map(|x| {
-            SDKPriceLevel {
+            })
+            .collect();
+        let newasks = asks
+            .iter()
+            .map(|x| SDKPriceLevel {
                 amount: x.size,
                 price: x.price,
                 num_orders: x.num_orders,
                 cum_vwap: 0.0,
                 cum_amount: 0.0,
-            }
-        }).collect();
+            })
+            .collect();
 
         SDKL2Snapshot {
             stamp: snap.timestamp,
@@ -365,5 +358,3 @@ mod tests {
         assert_eq!(asks[9].num_orders, 25);
     }
 }
-
-

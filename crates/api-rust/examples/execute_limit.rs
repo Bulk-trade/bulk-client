@@ -6,17 +6,17 @@
 //!     --symbols BTC-USD,ETH-USD
 //! ```
 
-use std::{env, process};
-use std::sync::Arc;
-use clap::Parser;
-use tracing::{info};
-use tracing_subscriber::EnvFilter;
-use bulk_client::api::{BulkHttpClient};
 use bulk_client::api::parts::HttpConfig;
+use bulk_client::api::BulkHttpClient;
 use bulk_client::common::tif::TimeInForce;
 use bulk_client::msgs::LimitOrder;
 use bulk_client::parts::make_nonce;
 use bulk_client::transaction::{Action, ActionMeta, TransactionSigner};
+use clap::Parser;
+use std::sync::Arc;
+use std::{env, process};
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]
@@ -29,9 +29,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
     let args = Args::parse();
@@ -43,7 +41,8 @@ async fn main() -> eyre::Result<()> {
         base_url: args.url,
         signer: Some(signer.clone()),
         ..Default::default()
-    }).unwrap();
+    })
+    .unwrap();
 
     let account = signer.public_key();
     let nonce = make_nonce();
@@ -57,13 +56,13 @@ async fn main() -> eyre::Result<()> {
             tif: TimeInForce::IOC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce,
                 seqno: 0,
                 hash: None,
-            }
+            },
         }),
         Action::LimitOrder(LimitOrder {
             symbol: Arc::from("ETH-USD"),
@@ -73,17 +72,18 @@ async fn main() -> eyre::Result<()> {
             tif: TimeInForce::IOC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce,
                 seqno: 1,
                 hash: None,
-            }
+            },
         }),
     ];
 
-    let oids = orders.iter_mut()
+    let oids = orders
+        .iter_mut()
         .map(|o| o.hash().to_string())
         .collect::<Vec<_>>();
 

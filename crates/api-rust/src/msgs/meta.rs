@@ -1,8 +1,8 @@
 use crate::msgs::sig_bytes;
-use std::sync::Arc;
+use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
 use solana_keypair::Pubkey;
-use crate::transaction::ActionMeta;
+use std::sync::Arc;
 
 /// Per-market configuration returned by the exchange.
 #[derive(Debug, Clone, Deserialize)]
@@ -35,7 +35,6 @@ pub struct Beacon {
     pub meta: ActionMeta,
 }
 
-
 /// WarmJoin protocol: a validator announces it has caught up and is ready to vote.
 ///
 /// System-internal transaction (like Beacon). Not a user order.
@@ -52,7 +51,6 @@ pub struct Join {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
-
 
 /// Add new market tx
 #[derive(Clone, Debug, Serialize, Deserialize)]

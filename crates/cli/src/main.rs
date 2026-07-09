@@ -2,20 +2,33 @@ pub mod commands;
 pub mod common;
 pub mod handlers;
 
-use std::time::Duration;
-use clap::{Parser, Subcommand};
-use bulk_client::BulkHttpClient;
-use bulk_client::parts::HttpConfig;
-use bulk_client::transaction::TransactionSigner;
-use crate::common::{resolve_api_url, CliConfig};
+use crate::commands::{
+    AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand, CreateMultisigArgs,
+    CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, LiquidatorConfigArgs, ModifyArgs,
+    MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs,
+    TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
+};
 use crate::common::submit::SubmitOptions;
-use crate::commands::{AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, LiquidatorConfigArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs};
-use crate::handlers::account::{handle_agent_wallet, handle_create_subaccount, handle_faucet, handle_remove_subaccount, handle_transfer, handle_update_leverage};
+use crate::common::{resolve_api_url, CliConfig};
+use crate::handlers::account::{
+    handle_agent_wallet, handle_create_subaccount, handle_faucet, handle_remove_subaccount,
+    handle_transfer, handle_update_leverage,
+};
 use crate::handlers::cancel::{handle_cancel, handle_cancel_all};
-use crate::handlers::conditional::{handle_range, handle_stop, handle_take_profit, handle_trailing};
-use crate::handlers::multisig::{handle_create_multisig, handle_multisig_approve, handle_multisig_cancel, handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy};
+use crate::handlers::conditional::{
+    handle_range, handle_stop, handle_take_profit, handle_trailing,
+};
+use crate::handlers::multisig::{
+    handle_create_multisig, handle_multisig_approve, handle_multisig_cancel,
+    handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy,
+};
 use crate::handlers::orders::{handle_modify, handle_place};
 use crate::handlers::risk::{handle_liquidator_config, handle_risk_config};
+use bulk_client::parts::HttpConfig;
+use bulk_client::transaction::TransactionSigner;
+use bulk_client::BulkHttpClient;
+use clap::{Parser, Subcommand};
+use std::time::Duration;
 // ---------------------------------------------------------------------------
 // Top-level CLI
 // ---------------------------------------------------------------------------
@@ -75,7 +88,6 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     // ── Account ─────────────────────────────────────────────────────────────
-
     /// Request testnet faucet funds.
     ///
     /// Example: bulk faucet
@@ -90,7 +102,6 @@ enum Command {
     Config(ConfigArgs),
 
     // ── Orders ──────────────────────────────────────────────────────────────
-
     /// Place a limit or market order.
     ///
     /// Example: bulk place Buy BTC-USD 1.3@70000 --tif GTC
@@ -113,7 +124,6 @@ enum Command {
     CancelAll(CancelAllArgs),
 
     // ── Conditional orders ───────────────────────────────────────────────────
-
     /// Place a stop order.
     ///
     /// Example: bulk stop BTC-USD 0.1 95000           (trigger below)
@@ -137,7 +147,6 @@ enum Command {
     Trail(TrailingArgs),
 
     // ── Settings ─────────────────────────────────────────────────────────────
-
     /// Update per-market maximum leverage.
     ///
     /// Example: bulk update-leverage BTC-USD=20 ETH-USD=10
@@ -152,7 +161,6 @@ enum Command {
     AgentWallet(AgentWalletArgs),
 
     // ── Sub-accounts ─────────────────────────────────────────────────────────
-
     /// Create a named sub-account, optionally seeding it with margin.
     ///
     /// Example: bulk create-subaccount mybot --margin-symbol USDC --margin-amount 1000
@@ -171,7 +179,6 @@ enum Command {
     Transfer(TransferArgs),
 
     // ── Multisig ─────────────────────────────────────────────────────────────
-
     /// Create a multisig account.
     ///
     /// Example: bulk create-multisig <pk1>,<pk2> --threshold 2 --lock 120
@@ -209,7 +216,6 @@ enum Command {
     MultisigExecute(MultisigProposalArgs),
 
     // ── Admin ────────────────────────────────────────────────────────────
-
     /// Update risk configuration (JSON or file path).
     ///
     /// Example: bulk risk-config '{"max_loss":15000,...}'
@@ -225,7 +231,6 @@ enum Command {
     LiqConfig(LiquidatorConfigArgs),
 }
 
-
 fn handle_ledger_info(cli: &Cli) -> eyre::Result<()> {
     let devices = TransactionSigner::list_ledger_devices()?;
     println!("Found {} Ledger device(s).", devices.len());
@@ -234,8 +239,16 @@ fn handle_ledger_info(cli: &Cli) -> eyre::Result<()> {
             "[{}] model={} serial={} host_path={} base_pubkey={}",
             idx + 1,
             device.model,
-            if device.serial.is_empty() { "<unknown>" } else { device.serial.as_str() },
-            if device.host_device_path.is_empty() { "<unknown>" } else { device.host_device_path.as_str() },
+            if device.serial.is_empty() {
+                "<unknown>"
+            } else {
+                device.serial.as_str()
+            },
+            if device.host_device_path.is_empty() {
+                "<unknown>"
+            } else {
+                device.host_device_path.as_str()
+            },
             device.pubkey,
         );
     }
@@ -280,7 +293,6 @@ fn handle_config(args: &ConfigArgs, config: &mut CliConfig) -> eyre::Result<()> 
     Ok(())
 }
 
-
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
@@ -322,40 +334,42 @@ async fn main() -> eyre::Result<()> {
 
     match cli.command {
         // Account
-        Command::Faucet(args)           => handle_faucet(&mut api, args, &submit).await,
+        Command::Faucet(args) => handle_faucet(&mut api, args, &submit).await,
 
         // Orders
-        Command::Place(args)            => handle_place(&mut api, args, &submit).await,
-        Command::Modify(args)           => handle_modify(&mut api, args, &submit).await,
-        Command::Cancel(args)           => handle_cancel(&mut api, args, &submit).await,
-        Command::CancelAll(args)        => handle_cancel_all(&mut api, args, &submit).await,
+        Command::Place(args) => handle_place(&mut api, args, &submit).await,
+        Command::Modify(args) => handle_modify(&mut api, args, &submit).await,
+        Command::Cancel(args) => handle_cancel(&mut api, args, &submit).await,
+        Command::CancelAll(args) => handle_cancel_all(&mut api, args, &submit).await,
 
         // Conditional orders
-        Command::Stop(args)             => handle_stop(&mut api, args, &submit).await,
-        Command::TakeProfit(args)       => handle_take_profit(&mut api, args, &submit).await,
-        Command::Range(args)            => handle_range(&mut api, args, &submit).await,
-        Command::Trail(args)            => handle_trailing(&mut api, args, &submit).await,
+        Command::Stop(args) => handle_stop(&mut api, args, &submit).await,
+        Command::TakeProfit(args) => handle_take_profit(&mut api, args, &submit).await,
+        Command::Range(args) => handle_range(&mut api, args, &submit).await,
+        Command::Trail(args) => handle_trailing(&mut api, args, &submit).await,
 
         // Settings
-        Command::UpdateLeverage(args)   => handle_update_leverage(&mut api, args, &submit).await,
-        Command::AgentWallet(args)      => handle_agent_wallet(&mut api, args, &submit).await,
+        Command::UpdateLeverage(args) => handle_update_leverage(&mut api, args, &submit).await,
+        Command::AgentWallet(args) => handle_agent_wallet(&mut api, args, &submit).await,
 
         // Sub-accounts
         Command::CreateSubAccount(args) => handle_create_subaccount(&mut api, args, &submit).await,
         Command::RemoveSubAccount(args) => handle_remove_subaccount(&mut api, args, &submit).await,
-        Command::Transfer(args)         => handle_transfer(&mut api, args, &submit).await,
+        Command::Transfer(args) => handle_transfer(&mut api, args, &submit).await,
 
         // Multisig
-        Command::CreateMultisig(args)   => handle_create_multisig(&mut api, args, &submit).await,
-        Command::UpdateMultisig(args)   => handle_update_multisig_policy(&mut api, args, &submit).await,
-        Command::MultisigApprove(args)  => handle_multisig_approve(&mut api, args, &submit).await,
-        Command::MultisigReject(args)   => handle_multisig_reject(&mut api, args, &submit).await,
-        Command::MultisigCancel(args)   => handle_multisig_cancel(&mut api, args, &submit).await,
-        Command::MultisigExecute(args)  => handle_multisig_execute(&mut api, args, &submit).await,
-        Command::RiskConfig(args)           => handle_risk_config(&mut api, args, &submit).await,
-        Command::LiqConfig(args)       => handle_liquidator_config(&mut api, args, &submit).await,
-        Command::LedgerInfo(_)          => unreachable!("handled before API setup"),
-        Command::Config(_)              => unreachable!("handled before API setup"),
+        Command::CreateMultisig(args) => handle_create_multisig(&mut api, args, &submit).await,
+        Command::UpdateMultisig(args) => {
+            handle_update_multisig_policy(&mut api, args, &submit).await
+        }
+        Command::MultisigApprove(args) => handle_multisig_approve(&mut api, args, &submit).await,
+        Command::MultisigReject(args) => handle_multisig_reject(&mut api, args, &submit).await,
+        Command::MultisigCancel(args) => handle_multisig_cancel(&mut api, args, &submit).await,
+        Command::MultisigExecute(args) => handle_multisig_execute(&mut api, args, &submit).await,
+        Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
+        Command::LiqConfig(args) => handle_liquidator_config(&mut api, args, &submit).await,
+        Command::LedgerInfo(_) => unreachable!("handled before API setup"),
+        Command::Config(_) => unreachable!("handled before API setup"),
     }
 }
 
@@ -400,11 +414,12 @@ mod tests {
         ])
         .expect("should parse config set-api-url");
         match cli.command {
-            Command::Config(ConfigArgs { command: ConfigCommand::SetApiUrl { url } }) => {
+            Command::Config(ConfigArgs {
+                command: ConfigCommand::SetApiUrl { url },
+            }) => {
                 assert_eq!(url, "https://exchange-api.bulk.trade/api/v1");
             }
             _ => panic!("expected config set-api-url"),
         }
     }
 }
-

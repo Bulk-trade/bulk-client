@@ -1,9 +1,12 @@
-use eyre::bail;
-use bulk_client::BulkHttpClient;
-use bulk_client::msgs::multisig::{CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigReject, UpdateMultisigPolicy};
-use bulk_client::transaction::Action;
 use crate::commands::{CreateMultisigArgs, MultisigProposalArgs, UpdateMultisigPolicyArgs};
 use crate::common::{submit_actions, SubmitOptions};
+use bulk_client::msgs::multisig::{
+    CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigReject,
+    UpdateMultisigPolicy,
+};
+use bulk_client::transaction::Action;
+use bulk_client::BulkHttpClient;
+use eyre::bail;
 
 // ---------------------------------------------------------------------------
 // CreateMultisig
@@ -95,7 +98,10 @@ pub async fn handle_multisig_approve(
     args: MultisigProposalArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    println!("Approving proposal {} on multisig {}", args.proposal_id, args.multisig);
+    println!(
+        "Approving proposal {} on multisig {}",
+        args.proposal_id, args.multisig
+    );
 
     let action = Action::MultisigApprove(MultisigApprove {
         multisig: args.multisig,
@@ -114,7 +120,10 @@ pub async fn handle_multisig_reject(
     args: MultisigProposalArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    println!("Rejecting proposal {} on multisig {}", args.proposal_id, args.multisig);
+    println!(
+        "Rejecting proposal {} on multisig {}",
+        args.proposal_id, args.multisig
+    );
 
     let action = Action::MultisigReject(MultisigReject {
         multisig: args.multisig,
@@ -133,7 +142,10 @@ pub async fn handle_multisig_cancel(
     args: MultisigProposalArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    println!("Cancelling proposal {} on multisig {}", args.proposal_id, args.multisig);
+    println!(
+        "Cancelling proposal {} on multisig {}",
+        args.proposal_id, args.multisig
+    );
 
     let action = Action::MultisigCancel(MultisigCancel {
         multisig: args.multisig,
@@ -152,7 +164,10 @@ pub async fn handle_multisig_execute(
     args: MultisigProposalArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    println!("Executing proposal {} on multisig {}", args.proposal_id, args.multisig);
+    println!(
+        "Executing proposal {} on multisig {}",
+        args.proposal_id, args.multisig
+    );
 
     let action = Action::MultisigExecute(MultisigExecute {
         multisig: args.multisig,

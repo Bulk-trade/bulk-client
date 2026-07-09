@@ -1,6 +1,6 @@
+use crate::transaction::{Action, ActionMeta};
 use serde::{Deserialize, Serialize};
 use solana_keypair::Pubkey;
-use crate::transaction::{Action, ActionMeta};
 
 /// Create multi-sig account
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -109,4 +109,3 @@ fn default_signers() -> Vec<Pubkey> {
 fn default_proposal_lifetime_secs() -> u32 {
     7 * 24 * 3600
 }
-

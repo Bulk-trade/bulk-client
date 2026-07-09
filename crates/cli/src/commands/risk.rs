@@ -1,6 +1,3 @@
-use std::str::FromStr;
-use solana_hash::Hash;
-
 // ---------------------------------------------------------------------------
 // Update risk
 // ---------------------------------------------------------------------------
@@ -20,4 +17,3 @@ pub struct LiquidatorConfigArgs {
     // Json or filename containing liquidator config json
     pub(crate) json: String,
 }
-

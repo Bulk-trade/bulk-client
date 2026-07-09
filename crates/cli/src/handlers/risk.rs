@@ -1,11 +1,10 @@
-use std::path::Path;
-use bulk_client::BulkHttpClient;
+use crate::commands::risk::{LiquidatorConfigArgs, RiskConfigArgs};
+use crate::common::submit::{submit_actions, SubmitOptions};
 use bulk_client::msgs::liquidator::LiqConfig;
 use bulk_client::msgs::risk::RiskConfigChange;
 use bulk_client::transaction::Action;
-use crate::commands::LiquidatorConfigArgs;
-use crate::commands::risk::RiskConfigArgs;
-use crate::common::submit::{submit_actions, SubmitOptions};
+use bulk_client::BulkHttpClient;
+use std::path::Path;
 
 pub async fn handle_risk_config(
     api: &mut BulkHttpClient,
@@ -19,14 +18,13 @@ pub async fn handle_risk_config(
         args.json.clone()
     };
 
-    let config: RiskConfigChange = json5::from_str(&raw)
-        .map_err(|e| eyre::eyre!("invalid risk config: {e}"))?;
+    let config: RiskConfigChange =
+        json5::from_str(&raw).map_err(|e| eyre::eyre!("invalid risk config: {e}"))?;
 
     eprintln!("Placing risk config update");
     let action = Action::UpdateRiskConfig(config);
     submit_actions(api, submit, vec![action]).await
 }
-
 
 pub async fn handle_liquidator_config(
     api: &mut BulkHttpClient,

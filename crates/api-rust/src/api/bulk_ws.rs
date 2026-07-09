@@ -581,7 +581,7 @@ impl BulkWsClient {
             tif,
             reduce_only,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -633,7 +633,7 @@ impl BulkWsClient {
             size,
             reduce_only,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce,
@@ -737,7 +737,7 @@ impl BulkWsClient {
 
     /// Approve a builder-code recipient for routed orders.
     ///
-    /// Builder codes are encoded as commission fees on the wire.
+    /// Builder codes are encoded as builder-code fees on the wire.
     pub async fn approve_builder_code(
         &self,
         to: Pubkey,
@@ -775,16 +775,6 @@ impl BulkWsClient {
             .ok_or_else(|| eyre::eyre!("empty response"))
     }
 
-    pub async fn approve_commission_fee(
-        &self,
-        to: Pubkey,
-        fee: u8,
-        account: Option<Pubkey>,
-        nonce: Option<u64>,
-    ) -> eyre::Result<Response> {
-        self.approve_builder_code(to, fee, account, nonce).await
-    }
-
     /// Revoke a builder-code recipient approval.
     pub async fn revoke_builder_code(
         &self,
@@ -819,15 +809,6 @@ impl BulkWsClient {
             .into_iter()
             .next()
             .ok_or_else(|| eyre::eyre!("empty response"))
-    }
-
-    pub async fn revoke_commission_fee(
-        &self,
-        to: Pubkey,
-        account: Option<Pubkey>,
-        nonce: Option<u64>,
-    ) -> eyre::Result<Response> {
-        self.revoke_builder_code(to, account, nonce).await
     }
 
     // ─────────────────────────────────────────────────────────────────────

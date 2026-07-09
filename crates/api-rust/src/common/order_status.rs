@@ -1,4 +1,4 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 
 /// Various order status
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

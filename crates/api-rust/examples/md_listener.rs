@@ -8,11 +8,11 @@
 
 use std::process;
 
+use bulk_client::api::parts::config::WSConfig;
+use bulk_client::api::{BulkWsClient, Event, Topic};
 use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
-use bulk_client::api::{BulkWsClient, Event, Topic};
-use bulk_client::api::parts::config::WSConfig;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_listener", about = "Listen to ticker and L2 book updates")]
@@ -33,9 +33,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
     let args = Args::parse();
@@ -47,7 +45,7 @@ async fn main() -> eyre::Result<()> {
         signer: None,
         ..Default::default()
     })
-        .await?;
+    .await?;
 
     // ── Subscribe to L2 snapshots ───────────────────────────────────────
     if args.l2_levels > 0 {

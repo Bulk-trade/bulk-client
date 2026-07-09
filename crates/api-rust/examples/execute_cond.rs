@@ -6,17 +6,17 @@
 //!     --symbols BTC-USD,ETH-USD
 //! ```
 
-use std::{env, process};
-use std::str::FromStr;
-use std::sync::Arc;
-use clap::Parser;
-use solana_pubkey::Pubkey;
-use tracing::{info};
-use tracing_subscriber::EnvFilter;
-use bulk_client::api::{BulkHttpClient};
 use bulk_client::api::parts::HttpConfig;
+use bulk_client::api::BulkHttpClient;
 use bulk_client::msgs::conditional::StopOrTP;
 use bulk_client::transaction::{Action, ActionMeta, TransactionSigner};
+use clap::Parser;
+use solana_pubkey::Pubkey;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::{env, process};
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]
@@ -29,9 +29,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
     let args = Args::parse();
@@ -43,7 +41,8 @@ async fn main() -> eyre::Result<()> {
         base_url: args.url,
         signer: Some(signer.clone()),
         ..Default::default()
-    }).unwrap();
+    })
+    .unwrap();
 
     let account = if false {
         Pubkey::from_str("8oqBACkDvyJjBoiWNbZPXrnjZvFjzUjMThbi9oahAVvH")?
@@ -52,21 +51,19 @@ async fn main() -> eyre::Result<()> {
     };
     let nonce = 1776682154418;
 
-    let orders = vec![
-        Action::TakeProfit(StopOrTP {
-            symbol: Arc::from("BTC-USD"),
-            is_above: false,
-            size: 0.480894,
-            threshold: 40000.0,
-            limit: None,
-            meta: ActionMeta {
-                account,
-                nonce,
-                seqno: 0,
-                hash: None,
-            }
-        }),
-    ];
+    let orders = vec![Action::TakeProfit(StopOrTP {
+        symbol: Arc::from("BTC-USD"),
+        is_above: false,
+        size: 0.480894,
+        threshold: 40000.0,
+        limit: None,
+        meta: ActionMeta {
+            account,
+            nonce,
+            seqno: 0,
+            hash: None,
+        },
+    })];
 
     let results = client.place_tx(orders, Some(account), Some(nonce)).await?;
     eprintln!("results: {:?}\n", results);

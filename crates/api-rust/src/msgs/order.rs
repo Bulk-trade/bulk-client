@@ -17,26 +17,24 @@ impl Serialize for FixedF64 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Commission {
+pub struct BuilderCode {
     #[serde(with = "crate::msgs::serde_pubkey")]
     pub to: Pubkey,
     pub fee: u8,
 }
 
-pub type BuilderCode = Commission;
-
-fn deserialize_commission<'de, D>(deserializer: D) -> Result<Option<Commission>, D::Error>
+fn deserialize_builder_code<'de, D>(deserializer: D) -> Result<Option<BuilderCode>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     if !deserializer.is_human_readable() {
-        return <Option<Commission> as Deserialize>::deserialize(deserializer);
+        return <Option<BuilderCode> as Deserialize>::deserialize(deserializer);
     }
 
-    struct CommissionVisitor;
+    struct BuilderCodeVisitor;
 
-    impl<'de> serde::de::Visitor<'de> for CommissionVisitor {
-        type Value = Option<Commission>;
+    impl<'de> serde::de::Visitor<'de> for BuilderCodeVisitor {
+        type Value = Option<BuilderCode>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             formatter.write_str("an omitted builderCode field or a builderCode object")
@@ -60,11 +58,11 @@ where
         where
             D: serde::Deserializer<'de>,
         {
-            <Commission as Deserialize>::deserialize(deserializer).map(Some)
+            <BuilderCode as Deserialize>::deserialize(deserializer).map(Some)
         }
     }
 
-    deserializer.deserialize_option(CommissionVisitor)
+    deserializer.deserialize_option(BuilderCodeVisitor)
 }
 
 struct OrderHashSafeF64(f64);
@@ -156,9 +154,9 @@ pub struct MarketOrder {
     #[serde(
         rename = "builderCode",
         default,
-        deserialize_with = "deserialize_commission"
+        deserialize_with = "deserialize_builder_code"
     )]
-    pub commission: Option<Commission>,
+    pub builder_code: Option<BuilderCode>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -168,13 +166,13 @@ impl Serialize for MarketOrder {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             let mut state = serializer
-                .serialize_struct("MarketOrder", 5 + usize::from(self.commission.is_some()))?;
+                .serialize_struct("MarketOrder", 5 + usize::from(self.builder_code.is_some()))?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("b", &self.is_buy)?;
             state.serialize_field("sz", &FixedF64(self.size))?;
             state.serialize_field("r", &self.reduce_only)?;
             state.serialize_field("i", &self.iso)?;
-            if let Some(commission) = &self.commission {
+            if let Some(commission) = &self.builder_code {
                 state.serialize_field("builderCode", commission)?;
             }
             state.end()
@@ -185,7 +183,7 @@ impl Serialize for MarketOrder {
             tuple.serialize_element(&FixedF64(self.size))?;
             tuple.serialize_element(&self.reduce_only)?;
             tuple.serialize_element(&self.iso)?;
-            tuple.serialize_element(&self.commission)?;
+            tuple.serialize_element(&self.builder_code)?;
             tuple.end()
         }
     }
@@ -243,9 +241,9 @@ pub struct LimitOrder {
     #[serde(
         rename = "builderCode",
         default,
-        deserialize_with = "deserialize_commission"
+        deserialize_with = "deserialize_builder_code"
     )]
-    pub commission: Option<Commission>,
+    pub builder_code: Option<BuilderCode>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -255,7 +253,7 @@ impl Serialize for LimitOrder {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             let mut state = serializer
-                .serialize_struct("LimitOrder", 7 + usize::from(self.commission.is_some()))?;
+                .serialize_struct("LimitOrder", 7 + usize::from(self.builder_code.is_some()))?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("b", &self.is_buy)?;
             state.serialize_field("px", &FixedF64(self.price))?;
@@ -263,7 +261,7 @@ impl Serialize for LimitOrder {
             state.serialize_field("tif", &self.tif)?;
             state.serialize_field("r", &self.reduce_only)?;
             state.serialize_field("i", &self.iso)?;
-            if let Some(commission) = &self.commission {
+            if let Some(commission) = &self.builder_code {
                 state.serialize_field("builderCode", commission)?;
             }
             state.end()
@@ -276,7 +274,7 @@ impl Serialize for LimitOrder {
             tuple.serialize_element(&self.tif)?;
             tuple.serialize_element(&self.reduce_only)?;
             tuple.serialize_element(&self.iso)?;
-            tuple.serialize_element(&self.commission)?;
+            tuple.serialize_element(&self.builder_code)?;
             tuple.end()
         }
     }
@@ -363,7 +361,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         })
         .expect("limit order should serialize")
@@ -383,7 +381,7 @@ mod tests {
                 tif: TimeInForce::GTC,
                 reduce_only: false,
                 iso: false,
-                commission: Some(Commission {
+                builder_code: Some(BuilderCode {
                     to: Pubkey::new_unique(),
                     fee: 5,
                 }),
@@ -402,7 +400,7 @@ mod tests {
             size: 1.0,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         })
         .expect("market order should serialize")
@@ -449,11 +447,11 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         };
         let with = LimitOrder {
-            commission: Some(Commission { to, fee: 5 }),
+            builder_code: Some(BuilderCode { to, fee: 5 }),
             ..without.clone()
         };
 
@@ -468,11 +466,11 @@ mod tests {
             size: 2.0,
             reduce_only: false,
             iso: true,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta::default(),
         };
         let market_with = MarketOrder {
-            commission: Some(Commission { to, fee: 15 }),
+            builder_code: Some(BuilderCode { to, fee: 15 }),
             ..market_without.clone()
         };
 
