@@ -136,7 +136,7 @@ class TransactionSigner:
         match action:
             case {"m": order}:
                 if "commission" in order:
-                    raise ValueError("commission was renamed to builderCode")
+                    raise ValueError("use builderCode")
                 if "builderCode" in order and order["builderCode"] is None:
                     raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
@@ -146,12 +146,12 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_commission(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"l": order}:
                 if "commission" in order:
-                    raise ValueError("commission was renamed to builderCode")
+                    raise ValueError("use builderCode")
                 if "builderCode" in order and order["builderCode"] is None:
                     raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
@@ -163,7 +163,7 @@ class TransactionSigner:
                     TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_commission(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"st": order}:
@@ -369,7 +369,7 @@ class TransactionSigner:
         return struct.pack("B", value)
 
     @staticmethod
-    def write_commission(value: Optional[Dict]) -> bytes:
+    def write_builder_code(value: Optional[Dict]) -> bytes:
         if value is None:
             return b''
         fee = int(value['fee'])

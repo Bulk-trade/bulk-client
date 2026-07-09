@@ -15,7 +15,7 @@ import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
 from bulk_api.common import TransactionSigner, Side, TimeInForce
-from bulk_api.messages import ApproveCommissionFee, LimitOrder, CancelOrder, MarketOrder, CancelAll, RevokeCommissionFee
+from bulk_api.messages import ApproveBuilderCode, LimitOrder, CancelOrder, MarketOrder, CancelAll, RevokeBuilderCode
 
 
 class BulkHttpClient:
@@ -398,7 +398,7 @@ class BulkHttpClient:
 
     def place_orders(
         self,
-        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll|ApproveCommissionFee|RevokeCommissionFee]],
+        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll|ApproveBuilderCode|RevokeBuilderCode]],
         nonce: Optional[int] = None,
     ) -> Dict:
         """
@@ -432,9 +432,9 @@ class BulkHttpClient:
                     order_objects.append(tx.to_api())
                 case CancelAll():
                     order_objects.append(tx.to_api())
-                case ApproveCommissionFee():
+                case ApproveBuilderCode():
                     order_objects.append(tx.to_api())
-                case RevokeCommissionFee():
+                case RevokeBuilderCode():
                     order_objects.append(tx.to_api())
                 case _:
                     raise ValueError("Invalid txn type: {}".format(tx))
@@ -459,15 +459,6 @@ class BulkHttpClient:
         response.raise_for_status()
         return response.json()
 
-    def approve_commission_fee(
-        self,
-        to: str,
-        fee: int,
-        nonce: Optional[int] = None,
-    ) -> Dict:
-        """Approve a builder-code recipient; builder codes are builder-code fees on the wire."""
-        return self.approve_builder_code(to=to, fee=fee, nonce=nonce)
-
     def approve_builder_code(
         self,
         to: str,
@@ -475,15 +466,7 @@ class BulkHttpClient:
         nonce: Optional[int] = None,
     ) -> Dict:
         """Approve a builder-code recipient."""
-        return self.place_orders([ApproveCommissionFee(to=to, fee=fee)], nonce=nonce)
-
-    def revoke_commission_fee(
-        self,
-        to: str,
-        nonce: Optional[int] = None,
-    ) -> Dict:
-        """Revoke a builder-code recipient approval."""
-        return self.revoke_builder_code(to=to, nonce=nonce)
+        return self.place_orders([ApproveBuilderCode(to=to, fee=fee)], nonce=nonce)
 
     def revoke_builder_code(
         self,
@@ -491,7 +474,7 @@ class BulkHttpClient:
         nonce: Optional[int] = None,
     ) -> Dict:
         """Revoke a builder-code recipient approval."""
-        return self.place_orders([RevokeCommissionFee(to=to)], nonce=nonce)
+        return self.place_orders([RevokeBuilderCode(to=to)], nonce=nonce)
 
     def update_leverage(self, leverage_settings: List[tuple]) -> Dict:
         """
