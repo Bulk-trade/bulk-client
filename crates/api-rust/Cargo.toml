@@ -24,8 +24,7 @@ name = "execute_limit"
 name = "execute_cond"
 
 [features]
-# with-sdk = ["dep:bulk-sdk-core"]  # requires bulk-sdk-core (not on crates.io)
-with-sdk = []
+with-sdk = ["dep:bulk-sdk-core"]  # requires local bulk-sdk-core
 ledger = [
     "dep:solana-remote-wallet",
     "dep:solana-derivation-path",
@@ -34,7 +33,7 @@ ledger = [
 ]
 
 [dependencies]
-# bulk-sdk-core = { version = "0.1.0", path = "../../../bulk-sdk/core", optional = true }
+bulk-sdk-core = { version = "0.1.0", path = "../../../bulk-sdk/core", optional = true }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

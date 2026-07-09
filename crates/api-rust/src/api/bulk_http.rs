@@ -339,8 +339,6 @@ impl BulkHttpClient {
         };
 
         let nonce = nonce.unwrap_or_else(make_nonce);
-        let pk = signer.public_key();
-
         // Build + sign the transaction
         let mut tx = Transaction {
             actions,
@@ -361,7 +359,16 @@ impl BulkHttpClient {
         if let Some(mode) = signer.tx_signature_mode_hint_header_value() {
             request = request.header("X-Bulk-Sig-Mode", mode);
         }
-        let resp = request.body(body).send().await?.error_for_status()?;
+        let resp = request.body(body).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(eyre::eyre!(
+                "HTTP {} from /order: {}",
+                status,
+                text.chars().take(600).collect::<String>()
+            ));
+        }
 
         let data: Value = resp.json().await?;
         Ok(Response::parse_responses(&data))

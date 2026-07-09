@@ -77,6 +77,14 @@ fn builder_code(builder_code: Option<crate::msgs::order::BuilderCode>) -> String
         .unwrap_or_default()
 }
 
+fn opaque_payload(kind: &str, payload: &[u8]) -> String {
+    format!(
+        "{kind} payload_len={} payload_sha256={}",
+        payload.len(),
+        sha256_hex(payload)
+    )
+}
+
 fn action_line(action: &Action) -> String {
     match action {
         Action::MarketOrder(order) => format!(
@@ -185,30 +193,12 @@ fn action_line(action: &Action) -> String {
             )
         }
         Action::AddMarket(action) => format!("AddMarket {}", action.symbol),
-        Action::ConfigFairPrice(action) => format!(
-            "ConfigFairPrice payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
-        Action::ConfigVolatility(action) => format!(
-            "ConfigVolatility payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
-        Action::ConfigSecurity(action) => format!(
-            "ConfigSecurity payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
-        Action::ConfigRegime(action) => format!(
-            "ConfigRegime payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
-        Action::ConfigRisk(action) => format!(
-            "ConfigRiskMatrix payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
-        Action::ConfigFeePolicy(action) => format!(
-            "ConfigFeePolicy payload={}",
-            bs58::encode(action.payload.as_slice()).into_string()
-        ),
+        Action::ConfigFairPrice(action) => opaque_payload("ConfigFairPrice", &action.payload),
+        Action::ConfigVolatility(action) => opaque_payload("ConfigVolatility", &action.payload),
+        Action::ConfigSecurity(action) => opaque_payload("ConfigSecurity", &action.payload),
+        Action::ConfigRegime(action) => opaque_payload("ConfigRegime", &action.payload),
+        Action::ConfigRisk(action) => opaque_payload("ConfigRiskMatrix", &action.payload),
+        Action::ConfigFeePolicy(action) => opaque_payload("ConfigFeePolicy", &action.payload),
         Action::Price(action) => format!(
             "Price asset={} px={:.8} ts={}",
             action.asset, action.price, action.timestamp
@@ -352,7 +342,7 @@ fn update_multisig(action: &UpdateMultisigPolicy) -> String {
 mod tests {
     use super::canonical_message;
     use crate::common::tif::TimeInForce;
-    use crate::msgs::{BuilderCode, Faucet, LimitOrder};
+    use crate::msgs::{BuilderCode, Faucet, LimitOrder, OpaqueAction};
     use crate::transaction::{Action, ActionMeta};
     use solana_pubkey::Pubkey;
     use std::sync::Arc;
@@ -468,5 +458,18 @@ mod tests {
             signable_hash_line(msg_one.as_str()),
             signable_hash_line(msg_two.as_str())
         );
+    }
+
+    #[test]
+    fn message_hashes_opaque_payload_preview() {
+        let account = Pubkey::new_unique();
+        let actions = vec![Action::ConfigRisk(OpaqueAction {
+            payload: vec![7; 128],
+            meta: ActionMeta::default(),
+        })];
+        let message = canonical_message(account, 42, actions.as_slice()).expect("build message");
+
+        assert!(message.contains("ConfigRiskMatrix payload_len=128 payload_sha256="));
+        assert!(!message.contains("payload=7"));
     }
 }

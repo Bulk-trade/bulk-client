@@ -275,10 +275,10 @@ class TransactionSigner:
 
                 return b''.join(parts)
 
-            case {"whiteListFaucet": order}:
+            case {"whiteListFaucet": order} | {"whitelistFaucet": order}:
                 return b''.join([
                     TransactionSigner.write_u32(19),
-                    TransactionSigner.write_pubkey_serde_bytes(order['target']),
+                    TransactionSigner.write_pubkey_serde_bytes(order.get('target', order.get('account'))),
                     TransactionSigner.write_bool(order['whitelist']),
                 ])
             case {"abc": order}:

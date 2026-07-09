@@ -471,7 +471,7 @@ class TrailingStop:
                 'c': self.symbol,
                 'b': self.side.value == Side.BUY.value,
                 'sz': f"{self.size}",
-                'tdb': self.trail_bps,
+                'trb': self.trail_bps,
                 'stb': self.step_bps,
                 'lim': self.limit,
             }
