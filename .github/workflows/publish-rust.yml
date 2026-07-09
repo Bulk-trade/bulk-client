@@ -75,7 +75,21 @@ jobs:
         if: ${{ !inputs.skip_bulk_client }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p bulk-client
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python - <<'PY'
+          import tomllib
+          with open("crates/api-rust/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )"
+          url="https://index.crates.io/bu/lk/bulk-client"
+          if curl -fsSL "${url}" 2>/dev/null | grep -q "\"vers\":\"${version}\""; then
+            echo "bulk-client v${version} already exists on crates.io; skipping publish."
+            exit 0
+          fi
+          cargo publish -p bulk-client
 
       - name: Wait for bulk-client in sparse index
         shell: bash
@@ -103,4 +117,18 @@ jobs:
       - name: Publish bulk-cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p bulk-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python - <<'PY'
+          import tomllib
+          with open("crates/cli/Cargo.toml", "rb") as f:
+              print(tomllib.load(f)["package"]["version"])
+          PY
+          )"
+          url="https://index.crates.io/bu/lk/bulk-cli"
+          if curl -fsSL "${url}" 2>/dev/null | grep -q "\"vers\":\"${version}\""; then
+            echo "bulk-cli v${version} already exists on crates.io; skipping publish."
+            exit 0
+          fi
+          cargo publish -p bulk-cli
