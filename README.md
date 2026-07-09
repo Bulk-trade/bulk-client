@@ -9,8 +9,8 @@
 <p align="center">
   <a href="https://crates.io/crates/bulk-client"><img src="https://img.shields.io/crates/v/bulk-client.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/bulk-cli"><img src="https://img.shields.io/crates/v/bulk-cli.svg?label=bulk-cli" alt="bulk-cli" /></a>
-  <a href="https://pypi.org/project/bulk-client"><img src="https://img.shields.io/pypi/v/bulk-client.svg?v=0.1.0" alt="PyPI" /></a>
-  <a href="https://docs.rs/bulk-client"><img src="https://img.shields.io/docsrs/bulk-client.svg?v=0.1.0" alt="docs.rs" /></a>
+  <a href="https://pypi.org/project/bulk-client"><img src="https://img.shields.io/pypi/v/bulk-client.svg?v=0.1.2" alt="PyPI" /></a>
+  <a href="https://docs.rs/bulk-client"><img src="https://img.shields.io/docsrs/bulk-client.svg?v=0.1.2" alt="docs.rs" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License" /></a>
 </p>
 
