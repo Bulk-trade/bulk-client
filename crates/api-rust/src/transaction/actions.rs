@@ -1,4 +1,5 @@
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
+use crate::msgs::liquidator::LiqConfig;
 use crate::msgs::multisig::{
     CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose,
     MultisigReject, UpdateMultisigPolicy,
@@ -10,7 +11,6 @@ use crate::msgs::{
     Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle,
     RevokeCommissionFee, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet,
 };
-use crate::msgs::liquidator::LiqConfig;
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
 use solana_hash::Hash;
@@ -99,6 +99,7 @@ pub enum Action {
     // ConfigRegime = ordinal(24)
     ConfigRegime(OpaqueAction),
     // ConfigRisk = ordinal(25)
+    #[serde(alias = "configRiskMatrix")]
     ConfigRisk(OpaqueAction),
     // ConfigFeePolicy = ordinal(26)
     #[serde(rename = "cfgf")]
@@ -476,5 +477,16 @@ mod tests {
         });
 
         assert_eq!(without.hash(), with.hash());
+    }
+
+    #[test]
+    fn config_risk_accepts_risk_matrix_alias() {
+        let action: Action = serde_json::from_str(r#"{"configRiskMatrix":{"payload":[1,2,3]}}"#)
+            .expect("configRiskMatrix alias should deserialize");
+
+        match action {
+            Action::ConfigRisk(action) => assert_eq!(action.payload, vec![1, 2, 3]),
+            action => panic!("expected ConfigRisk, got {action:?}"),
+        }
     }
 }

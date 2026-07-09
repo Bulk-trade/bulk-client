@@ -3,7 +3,8 @@ pub mod common;
 pub mod handlers;
 
 use crate::commands::{
-    AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand, CreateMultisigArgs,
+    AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand,
+    ConfigModelArgs, ConfigRiskMatrixArgs, ConfigSecurityArgs, CorrsArgs, CreateMultisigArgs,
     CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, LiquidatorConfigArgs, ModifyArgs,
     MultisigProposalArgs, PlaceArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs,
     TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
@@ -17,6 +18,10 @@ use crate::handlers::account::{
 use crate::handlers::cancel::{handle_cancel, handle_cancel_all};
 use crate::handlers::conditional::{
     handle_range, handle_stop, handle_take_profit, handle_trailing,
+};
+use crate::handlers::deploy::{
+    handle_add_market, handle_config_fairprice, handle_config_regime, handle_config_risk_matrix,
+    handle_config_security, handle_config_volatility, handle_corrs, register_securities,
 };
 use crate::handlers::multisig::{
     handle_create_multisig, handle_multisig_approve, handle_multisig_cancel,
@@ -55,6 +60,10 @@ struct Cli {
     /// Exchange API base URL.
     #[arg(long, global = true)]
     api_url: Option<String>,
+
+    /// Register securities in the CLI registry before resolving deploy market IDs.
+    #[arg(long, global = true)]
+    securities: Option<String>,
 
     /// Show transaction preview before signing.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set, global = true)]
@@ -229,6 +238,49 @@ enum Command {
     /// Example: bulk liq-config liquidator.json
     #[command(name = "liq-config")]
     LiqConfig(LiquidatorConfigArgs),
+
+    /// Submit runtime security definitions.
+    #[command(name = "config-security")]
+    ConfigSecurity(ConfigSecurityArgs),
+
+    /// Submit a fair-price model config.
+    #[command(name = "config-fairprice")]
+    ConfigFairPrice(ConfigModelArgs),
+
+    /// Submit a regime model config.
+    #[command(name = "config-regime")]
+    ConfigRegime(ConfigModelArgs),
+
+    /// Submit a volatility model config.
+    #[command(name = "config-volatility")]
+    ConfigVolatility(ConfigModelArgs),
+
+    /// Submit a risk matrix built from CSV and budget config.
+    #[command(name = "config-risk", alias = "config-risk-matrix")]
+    ConfigRiskMatrix(ConfigRiskMatrixArgs),
+
+    /// Submit a full correlation matrix.
+    #[command(name = "corrs")]
+    Corrs(CorrsArgs),
+
+    /// Create a market book after configs are in place.
+    #[command(name = "add-market")]
+    AddMarket(AddMarketArgs),
+}
+
+impl Command {
+    fn uses_deploy_timeout(&self) -> bool {
+        matches!(
+            self,
+            Command::ConfigSecurity(_)
+                | Command::ConfigFairPrice(_)
+                | Command::ConfigRegime(_)
+                | Command::ConfigVolatility(_)
+                | Command::ConfigRiskMatrix(_)
+                | Command::Corrs(_)
+                | Command::AddMarket(_)
+        )
+    }
 }
 
 fn handle_ledger_info(cli: &Cli) -> eyre::Result<()> {
@@ -298,6 +350,11 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
     let mut stored_config = CliConfig::load()?;
     let api_url = resolve_api_url(cli.api_url.as_deref(), &stored_config);
+    let default_timeout = if cli.command.uses_deploy_timeout() {
+        Duration::from_secs(120)
+    } else {
+        Duration::from_secs(15)
+    };
     let submit = SubmitOptions {
         preview: cli.preview,
         auto_yes: cli.yes,
@@ -308,6 +365,9 @@ async fn main() -> eyre::Result<()> {
     }
     if let Command::Config(args) = &cli.command {
         return handle_config(args, &mut stored_config);
+    }
+    if let Some(path) = cli.securities.as_deref() {
+        register_securities(path)?;
     }
 
     let signer = if cli.ledger {
@@ -328,7 +388,7 @@ async fn main() -> eyre::Result<()> {
     let config = HttpConfig {
         base_url: api_url,
         signer: Some(signer),
-        default_timeout: Duration::from_secs(15),
+        default_timeout,
     };
     let mut api = BulkHttpClient::new(&config)?;
 
@@ -368,6 +428,13 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigExecute(args) => handle_multisig_execute(&mut api, args, &submit).await,
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
         Command::LiqConfig(args) => handle_liquidator_config(&mut api, args, &submit).await,
+        Command::ConfigSecurity(args) => handle_config_security(&mut api, args, &submit).await,
+        Command::ConfigFairPrice(args) => handle_config_fairprice(&mut api, args, &submit).await,
+        Command::ConfigRegime(args) => handle_config_regime(&mut api, args, &submit).await,
+        Command::ConfigVolatility(args) => handle_config_volatility(&mut api, args, &submit).await,
+        Command::ConfigRiskMatrix(args) => handle_config_risk_matrix(&mut api, args, &submit).await,
+        Command::Corrs(args) => handle_corrs(&mut api, args, &submit).await,
+        Command::AddMarket(args) => handle_add_market(&mut api, args, &submit).await,
         Command::LedgerInfo(_) => unreachable!("handled before API setup"),
         Command::Config(_) => unreachable!("handled before API setup"),
     }
