@@ -2,11 +2,11 @@
 // Commands (client handle → actor)
 // ═════════════════════════════════════════════════════════════════════════════
 
-use tokio::sync::oneshot;
-use crate::api::parts::{Event};
+use crate::api::parts::Event;
 use crate::msgs::account::OrderState;
 use crate::msgs::responses::Response;
 use crate::msgs::subscription::SubscriptionRequest;
+use tokio::sync::oneshot;
 
 /// User-supplied callback. Receives the raw JSON payload for the topic.
 /// Runs synchronously inside the actor loop — keep it fast or spawn.
@@ -28,9 +28,7 @@ pub(crate) enum Command {
 
     /// Send a signed async payload through the WebSocket
     /// with no wait for the post response.
-    AsyncTx {
-        json: String,
-    },
+    AsyncTx { json: String },
 
     /// Send a raw JSON message (e.g. oracle update, fire-and-forget).
     SendRaw(String),

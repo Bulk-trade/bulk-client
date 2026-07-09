@@ -6,12 +6,12 @@
 //!     --symbols BTC-USD,ETH-USD
 //! ```
 
-use std::process;
-use clap::Parser;
-use tracing::{info};
-use tracing_subscriber::EnvFilter;
-use bulk_client::api::{BulkHttpClient};
 use bulk_client::api::parts::HttpConfig;
+use bulk_client::api::BulkHttpClient;
+use clap::Parser;
+use std::process;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(name = "md_query", about = "Query MD")]
@@ -28,9 +28,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
     let args = Args::parse();
@@ -40,7 +38,8 @@ async fn main() -> eyre::Result<()> {
         base_url: args.url,
         signer: None,
         ..Default::default()
-    }).unwrap();
+    })
+    .unwrap();
 
     let book = client.get_orderbook(&args.symbol, None, None).await?;
     eprintln!("book: {:?}\n", book);

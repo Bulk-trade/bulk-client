@@ -1,17 +1,21 @@
-use std::sync::Arc;
-use bulk_client::BulkHttpClient;
-use bulk_client::common::side::Side;
-use bulk_client::msgs::{LimitOrder, MarketOrder, ModifyOrder};
-use bulk_client::transaction::{Action};
 use crate::commands::{ModifyArgs, PlaceArgs};
 use crate::common::{submit_actions, SubmitOptions};
+use bulk_client::common::side::Side;
+use bulk_client::msgs::{LimitOrder, MarketOrder, ModifyOrder};
+use bulk_client::transaction::Action;
+use bulk_client::BulkHttpClient;
+use std::sync::Arc;
 
 pub async fn handle_place(
     api: &mut BulkHttpClient,
     args: PlaceArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    let order_type = if args.qty_price.price.is_some() { "Limit" } else { "Market" };
+    let order_type = if args.qty_price.price.is_some() {
+        "Limit"
+    } else {
+        "Market"
+    };
 
     println!(
         "Placing {} {} {} {:?} tif={:?}{}{}",
@@ -33,7 +37,7 @@ pub async fn handle_place(
             tif: args.tif,
             reduce_only: args.reduce_only,
             iso: args.iso,
-            commission: None,
+            builder_code: None,
             meta: Default::default(),
         })
     } else {
@@ -43,7 +47,7 @@ pub async fn handle_place(
             size: args.qty_price.qty,
             reduce_only: args.reduce_only,
             iso: args.iso,
-            commission: None,
+            builder_code: None,
             meta: Default::default(),
         })
     };

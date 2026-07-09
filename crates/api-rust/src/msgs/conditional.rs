@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use crate::transaction::{Action, ActionMeta};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Information for either a Stop or Take-Profit Order
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,7 +22,11 @@ pub struct StopOrTP {
     pub threshold: f64,
 
     /// Optional limit px if will trigger a limit order
-    #[serde(rename = "lim", with = "crate::msgs::opt_fixed_point", default = "default_limit")]
+    #[serde(
+        rename = "lim",
+        with = "crate::msgs::opt_fixed_point",
+        default = "default_limit"
+    )]
     pub limit: Option<f64>,
 
     #[serde(skip)]
@@ -53,11 +57,19 @@ pub struct Range {
     pub collar_max: f64,
 
     /// Limit price for low trigger (or none)
-    #[serde(rename = "lmin", with = "crate::msgs::opt_fixed_point", default = "default_limit")]
+    #[serde(
+        rename = "lmin",
+        with = "crate::msgs::opt_fixed_point",
+        default = "default_limit"
+    )]
     pub limit_min: Option<f64>,
 
     /// Limit price for low trigger (or none)
-    #[serde(rename = "lmax", with = "crate::msgs::opt_fixed_point", default = "default_limit")]
+    #[serde(
+        rename = "lmax",
+        with = "crate::msgs::opt_fixed_point",
+        default = "default_limit"
+    )]
     pub limit_max: Option<f64>,
 
     #[serde(skip)]
@@ -91,7 +103,7 @@ pub struct Trigger {
 /// The executor materializes this as a protective stop leg plus a rotating
 /// sentinel leg that ratchets the stop when price moves favorably by `step_bps`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct Trailing {
     /// Which Instrument
     #[serde(rename = "c")]
@@ -114,7 +126,11 @@ pub struct Trailing {
     pub step_bps: u32,
 
     /// Optional limit px if stop trigger should place a limit order.
-    #[serde(rename = "lim", with = "crate::msgs::opt_fixed_point", default = "default_limit")]
+    #[serde(
+        rename = "lim",
+        with = "crate::msgs::opt_fixed_point",
+        default = "default_limit"
+    )]
     pub limit: Option<f64>,
 
     #[serde(skip)]
@@ -126,7 +142,7 @@ pub struct Trailing {
 /// Registers follow-up actions that should execute once the parent action
 /// (identified by `parent_seqno` in the same transaction) receives its first fill.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct OnFill {
     /// Parent action sequence index in the same transaction.
     #[serde(rename = "p")]
@@ -138,7 +154,6 @@ pub struct OnFill {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
-
 
 fn default_limit() -> Option<f64> {
     None

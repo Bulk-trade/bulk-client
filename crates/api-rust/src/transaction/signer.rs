@@ -120,12 +120,7 @@ impl TransactionSigner {
         keypair_name: &str,
     ) -> eyre::Result<Self> {
         let derivation_path = parse_derivation_path(derivation_path)?;
-        let resolved = resolve_ledger_wallet(
-            locator,
-            &derivation_path,
-            confirm_key,
-            keypair_name,
-        )?;
+        let resolved = resolve_ledger_wallet(locator, &derivation_path, confirm_key, keypair_name)?;
         Ok(Self {
             kind: SignerKind::Ledger(LedgerConfig {
                 locator: locator.to_string(),
@@ -158,12 +153,7 @@ impl TransactionSigner {
         keypair_name: &str,
     ) -> eyre::Result<LedgerResolveInfo> {
         let derivation_path = parse_derivation_path(derivation_path)?;
-        let resolved = resolve_ledger_wallet(
-            locator,
-            &derivation_path,
-            confirm_key,
-            keypair_name,
-        )?;
+        let resolved = resolve_ledger_wallet(locator, &derivation_path, confirm_key, keypair_name)?;
         Ok(LedgerResolveInfo {
             locator: locator.to_string(),
             derivation_path: format!("{derivation_path:?}"),
@@ -207,19 +197,12 @@ impl TransactionSigner {
                 )?;
                 let payload = format!("bulk-tx:{}", bs58::encode(message).into_string());
                 let offchain = offchain_message_envelope_bytes(payload.as_bytes(), &cfg.pubkey)?;
-                sign_ledger_offchain_strict(
-                    &resolved.wallet,
-                    &cfg.derivation_path,
-                    &offchain,
-                )
+                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
             }
         }
     }
 
-    pub fn sign_transaction_clear(
-        &self,
-        clear_text: &str,
-    ) -> eyre::Result<Signature> {
+    pub fn sign_transaction_clear(&self, clear_text: &str) -> eyre::Result<Signature> {
         match &self.kind {
             SignerKind::Software(keypair) => Ok(keypair.sign_message(clear_text.as_bytes())),
             #[cfg(feature = "ledger")]
@@ -230,13 +213,8 @@ impl TransactionSigner {
                     cfg.confirm_key,
                     &cfg.keypair_name,
                 )?;
-                let offchain =
-                    offchain_message_envelope_bytes(clear_text.as_bytes(), &cfg.pubkey)?;
-                sign_ledger_offchain_strict(
-                    &resolved.wallet,
-                    &cfg.derivation_path,
-                    &offchain,
-                )
+                let offchain = offchain_message_envelope_bytes(clear_text.as_bytes(), &cfg.pubkey)?;
+                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
             }
         }
     }
@@ -326,8 +304,8 @@ fn enumerate_ledger_devices() -> eyre::Result<Vec<EnumeratedLedger>> {
     for info in hid.device_list() {
         let strict = is_valid_ledger(info.vendor_id(), info.product_id());
         let fallback = info.vendor_id() == 0x2c97;
-        let hid_ok =
-            info.usage_page() == HID_GLOBAL_USAGE_PAGE || info.interface_number() == HID_USB_DEVICE_CLASS;
+        let hid_ok = info.usage_page() == HID_GLOBAL_USAGE_PAGE
+            || info.interface_number() == HID_USB_DEVICE_CLASS;
         if !strict && !fallback {
             continue;
         }
@@ -377,8 +355,8 @@ fn resolve_ledger_wallet(
     for info in hid.device_list() {
         let strict = is_valid_ledger(info.vendor_id(), info.product_id());
         let fallback = info.vendor_id() == 0x2c97;
-        let hid_ok =
-            info.usage_page() == HID_GLOBAL_USAGE_PAGE || info.interface_number() == HID_USB_DEVICE_CLASS;
+        let hid_ok = info.usage_page() == HID_GLOBAL_USAGE_PAGE
+            || info.interface_number() == HID_USB_DEVICE_CLASS;
         if !strict && !fallback {
             continue;
         }
@@ -509,4 +487,3 @@ fn sign_ledger_offchain_strict(
         .sign_offchain_message(derivation_path, envelope)
         .map_err(|e| eyre::eyre!("ledger sign failed: {e}"))
 }
-

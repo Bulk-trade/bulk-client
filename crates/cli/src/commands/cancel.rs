@@ -2,8 +2,8 @@
 // CancelArgs
 // ---------------------------------------------------------------------------
 
-use std::str::FromStr;
 use solana_hash::Hash;
+use std::str::FromStr;
 
 #[derive(clap::Args, Debug)]
 pub struct CancelArgs {
@@ -25,8 +25,6 @@ pub struct CancelAllArgs {
     #[arg(long)]
     pub instrument: Option<String>,
 }
-
-
 
 /// Strip an optional `oid=` prefix so users can write either form.
 fn parse_oid(s: &str) -> eyre::Result<Hash, String> {

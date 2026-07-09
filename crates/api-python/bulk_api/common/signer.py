@@ -284,7 +284,7 @@ class TransactionSigner:
             case {"abc": order}:
                 fee = int(order['fee'])
                 if fee < 1 or fee > 15:
-                    raise ValueError("commission fee must be 1..=15 bps")
+                    raise ValueError("builder-code fee must be 1..=15 bps")
                 return b''.join([
                     TransactionSigner.write_u32(40),
                     TransactionSigner.decode_and_validate_32_bytes(order['to']),
@@ -374,7 +374,7 @@ class TransactionSigner:
             return b''
         fee = int(value['fee'])
         if fee < 1 or fee > 15:
-            raise ValueError("commission fee must be 1..=15 bps")
+            raise ValueError("builder-code fee must be 1..=15 bps")
         return b''.join([
             bytes([0x01]),
             TransactionSigner.decode_and_validate_32_bytes(value['to']),

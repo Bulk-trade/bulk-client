@@ -1,5 +1,5 @@
-use std::str::FromStr;
 use eyre::{bail, Context};
+use std::str::FromStr;
 
 /// `qty` for market orders, `qty@price` for limit orders.
 #[derive(Debug, Clone)]
@@ -15,19 +15,20 @@ impl FromStr for QtyPrice {
     fn from_str(s: &str) -> eyre::Result<Self> {
         match s.split_once('@') {
             Some((qty_part, price_part)) => {
-                let qty = f64::from_str(qty_part).with_context(|| {
-                    format!("invalid quantity '{qty_part}' in '{s}'")
-                })?;
-                let price = f64::from_str(price_part).with_context(|| {
-                    format!("invalid price '{price_part}' in '{s}'")
-                })?;
+                let qty = f64::from_str(qty_part)
+                    .with_context(|| format!("invalid quantity '{qty_part}' in '{s}'"))?;
+                let price = f64::from_str(price_part)
+                    .with_context(|| format!("invalid price '{price_part}' in '{s}'"))?;
                 if qty <= 0.0 {
                     bail!("quantity must be positive, got {qty}");
                 }
                 if price <= 0.0 {
                     bail!("price must be positive, got {price}");
                 }
-                Ok(QtyPrice { qty, price: Some(price) })
+                Ok(QtyPrice {
+                    qty,
+                    price: Some(price),
+                })
             }
             None => {
                 let qty = f64::from_str(s).with_context(|| {

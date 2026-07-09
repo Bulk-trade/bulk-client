@@ -1,8 +1,8 @@
-use std::str::FromStr;
-use solana_hash::Hash;
+use crate::common::QtyPrice;
 use bulk_client::common::side::Side;
 use bulk_client::common::tif::TimeInForce;
-use crate::common::QtyPrice;
+use solana_hash::Hash;
+use std::str::FromStr;
 // ---------------------------------------------------------------------------
 // Place limit order
 // ---------------------------------------------------------------------------

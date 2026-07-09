@@ -465,7 +465,7 @@ class BulkHttpClient:
         fee: int,
         nonce: Optional[int] = None,
     ) -> Dict:
-        """Approve a builder-code recipient; builder codes are commission fees on the wire."""
+        """Approve a builder-code recipient; builder codes are builder-code fees on the wire."""
         return self.approve_builder_code(to=to, fee=fee, nonce=nonce)
 
     def approve_builder_code(

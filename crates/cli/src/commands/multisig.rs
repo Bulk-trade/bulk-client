@@ -2,8 +2,8 @@
 // CreateMultisigArgs
 // ---------------------------------------------------------------------------
 
-use std::str::FromStr;
 use solana_pubkey::Pubkey;
+use std::str::FromStr;
 
 #[derive(clap::Args, Debug)]
 pub struct CreateMultisigArgs {
@@ -73,4 +73,3 @@ pub struct MultisigProposalArgs {
 fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
     Pubkey::from_str(s).map_err(|e| e.to_string())
 }
-

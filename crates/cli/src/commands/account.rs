@@ -1,11 +1,10 @@
-
 // ---------------------------------------------------------------------------
 // Faucet
 // ---------------------------------------------------------------------------
 
-use std::str::FromStr;
-use solana_keypair::Pubkey;
 use bulk_client::msgs::subaccounts::TransferKind;
+use solana_keypair::Pubkey;
+use std::str::FromStr;
 
 #[derive(clap::Args, Debug)]
 pub struct FaucetArgs {
@@ -123,6 +122,8 @@ fn parse_transfer_kind(s: &str) -> Result<TransferKind, String> {
     match s {
         "internal" => Ok(TransferKind::Internal),
         "external" => Ok(TransferKind::External),
-        other => Err(format!("unknown transfer kind `{other}`; expected `internal` or `external`")),
+        other => Err(format!(
+            "unknown transfer kind `{other}`; expected `internal` or `external`"
+        )),
     }
 }

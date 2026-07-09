@@ -2,9 +2,8 @@ pub mod command;
 pub mod config;
 pub mod events;
 
-pub use events::*;
 pub use config::*;
-
+pub use events::*;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -16,4 +15,3 @@ pub fn make_nonce() -> u64 {
         .unwrap()
         .as_nanos() as u64
 }
-

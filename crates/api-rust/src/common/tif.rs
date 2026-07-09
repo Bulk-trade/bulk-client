@@ -1,7 +1,7 @@
-use std::str::FromStr;
 use eyre::bail;
-use serde::{de, Deserialize, Deserializer, Serialize};
 use serde::de::Error;
+use serde::{de, Deserialize, Deserializer, Serialize};
+use std::str::FromStr;
 
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -30,13 +30,10 @@ impl FromStr for TimeInForce {
             "GTC" => Ok(TimeInForce::GTC),
             "IOC" => Ok(TimeInForce::IOC),
             "ALO" | "POSTONLY" => Ok(TimeInForce::ALO),
-            _ => bail!(
-                "unknown time-in-force '{s}'\n  → expected GTC, IOC, ALO"
-            ),
+            _ => bail!("unknown time-in-force '{s}'\n  → expected GTC, IOC, ALO"),
         }
     }
 }
-
 
 impl Default for TimeInForce {
     fn default() -> TimeInForce {
@@ -76,4 +73,3 @@ impl<'de> Deserialize<'de> for TimeInForce {
         }
     }
 }
-

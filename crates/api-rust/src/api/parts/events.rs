@@ -1,12 +1,10 @@
-use serde_json::Value;
 use crate::msgs::account::{Fill, LeverageSetting, Margin, OrderState, PositionInfo};
 use crate::msgs::md::{Candle, L2Snapshot, Ticker};
-
+use serde_json::Value;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Event topics
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 /// Topics to subscribe to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,7 +23,7 @@ pub enum Topic {
     Order,
     Error,
     /// Connection lifecycle events (connected, disconnected).
-    Status
+    Status,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

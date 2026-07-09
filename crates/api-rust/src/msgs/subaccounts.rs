@@ -1,8 +1,7 @@
-use std::sync::Arc;
+use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
 use solana_keypair::Pubkey;
-use crate::transaction::ActionMeta;
-
+use std::sync::Arc;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type of transfer
@@ -50,7 +49,6 @@ pub struct RemoveSubAccount {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -6,14 +6,14 @@
 //!     --symbols BTC-USD,ETH-USD
 //! ```
 
-use std::process;
-use std::str::FromStr;
+use bulk_client::api::parts::HttpConfig;
+use bulk_client::api::BulkHttpClient;
 use clap::Parser;
 use solana_pubkey::Pubkey;
-use tracing::{info};
+use std::process;
+use std::str::FromStr;
+use tracing::info;
 use tracing_subscriber::EnvFilter;
-use bulk_client::api::{BulkHttpClient};
-use bulk_client::api::parts::HttpConfig;
 
 #[derive(Parser, Debug)]
 #[command(name = "account_query", about = "Query Account")]
@@ -30,9 +30,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
     let args = Args::parse();

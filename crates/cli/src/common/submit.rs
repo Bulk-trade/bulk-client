@@ -1,7 +1,7 @@
-use bulk_client::BulkHttpClient;
 use bulk_client::parts::make_nonce;
-use bulk_client::transaction::Action;
 use bulk_client::transaction::canonical_message;
+use bulk_client::transaction::Action;
+use bulk_client::BulkHttpClient;
 
 #[derive(Clone, Debug)]
 pub struct SubmitOptions {

@@ -85,14 +85,15 @@ struct RawSignableMarketOrder<'a>(&'a crate::msgs::MarketOrder);
 
 impl Serialize for RawSignableMarketOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(5 + usize::from(self.0.commission.is_some()))?;
+        let mut tuple =
+            serializer.serialize_tuple(5 + usize::from(self.0.builder_code.is_some()))?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&RawSafeF64(self.0.size))?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
-        if let Some(commission) = &self.0.commission {
-            tuple.serialize_element(commission)?;
+        if self.0.builder_code.is_some() {
+            tuple.serialize_element(&self.0.builder_code)?;
         }
         tuple.end()
     }
@@ -102,7 +103,8 @@ struct RawSignableLimitOrder<'a>(&'a crate::msgs::LimitOrder);
 
 impl Serialize for RawSignableLimitOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(7 + usize::from(self.0.commission.is_some()))?;
+        let mut tuple =
+            serializer.serialize_tuple(7 + usize::from(self.0.builder_code.is_some()))?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&RawSafeF64(self.0.price))?;
@@ -110,8 +112,8 @@ impl Serialize for RawSignableLimitOrder<'_> {
         tuple.serialize_element(&self.0.tif)?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
-        if let Some(commission) = &self.0.commission {
-            tuple.serialize_element(commission)?;
+        if self.0.builder_code.is_some() {
+            tuple.serialize_element(&self.0.builder_code)?;
         }
         tuple.end()
     }
@@ -258,10 +260,16 @@ impl Serialize for RawSignableAction<'_> {
                 serializer.serialize_newtype_variant("Action", 38, "UpdateValidatorSet", action)
             }
             Action::UpdateRiskConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 40, "UpdateRiskConfig", action)
+                serializer.serialize_newtype_variant("Action", 39, "UpdateRiskConfig", action)
+            }
+            Action::ApproveCommissionFee(action) => {
+                serializer.serialize_newtype_variant("Action", 40, "ApproveCommissionFee", action)
+            }
+            Action::RevokeCommissionFee(action) => {
+                serializer.serialize_newtype_variant("Action", 41, "RevokeCommissionFee", action)
             }
             Action::UpdateLiquidatorConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 41, "UpdateLiquidatorConfig", action)
+                serializer.serialize_newtype_variant("Action", 42, "UpdateLiquidatorConfig", action)
             }
         }
     }
@@ -272,7 +280,9 @@ mod tests {
     use super::*;
     use crate::common::tif::TimeInForce;
     use crate::msgs::conditional::StopOrTP;
-    use crate::msgs::{CancelAll, Faucet, LimitOrder};
+    use crate::msgs::{
+        ApproveCommissionFee, BuilderCode, CancelAll, Faucet, LimitOrder, RevokeCommissionFee,
+    };
     use crate::transaction::ActionMeta;
     use std::sync::Arc;
 
@@ -298,7 +308,7 @@ mod tests {
             tif: TimeInForce::GTC,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce: 42,
@@ -358,6 +368,30 @@ mod tests {
     }
 
     #[test]
+    fn commissioned_limit_order_signature_verifies_after_sdk_json_deserialize() {
+        let (mut tx, signer) = make_limit_order_tx();
+        if let Action::LimitOrder(ref mut order) = tx.actions[0] {
+            order.builder_code = Some(BuilderCode {
+                to: Pubkey::new_unique(),
+                fee: 5,
+            });
+        }
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert!(
+            serde_json::from_str::<bulk_transaction::Transaction>(
+                serde_json::to_string(&tx)
+                    .expect("client transaction should serialize")
+                    .as_str()
+            )
+            .expect("sdk transaction should deserialize")
+            .verify()
+            .expect("sdk verify should not error"),
+            "client-signed commissioned limit order must verify with sdk server bytes"
+        );
+    }
+
+    #[test]
     fn limit_order_tx_tampered_price_fails_verify() {
         let (mut tx, signer) = make_limit_order_tx();
         tx.sign(&signer).expect("sign should succeed");
@@ -383,7 +417,7 @@ mod tests {
             size: 0.25,
             reduce_only: false,
             iso: false,
-            commission: None,
+            builder_code: None,
             meta: ActionMeta {
                 account,
                 nonce: 43,
@@ -418,6 +452,78 @@ mod tests {
             .verify()
             .expect("sdk verify should not error"),
             "client-signed market order must verify with sdk server bytes"
+        );
+    }
+
+    #[test]
+    fn commissioned_market_order_signature_verifies_after_sdk_json_deserialize() {
+        let (mut tx, signer) = make_market_order_tx();
+        if let Action::MarketOrder(ref mut order) = tx.actions[0] {
+            order.builder_code = Some(BuilderCode {
+                to: Pubkey::new_unique(),
+                fee: 15,
+            });
+        }
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert!(
+            serde_json::from_str::<bulk_transaction::Transaction>(
+                serde_json::to_string(&tx)
+                    .expect("client transaction should serialize")
+                    .as_str()
+            )
+            .expect("sdk transaction should deserialize")
+            .verify()
+            .expect("sdk verify should not error"),
+            "client-signed commissioned market order must verify with sdk server bytes"
+        );
+    }
+
+    #[test]
+    fn commission_approval_actions_verify_after_sdk_json_deserialize() {
+        let signer =
+            TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
+        let account = signer.public_key();
+        let to = Pubkey::new_unique();
+        let mut tx = Transaction {
+            actions: vec![
+                Action::ApproveCommissionFee(ApproveCommissionFee {
+                    to,
+                    max_fee: 5,
+                    meta: ActionMeta {
+                        account,
+                        nonce: 45,
+                        seqno: 0,
+                        ..Default::default()
+                    },
+                }),
+                Action::RevokeCommissionFee(RevokeCommissionFee {
+                    to,
+                    meta: ActionMeta {
+                        account,
+                        nonce: 45,
+                        seqno: 1,
+                        ..Default::default()
+                    },
+                }),
+            ],
+            nonce: 45,
+            account,
+            signer: Pubkey::default(),
+            signature: Signature::default(),
+        };
+        tx.sign(&signer).expect("sign should succeed");
+
+        assert!(
+            serde_json::from_str::<bulk_transaction::Transaction>(
+                serde_json::to_string(&tx)
+                    .expect("client transaction should serialize")
+                    .as_str()
+            )
+            .expect("sdk transaction should deserialize")
+            .verify()
+            .expect("sdk verify should not error"),
+            "client-signed commission approval actions must verify with sdk server bytes"
         );
     }
 
