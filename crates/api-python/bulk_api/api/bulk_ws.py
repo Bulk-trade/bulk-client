@@ -21,7 +21,7 @@ from bulk_api.messages import SubscriptionRequest
 from bulk_api.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk_api.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
-from bulk_api.messages.trade import ApproveCommissionFee, OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice, RevokeCommissionFee
+from bulk_api.messages.trade import ApproveBuilderCode, OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice, RevokeBuilderCode
 from bulk_api.data import OrderBook
 from bulk_api.common import Topic
 
@@ -324,7 +324,7 @@ class BulkWebSocketClient:
 
     async def place_orders(
         self,
-        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder|ApproveCommissionFee|RevokeCommissionFee]],
+        actions: List[Union[LimitOrder|MarketOrder|CancelAll|CancelOrder|ApproveBuilderCode|RevokeBuilderCode]],
         timeout: Optional[float] = None,
         nonce: Optional[int] = None,
     ) -> List[OrderResponse]:
@@ -485,16 +485,6 @@ class BulkWebSocketClient:
         results = await self.place_orders([market_order], timeout=timeout, nonce=nonce)
         return results[0]
 
-    async def approve_commission_fee(
-        self,
-        to: str,
-        fee: int,
-        timeout: Optional[float] = None,
-        nonce: Optional[int] = None,
-    ) -> OrderResponse:
-        """Approve a builder-code recipient; builder codes are builder-code fees on the wire."""
-        return await self.approve_builder_code(to=to, fee=fee, timeout=timeout, nonce=nonce)
-
     async def approve_builder_code(
         self,
         to: str,
@@ -504,20 +494,11 @@ class BulkWebSocketClient:
     ) -> OrderResponse:
         """Approve a builder-code recipient."""
         results = await self.place_orders(
-            [ApproveCommissionFee(to=to, fee=fee)],
+            [ApproveBuilderCode(to=to, fee=fee)],
             timeout=timeout,
             nonce=nonce,
         )
         return results[0]
-
-    async def revoke_commission_fee(
-        self,
-        to: str,
-        timeout: Optional[float] = None,
-        nonce: Optional[int] = None,
-    ) -> OrderResponse:
-        """Revoke a builder-code recipient approval."""
-        return await self.revoke_builder_code(to=to, timeout=timeout, nonce=nonce)
 
     async def revoke_builder_code(
         self,
@@ -527,7 +508,7 @@ class BulkWebSocketClient:
     ) -> OrderResponse:
         """Revoke a builder-code recipient approval."""
         results = await self.place_orders(
-            [RevokeCommissionFee(to=to)],
+            [RevokeBuilderCode(to=to)],
             timeout=timeout,
             nonce=nonce,
         )
