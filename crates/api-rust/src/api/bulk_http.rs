@@ -417,7 +417,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![order.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![order.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -460,7 +462,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![order.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![order.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -496,7 +500,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![cancel.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![cancel.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -530,7 +536,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![cancel.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![cancel.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -571,7 +579,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![settings.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![settings.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -612,7 +622,11 @@ impl BulkHttpClient {
         };
 
         let results = self
-            .place_tx(vec![Action::AgentWalletCreation(settings)], None, None)
+            .place_tx(
+                vec![Action::AgentWalletCreation(settings)],
+                Some(account),
+                Some(nonce),
+            )
             .await?;
         Ok(results[0].clone())
     }
@@ -651,7 +665,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![action.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![action.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -685,7 +701,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![action.into()], None, None).await?;
+        let results = self
+            .place_tx(vec![action.into()], Some(account), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
@@ -732,7 +750,11 @@ impl BulkHttpClient {
             },
         };
         let results = self
-            .place_tx(vec![Action::WhitelistFaucet(settings)], None, None)
+            .place_tx(
+                vec![Action::WhitelistFaucet(settings)],
+                Some(account),
+                Some(nonce),
+            )
             .await?;
         Ok(results[0].clone())
     }
@@ -775,7 +797,9 @@ impl BulkHttpClient {
             },
         };
 
-        let results = self.place_tx(vec![Action::Faucet(req)], None, None).await?;
+        let results = self
+            .place_tx(vec![Action::Faucet(req)], Some(user), Some(nonce))
+            .await?;
         Ok(results[0].clone())
     }
 
