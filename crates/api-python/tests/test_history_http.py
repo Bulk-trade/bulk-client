@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import types
 import unittest
@@ -101,11 +102,14 @@ U64_MAX = 18_446_744_073_709_551_615
 
 
 class FakeResponse:
-    def __init__(self, status_code, payload):
+    def __init__(self, status_code, payload=None, content=None):
         self.status_code = status_code
         self._payload = payload
+        self.content = json.dumps(payload).encode() if content is None else content
 
     def json(self):
+        if self._payload is None:
+            raise ValueError("response is not JSON")
         return self._payload
 
 
@@ -346,6 +350,27 @@ class HistoryHttpTests(unittest.TestCase):
         self.assertEqual(raised.exception.status, 410)
         self.assertEqual(raised.exception.body.error.code, "CURSOR_EXPIRED")
         self.assertEqual(raised.exception.body.error.message, "history changed")
+
+    @patch.object(http.requests, "get")
+    def test_history_non_contract_errors_preserve_status_with_bounded_fallback(self, get):
+        for status, content in (
+            (502, b""),
+            (503, b"<html>" + b"x" * (16 * 1024) + b"</html>"),
+            (418, b'{"error":"upstream overloaded"}'),
+        ):
+            with self.subTest(status=status):
+                get.return_value = FakeResponse(status, content=content)
+
+                with self.assertRaises(HistoryHttpError) as raised:
+                    self.client.get_fills_page(PUBKEY)
+
+                self.assertEqual(raised.exception.status, status)
+                self.assertEqual(
+                    raised.exception.body.error.code,
+                    "HISTORY_HTTP_ERROR",
+                )
+                self.assertIn(str(status), raised.exception.body.error.message)
+                self.assertLessEqual(len(raised.exception.body.error.message), 256)
 
     @patch.object(http.requests, "get")
     def test_history_order_trigger_is_strict_and_typed(self, get):

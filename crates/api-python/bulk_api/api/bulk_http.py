@@ -34,6 +34,34 @@ from bulk_api.messages import (
 )
 
 
+_HISTORY_ERROR_BODY_MAX_BYTES = 4 * 1024
+
+
+def _history_error_envelope(status: int, content: bytes) -> HistoryErrorEnvelope:
+    if len(content) <= _HISTORY_ERROR_BODY_MAX_BYTES:
+        try:
+            payload = json.loads(content)
+            error = payload["error"]
+            if (
+                isinstance(error, dict)
+                and isinstance(error.get("code"), str)
+                and error["code"]
+                and isinstance(error.get("message"), str)
+                and error["message"]
+            ):
+                return HistoryErrorEnvelope.from_api(payload)
+        except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError):
+            pass
+    return HistoryErrorEnvelope.from_api(
+        {
+            "error": {
+                "code": "HISTORY_HTTP_ERROR",
+                "message": f"History request failed (HTTP {status}): invalid error response",
+            }
+        }
+    )
+
+
 class BulkHttpClient:
     """HTTP REST API client for Bulk Labs exchange"""
 
@@ -437,7 +465,7 @@ class BulkHttpClient:
         if not 200 <= response.status_code < 300:
             raise HistoryHttpError(
                 response.status_code,
-                HistoryErrorEnvelope.from_api(response.json()),
+                _history_error_envelope(response.status_code, response.content),
             )
         return HistoryPage.from_api(response.json(), row_type)
 
