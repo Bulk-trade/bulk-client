@@ -26,6 +26,53 @@ class HistoryPageInfo:
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "HistoryPageInfo":
+        if not isinstance(data, dict):
+            raise ValueError("history page metadata must be an object")
+
+        for field in ("hasMore", "asOfSlot", "startSlot", "endSlot", "coverage"):
+            if field not in data:
+                raise ValueError(f"history page metadata is missing {field}")
+
+        if data.get("nextCursor") is not None and not isinstance(data["nextCursor"], str):
+            raise ValueError("history page nextCursor must be a string or null")
+        if type(data["hasMore"]) is not bool:
+            raise ValueError("history page hasMore must be a boolean")
+        for field in ("asOfSlot", "startSlot", "endSlot"):
+            if (
+                not isinstance(data[field], int)
+                or isinstance(data[field], bool)
+                or not 0 <= data[field] <= (1 << 64) - 1
+            ):
+                raise ValueError(f"history page {field} must be a u64 integer")
+        if data.get("minAvailableSlot") is not None and (
+            not isinstance(data["minAvailableSlot"], int)
+            or isinstance(data["minAvailableSlot"], bool)
+            or not 0 <= data["minAvailableSlot"] <= (1 << 64) - 1
+        ):
+            raise ValueError("history page minAvailableSlot must be a u64 integer or null")
+        if not isinstance(data["coverage"], str):
+            raise ValueError("history page coverage must be a string")
+        if data.get("backfillStatus") is not None and not isinstance(
+            data["backfillStatus"], str
+        ):
+            raise ValueError("history page backfillStatus must be a string or null")
+        if data["hasMore"] and not data.get("nextCursor"):
+            raise ValueError("history page hasMore and nextCursor are inconsistent")
+        if not data["hasMore"] and data.get("nextCursor") is not None:
+            raise ValueError("history page hasMore and nextCursor are inconsistent")
+        if data["startSlot"] > data["endSlot"]:
+            raise ValueError("history page startSlot must not exceed endSlot")
+        if data["endSlot"] > data["asOfSlot"]:
+            raise ValueError("history page endSlot must not exceed asOfSlot")
+        if (
+            data["coverage"] == HistoryCoverageStatus.COMPLETE
+            and data.get("minAvailableSlot") is not None
+            and data["minAvailableSlot"] > data["startSlot"]
+        ):
+            raise ValueError(
+                "history page minAvailableSlot must not exceed startSlot when coverage is complete"
+            )
+
         return cls(
             next_cursor=data.get("nextCursor"),
             has_more=data["hasMore"],
@@ -56,9 +103,16 @@ class HistoryPage(Generic[HistoryRow]):
         payload: Dict[str, Any],
         row_type: Type[HistoryRow],
     ) -> "HistoryPage[HistoryRow]":
+        if not isinstance(payload, dict):
+            raise ValueError("history page response must be an object")
+        if not isinstance(payload.get("data"), list):
+            raise ValueError("history page data must be an array")
+        if not isinstance(payload.get("page"), dict):
+            raise ValueError("history page metadata must be an object")
+
         return cls(
-            data=[row_type.from_api(row) for row in payload["data"]],
             page=HistoryPageInfo.from_api(payload["page"]),
+            data=[row_type.from_api(row) for row in payload["data"]],
         )
 
 
