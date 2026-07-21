@@ -165,6 +165,54 @@ class PositionHistoryUtilityTests(unittest.TestCase):
 
         self.assertEqual([row.sequence for row in rows], [1])
 
+    def test_position_history_raises_on_repeated_cursor(self):
+        utility = load_utility("position_history")
+
+        class FakeClient:
+            def __init__(self, **_kwargs):
+                self.pages = iter(
+                    [
+                        history_page([position(2)], "cursor-1"),
+                        history_page([position(1)], "cursor-1"),
+                    ]
+                )
+
+            def get_positions_page(self, _user, **_kwargs):
+                return next(self.pages)
+
+        with patch.object(utility, "BulkHttpClient", FakeClient):
+            with self.assertRaisesRegex(RuntimeError, "repeated history cursor: cursor-1"):
+                utility.position_history(
+                    account=PUBKEY,
+                    url="https://example.test/api/v1",
+                    n=3,
+                )
+
+    def test_position_history_stops_on_empty_page_with_cursor(self):
+        utility = load_utility("position_history")
+        calls = 0
+
+        class FakeClient:
+            def __init__(self, **_kwargs):
+                pass
+
+            def get_positions_page(self, _user, **_kwargs):
+                nonlocal calls
+                calls += 1
+                if calls > 1:
+                    raise AssertionError("empty page must terminate pagination")
+                return history_page([], "cursor-1")
+
+        with patch.object(utility, "BulkHttpClient", FakeClient):
+            rows = utility.position_history(
+                account=PUBKEY,
+                url="https://example.test/api/v1",
+                n=10,
+            )
+
+        self.assertEqual(rows, [])
+        self.assertEqual(calls, 1)
+
 
 class PnlFromFillsUtilityTests(unittest.TestCase):
     def test_pnl_from_fills_reads_page_data_in_ascending_slot_sequence_order(self):

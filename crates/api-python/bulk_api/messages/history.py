@@ -200,6 +200,31 @@ class FundingPayment:
 
 
 @dataclass
+class HistoryTrigger:
+    is_above: Optional[bool]
+    px: float
+    lim: Optional[float]
+    oco: Optional[str]
+    px_hi: Optional[float]
+    lim_hi: Optional[float]
+    trail_bps: Optional[int]
+    step_bps: Optional[int]
+
+    @classmethod
+    def from_api(cls, data: Dict[str, Any]) -> "HistoryTrigger":
+        return cls(
+            is_above=data.get("isAbove"),
+            px=data["px"],
+            lim=data.get("lim"),
+            oco=data.get("oco"),
+            px_hi=data.get("pxHi"),
+            lim_hi=data.get("limHi"),
+            trail_bps=data.get("trb"),
+            step_bps=data.get("stb"),
+        )
+
+
+@dataclass
 class TerminalOrder:
     order_id: str
     symbol: str
@@ -212,7 +237,7 @@ class TerminalOrder:
     executed_size: float
     reduce_only: bool
     status: str
-    trigger: Optional[Dict[str, Any]]
+    trigger: Optional[HistoryTrigger]
     reason: Optional[str]
     iso: bool
     iso_pubkey: Optional[str]
@@ -234,7 +259,11 @@ class TerminalOrder:
             executed_size=data["executedSize"],
             reduce_only=data["reduceOnly"],
             status=data["status"],
-            trigger=data.get("trigger"),
+            trigger=(
+                HistoryTrigger.from_api(data["trigger"])
+                if data.get("trigger") is not None
+                else None
+            ),
             reason=data.get("reason"),
             iso=data.get("iso", False),
             iso_pubkey=data.get("isoPubkey"),
