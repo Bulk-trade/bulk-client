@@ -1,46 +1,47 @@
 #!/usr/bin/env python
 """
-Pull position history (last 5000) for a specific pubkey
+Pull bounded position history for a specific pubkey
 
 Usage:
     position_history --account <target_pubkey>
 """
 
-import sys
-import os
-import time
 import argparse
 import json
-from typing import Optional
+from dataclasses import asdict
 
-sys.path.insert(0, '../api')
 from bulk_api import BulkHttpClient
-from bulk_api.common import SignatureDomain
 
 
 
 def position_history(
-    auth: str,
     account: str,
     url: str,
-) -> dict:
+    n: int,
+) -> list:
     """
     Load account info
     """
-    client = BulkHttpClient(
-        base_url=url,
-        private_key=auth,
-        signature_domain=SignatureDomain.TESTNET,
-    )
-    return client.get_position_history(user=account)
+    if n <= 0:
+        return []
+    client = BulkHttpClient(base_url=url)
+    rows = []
+    cursor = None
+    while len(rows) < n:
+        page = client.get_positions_page(
+            account,
+            limit=min(500, n - len(rows)),
+            cursor=cursor,
+        )
+        rows.extend(page.data[:n - len(rows)])
+        cursor = page.page.next_cursor
+        if cursor is None:
+            break
+    return rows
 
 
 def main():
     """Main entry point for the application"""
-    auth = os.environ.get("BULK_AUTH_KEY")
-    if not auth:
-        raise ValueError("BULK_AUTH_KEY must be set")
-
     # Setup argument parser
     parser = argparse.ArgumentParser(
         description='Pull position history for a specific pubkey',
@@ -71,8 +72,8 @@ def main():
 
     args = parser.parse_args()
 
-    result = position_history(auth=auth, account=args.account, url=args.url)
-    js = json.dumps(result[:args.n], indent=2)
+    result = position_history(account=args.account, url=args.url, n=args.n)
+    js = json.dumps([asdict(row) for row in result], indent=2)
     print(js)
 
 

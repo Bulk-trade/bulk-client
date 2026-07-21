@@ -4,7 +4,7 @@
 It covers three categories of endpoints:
 
 - **Market data** — public, unsigned (tickers, order books, candles)
-- **Account queries** — public, unsigned (positions, open orders, fills)
+- **Account queries** — public, unsigned (account state, open orders, paginated history)
 - **Trading & settings** — private, signed (orders, cancels, leverage, agent wallets)
 
 ---
@@ -164,27 +164,40 @@ for entry in orders:
     print(f"oid={o['orderId']} {o['coin']} px={o['price']} sz={o['size']}")
 ```
 
-### `get_fills(user)`
+### Paginated account history
 
-Returns up to 5 000 recent trade fills.
+The public history methods return one typed `HistoryPage` and never follow
+`next_cursor` automatically:
+
+| Method | Row type |
+|---|---|
+| `get_fills_page` | `HistoryFill` |
+| `get_positions_page` | `ClosedPosition` |
+| `get_funding_page` | `FundingPayment` |
+| `get_orders_page` | `TerminalOrder` |
+| `get_activity_page` | `AccountActivity` |
+| `get_risk_page` | `RiskEvent` |
 
 ```python
-fills = client.get_fills("YOUR_PUBKEY_BASE58")
-for entry in fills:
-    f = entry["fills"]
-    print(f"{f['symbol']} {'buy' if f['isBuy'] else 'sell'} {f['amount']} @ {f['price']}")
+page = client.get_fills_page(
+    "YOUR_PUBKEY_BASE58",
+    limit=100,
+    start_slot=1_000_000,
+)
+for fill in page.data:
+    print(fill.symbol, fill.amount, fill.price, fill.slot, fill.sequence)
+
+if page.page.next_cursor is not None:
+    next_page = client.get_fills_page(
+        "YOUR_PUBKEY_BASE58",
+        limit=100,
+        cursor=page.page.next_cursor,
+    )
 ```
 
-### `get_position_history(user)`
-
-Returns up to 5 000 closed position records with realised P&L.
-
-```python
-history = client.get_position_history("YOUR_PUBKEY_BASE58")
-for entry in history:
-    p = entry["positions"]
-    print(f"{p['symbol']} pnl={p['realizedPnl']:.2f} closed={p['closeReason']}")
-```
+The keyword-only query arguments are `limit`, `cursor`, `start_slot`, and
+`end_slot`. Do not combine a cursor with either slot bound. Non-success responses
+raise `HistoryHttpError`, preserving `status` and the structured server body.
 
 ---
 

@@ -4,7 +4,7 @@
 It covers three categories of endpoints:
 
 - **Market data** — public, unsigned (tickers, order books, candles)
-- **Account queries** — public, unsigned (positions, open orders, fills)
+- **Account queries** — public, unsigned (account state, open orders, paginated history)
 - **Trading & settings** — private, signed (orders, cancels, leverage, agent wallets)
 
 ---
@@ -184,24 +184,52 @@ for o in &orders {
 }
 ```
 
-### `get_fills(user)`
+### Paginated account history
 
-Returns up to 5 000 recent trade fills.
+The six history methods return exactly one typed `HistoryPage<T>` and never follow
+`nextCursor` automatically:
+
+| Method | Row type |
+|---|---|
+| `get_fills_page` | `HistoryFill` |
+| `get_positions_page` | `ClosedPosition` |
+| `get_funding_page` | `FundingPayment` |
+| `get_orders_page` | `TerminalOrder` |
+| `get_activity_page` | `AccountActivity` |
+| `get_risk_page` | `RiskEvent` |
 
 ```rust
-let fills: Vec<Fill> = client.get_fills("YOUR_PUBKEY_BASE58").await?;
-for f in &fills {
-    println!("fill {} {} {} @ {}", f.symbol, f.side, f.size, f.price);
+use bulk_client::msgs::{HistoryQuery, HistoryPage, HistoryFill};
+
+let first: HistoryPage<HistoryFill> = client
+    .get_fills_page(
+        "YOUR_PUBKEY_BASE58",
+        &HistoryQuery {
+            limit: Some(100),
+            start_slot: Some(1_000_000),
+            ..HistoryQuery::default()
+        },
+    )
+    .await?;
+
+if let Some(cursor) = first.page.next_cursor {
+    let next = client
+        .get_fills_page(
+            "YOUR_PUBKEY_BASE58",
+            &HistoryQuery {
+                limit: Some(100),
+                cursor: Some(cursor),
+                ..HistoryQuery::default()
+            },
+        )
+        .await?;
+    println!("loaded {} more fills", next.data.len());
 }
 ```
 
-### `get_position_history(user)`
-
-Returns up to 5 000 closed position records.
-
-```rust
-let history: Vec<PositionInfo> = client.get_position_history("YOUR_PUBKEY_BASE58").await?;
-```
+`HistoryQuery` supports `limit`, `cursor`, `start_slot`, and `end_slot`. Do not
+combine a cursor with either slot bound. Non-success responses return
+`HistoryHttpError::Api { status, body }`, preserving the server error code and message.
 
 ---
 

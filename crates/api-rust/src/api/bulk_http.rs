@@ -44,6 +44,7 @@ use crate::common::tif::TimeInForce;
 use crate::msgs::*;
 use crate::transaction::{Action, ActionMeta, SignatureDomain, Transaction, TransactionSigner};
 use reqwest::{Client, Url};
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use solana_hash::Hash;
@@ -319,34 +320,84 @@ impl BulkHttpClient {
         Ok(resp.json().await?)
     }
 
-    /// Get trade history (up to 5000 recent fills).
-    ///
-    /// # Arguments
-    /// - `user`: user pubkey to query
-    pub async fn get_fills(&self, user: &str) -> eyre::Result<Vec<Fill>> {
-        let resp = self
-            .client
-            .post(format!("{}/account", self.config.base_url))
-            .json(&json!({ "type": "fills", "user": user }))
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+    /// Get one bounded page of account fills.
+    pub async fn get_fills_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<HistoryFill>, HistoryHttpError> {
+        self.get_history_page(user, "fills", query).await
     }
 
-    /// Get closed position history (up to 5000 positions).
-    ///
-    /// # Arguments
-    /// - `user`: user pubkey to query
-    pub async fn get_position_history(&self, user: &str) -> eyre::Result<Vec<PositionInfo>> {
-        let resp = self
+    /// Get one bounded page of closed positions.
+    pub async fn get_positions_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<ClosedPosition>, HistoryHttpError> {
+        self.get_history_page(user, "positions", query).await
+    }
+
+    /// Get one bounded page of funding payments.
+    pub async fn get_funding_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<FundingPayment>, HistoryHttpError> {
+        self.get_history_page(user, "funding", query).await
+    }
+
+    /// Get one bounded page of terminal orders.
+    pub async fn get_orders_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<TerminalOrder>, HistoryHttpError> {
+        self.get_history_page(user, "orders", query).await
+    }
+
+    /// Get one bounded page of account activity.
+    pub async fn get_activity_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<AccountActivity>, HistoryHttpError> {
+        self.get_history_page(user, "activity", query).await
+    }
+
+    /// Get one bounded page of account risk events.
+    pub async fn get_risk_page(
+        &self,
+        user: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<RiskEvent>, HistoryHttpError> {
+        self.get_history_page(user, "risk", query).await
+    }
+
+    async fn get_history_page<T: DeserializeOwned>(
+        &self,
+        user: &str,
+        kind: &str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<T>, HistoryHttpError> {
+        let response = self
             .client
-            .post(format!("{}/account", self.config.base_url))
-            .json(&json!({ "type": "positions", "user": user }))
+            .get(format!(
+                "{}/accounts/{user}/history/{kind}",
+                self.config.base_url
+            ))
+            .query(query)
             .send()
-            .await?
-            .error_for_status()?;
-        Ok(resp.json().await?)
+            .await?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(response.json().await?)
+        } else {
+            Err(HistoryHttpError::Api {
+                status,
+                body: response.json().await?,
+            })
+        }
     }
 
     // =====================================================================
