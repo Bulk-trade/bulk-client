@@ -1,5 +1,4 @@
 use {
-    crate::msgs::TriggerSpec,
     reqwest::StatusCode,
     serde::{Deserialize, Serialize},
     solana_hash::Hash,
@@ -186,6 +185,26 @@ pub struct FundingPayment {
     pub sequence: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryTrigger {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_above: Option<bool>,
+    pub px: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lim: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_hash")]
+    pub oco: Option<Hash>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub px_hi: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lim_hi: Option<f64>,
+    #[serde(rename = "trb", default, skip_serializing_if = "Option::is_none")]
+    pub trail_bps: Option<u32>,
+    #[serde(rename = "stb", default, skip_serializing_if = "Option::is_none")]
+    pub step_bps: Option<u32>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalOrder {
@@ -202,7 +221,7 @@ pub struct TerminalOrder {
     pub reduce_only: bool,
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trigger: Option<TriggerSpec>,
+    pub trigger: Option<HistoryTrigger>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(default)]
@@ -291,6 +310,32 @@ mod option_pubkey {
     ) -> Result<Option<Pubkey>, D::Error> {
         Option::<String>::deserialize(deserializer)?
             .map(|value| Pubkey::from_str(&value).map_err(serde::de::Error::custom))
+            .transpose()
+    }
+}
+
+mod option_hash {
+    use super::*;
+
+    pub fn serialize<S: serde::Serializer>(
+        value: &Option<Hash>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => serializer.serialize_some(&value.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Hash>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|value| {
+                Hash::from_str(&value).map_err(|error| {
+                    serde::de::Error::custom(format!("invalid base58 hash: {error}"))
+                })
+            })
             .transpose()
     }
 }

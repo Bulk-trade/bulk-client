@@ -40,6 +40,7 @@ HistoryFill = history.HistoryFill
 HistoryHttpError = history.HistoryHttpError
 RiskEvent = history.RiskEvent
 TerminalOrder = history.TerminalOrder
+HistoryTrigger = history.HistoryTrigger
 
 
 def load_http():
@@ -197,7 +198,16 @@ def order_row():
         "executedSize": 1.25,
         "reduceOnly": False,
         "status": "filled",
-        "trigger": None,
+        "trigger": {
+            "isAbove": True,
+            "px": 101_000.0,
+            "lim": 100_500.0,
+            "oco": PUBKEY,
+            "pxHi": 102_000.0,
+            "limHi": 101_500.0,
+            "trb": 250,
+            "stb": 25,
+        },
         "reason": "filled",
         "iso": True,
         "isoPubkey": PUBKEY,
@@ -324,6 +334,28 @@ class HistoryHttpTests(unittest.TestCase):
         self.assertEqual(raised.exception.status, 410)
         self.assertEqual(raised.exception.body.error.code, "CURSOR_EXPIRED")
         self.assertEqual(raised.exception.body.error.message, "history changed")
+
+    @patch.object(http.requests, "get")
+    def test_history_order_trigger_is_strict_and_typed(self, get):
+        get.return_value = FakeResponse(200, page(order_row()))
+
+        order = self.client.get_orders_page(PUBKEY).data[0]
+
+        self.assertIsInstance(order.trigger, HistoryTrigger)
+        self.assertEqual(order.trigger.is_above, True)
+        self.assertEqual(order.trigger.px, 101_000.0)
+        self.assertEqual(order.trigger.lim, 100_500.0)
+        self.assertEqual(order.trigger.oco, PUBKEY)
+        self.assertEqual(order.trigger.px_hi, 102_000.0)
+        self.assertEqual(order.trigger.lim_hi, 101_500.0)
+        self.assertEqual(order.trigger.trail_bps, 250)
+        self.assertEqual(order.trigger.step_bps, 25)
+
+        malformed = order_row()
+        del malformed["trigger"]["px"]
+        get.return_value = FakeResponse(200, page(malformed))
+        with self.assertRaises(KeyError):
+            self.client.get_orders_page(PUBKEY)
 
 
 if __name__ == "__main__":

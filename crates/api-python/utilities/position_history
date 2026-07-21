@@ -27,16 +27,22 @@ def position_history(
     client = BulkHttpClient(base_url=url)
     rows = []
     cursor = None
+    seen_cursors = set()
     while len(rows) < n:
         page = client.get_positions_page(
             account,
             limit=min(500, n - len(rows)),
             cursor=cursor,
         )
-        rows.extend(page.data[:n - len(rows)])
-        cursor = page.page.next_cursor
-        if cursor is None:
+        if not page.data:
             break
+        rows.extend(page.data[:n - len(rows)])
+        if page.page.next_cursor is None:
+            break
+        if page.page.next_cursor in seen_cursors:
+            raise RuntimeError(f"repeated history cursor: {page.page.next_cursor}")
+        seen_cursors.add(page.page.next_cursor)
+        cursor = page.page.next_cursor
     return rows
 
 

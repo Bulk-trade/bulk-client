@@ -2,7 +2,7 @@ use {
     bulk_client::{
         msgs::{
             AccountActivity, ClosedPosition, FundingPayment, HistoryCoverageStatus, HistoryFill,
-            HistoryHttpError, HistoryPage, HistoryQuery, RiskEvent, TerminalOrder,
+            HistoryHttpError, HistoryPage, HistoryQuery, HistoryTrigger, RiskEvent, TerminalOrder,
         },
         BulkHttpClient,
     },
@@ -146,7 +146,16 @@ fn order_row() -> Value {
         "executedSize": 1.25,
         "reduceOnly": false,
         "status": "filled",
-        "trigger": null,
+        "trigger": {
+            "isAbove": true,
+            "px": 101_000.0,
+            "lim": 100_500.0,
+            "oco": PUBKEY,
+            "pxHi": 102_000.0,
+            "limHi": 101_500.0,
+            "trb": 250,
+            "stb": 25
+        },
         "reason": "filled",
         "iso": true,
         "isoPubkey": PUBKEY,
@@ -306,6 +315,19 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .expect("request")
         .starts_with(&format!("GET /accounts/{PUBKEY}/history/orders HTTP/1.1")));
     assert_eq!(order.data[0].status, "filled");
+    let trigger: &HistoryTrigger = order.data[0].trigger.as_ref().expect("typed trigger");
+    assert_eq!(trigger.is_above, Some(true));
+    assert_eq!(trigger.px, 101_000.0);
+    assert_eq!(trigger.lim, Some(100_500.0));
+    assert_eq!(trigger.oco.expect("OCO hash").to_string(), PUBKEY);
+    assert_eq!(trigger.px_hi, Some(102_000.0));
+    assert_eq!(trigger.lim_hi, Some(101_500.0));
+    assert_eq!(trigger.trail_bps, Some(250));
+    assert_eq!(trigger.step_bps, Some(25));
+    assert_eq!(
+        serde_json::to_value(&order.data[0]).expect("serialize typed order")["trigger"]["oco"],
+        PUBKEY
+    );
 
     let (url, request) = spawn_json_server("200 OK", page(activity_row())).await;
     let activity: HistoryPage<AccountActivity> = BulkHttpClient::with_url(&url, None)
@@ -330,6 +352,17 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .expect("request")
         .starts_with(&format!("GET /accounts/{PUBKEY}/history/risk HTTP/1.1")));
     assert_eq!(risk.data[0].event_type, "liquidation");
+}
+
+#[test]
+fn history_order_rejects_malformed_oco_hash() {
+    let mut row = order_row();
+    row["trigger"]["oco"] = json!("not-a-base58-hash");
+
+    let error = serde_json::from_value::<HistoryPage<TerminalOrder>>(page(row))
+        .expect_err("malformed OCO must not deserialize");
+
+    assert!(error.to_string().contains("base58"));
 }
 
 #[tokio::test]
