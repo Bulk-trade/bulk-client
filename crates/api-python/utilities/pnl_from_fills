@@ -21,7 +21,7 @@ def parse_fills(json_file: str) -> List[Dict[str, Any]]:
     try:
         with open(json_file, 'r') as f:
             data = json.load(f)
-        return [item['fills'] for item in data]
+        return sorted(data['data'], key=lambda fill: (fill['slot'], fill['sequence']))
     except Exception as e:
         print(f"Error reading JSON file: {e}")
         sys.exit(1)

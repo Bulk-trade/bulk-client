@@ -15,7 +15,23 @@ import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
 from bulk_api.common import SignatureDomain, TransactionSigner, Side, TimeInForce
-from bulk_api.messages import ApproveBuilderCode, LimitOrder, CancelOrder, MarketOrder, CancelAll, RevokeBuilderCode
+from bulk_api.messages import (
+    AccountActivity,
+    ApproveBuilderCode,
+    CancelAll,
+    CancelOrder,
+    ClosedPosition,
+    FundingPayment,
+    HistoryErrorEnvelope,
+    HistoryFill,
+    HistoryHttpError,
+    HistoryPage,
+    LimitOrder,
+    MarketOrder,
+    RiskEvent,
+    RevokeBuilderCode,
+    TerminalOrder,
+)
 
 
 class BulkHttpClient:
@@ -316,88 +332,114 @@ class BulkHttpClient:
         response.raise_for_status()
         return response.json()
 
-    def get_fills(self, user: str) -> List[Dict]:
-        """
-        Get trade history (up to 5000 recent fills)
-
-        Args:
-            user: User public key (base58)
-
-        Returns:
-            List of fills/trades
-
-        Example:
-            [
-                {
-                    "fills": {
-                        "maker": "maker_pubkey",
-                        "taker": "taker_pubkey",
-                        "orderIdMaker": "maker_order_hash",
-                        "orderIdTaker": "taker_order_hash",
-                        "isBuy": true,
-                        "symbol": "BTC-USD",
-                        "amount": 0.1,
-                        "price": 100000.0,
-                        "liquidation": false,
-                        "timestamp": 1699564800000
-                    }
-                },
-                ...
-            ]
-        """
-        print(f"getting account info for {user} from {self.base_url}/account")
-        response = requests.post(
-            f"{self.base_url}/account",
-            json={
-                "type": "fills",
-                "user": user
-            },
-            timeout=self.timeout
+    def get_fills_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[HistoryFill]:
+        return self._get_history_page(
+            user, "fills", HistoryFill, limit, cursor, start_slot, end_slot
         )
-        response.raise_for_status()
-        return response.json()
 
-    def get_position_history(self, user: str) -> List[Dict]:
-        """
-        Get closed position history (up to 5000 positions)
-
-        Args:
-            user: User public key (base58)
-
-        Returns:
-            List of closed positions with P&L
-
-        Example:
-            [
-                {
-                    "positions": {
-                        "owner": "user_pubkey",
-                        "symbol": "BTC-USD",
-                        "maxQuantity": 0.5,
-                        "totalVolume": 1.2,
-                        "avgOpenPrice": 100000.0,
-                        "avgClosePrice": 102500.0,
-                        "realizedPnl": 1250.0,
-                        "fees": 12.5,
-                        "funding": -5.0,
-                        "openTime": 1699564800000000000,
-                        "closeTime": 1699651200000000000,
-                        "closeReason": "normal"
-                    }
-                },
-                ...
-            ]
-        """
-        response = requests.post(
-            f"{self.base_url}/account",
-            json={
-                "type": "positions",
-                "user": user
-            },
-            timeout=self.timeout
+    def get_positions_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[ClosedPosition]:
+        return self._get_history_page(
+            user, "positions", ClosedPosition, limit, cursor, start_slot, end_slot
         )
-        response.raise_for_status()
-        return response.json()
+
+    def get_funding_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[FundingPayment]:
+        return self._get_history_page(
+            user, "funding", FundingPayment, limit, cursor, start_slot, end_slot
+        )
+
+    def get_orders_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[TerminalOrder]:
+        return self._get_history_page(
+            user, "orders", TerminalOrder, limit, cursor, start_slot, end_slot
+        )
+
+    def get_activity_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[AccountActivity]:
+        return self._get_history_page(
+            user, "activity", AccountActivity, limit, cursor, start_slot, end_slot
+        )
+
+    def get_risk_page(
+        self,
+        user: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+    ) -> HistoryPage[RiskEvent]:
+        return self._get_history_page(
+            user, "risk", RiskEvent, limit, cursor, start_slot, end_slot
+        )
+
+    def _get_history_page(
+        self,
+        user: str,
+        kind: str,
+        row_type,
+        limit: Optional[int],
+        cursor: Optional[str],
+        start_slot: Optional[int],
+        end_slot: Optional[int],
+    ) -> HistoryPage:
+        params = {}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        if start_slot is not None:
+            params["startSlot"] = start_slot
+        if end_slot is not None:
+            params["endSlot"] = end_slot
+        response = requests.get(
+            f"{self.base_url}/accounts/{user}/history/{kind}",
+            params=params,
+            timeout=self.timeout,
+        )
+        if not 200 <= response.status_code < 300:
+            raise HistoryHttpError(
+                response.status_code,
+                HistoryErrorEnvelope.from_api(response.json()),
+            )
+        return HistoryPage.from_api(response.json(), row_type)
 
     # ===================================================================
     # TRADING ENDPOINTS (SIGNED, STATE-MUTATING)

@@ -1,5 +1,7 @@
 pub mod account;
 pub mod conditional;
+pub mod history;
+pub mod liquidator;
 pub mod md;
 pub mod meta;
 pub mod multisig;
@@ -7,11 +9,11 @@ pub mod oracle;
 pub mod order;
 pub mod responses;
 pub mod risk;
-pub mod liquidator;
 pub mod subaccounts;
 pub mod subscription;
 
 pub use account::*;
+pub use history::*;
 pub use md::*;
 pub use meta::*;
 pub use oracle::*;
