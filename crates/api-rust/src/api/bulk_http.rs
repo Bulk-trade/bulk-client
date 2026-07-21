@@ -43,7 +43,7 @@ use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::*;
 use crate::transaction::{Action, ActionMeta, SignatureDomain, Transaction, TransactionSigner};
-use reqwest::{Client, Url};
+use reqwest::{Client, Response as HttpResponse, Url};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -389,14 +389,10 @@ impl BulkHttpClient {
             .query(query)
             .send()
             .await?;
-        let status = response.status();
-        if status.is_success() {
+        if response.status().is_success() {
             Ok(response.json().await?)
         } else {
-            Err(HistoryHttpError::Api {
-                status,
-                body: response.json().await?,
-            })
+            Err(history_api_error(response).await)
         }
     }
 
@@ -938,5 +934,44 @@ impl BulkHttpClient {
                 .ok_or_else(|| eyre::eyre!("signature domain is required for signed requests"))?,
         )?;
         Ok(bs58::encode(sig).into_string())
+    }
+}
+
+const HISTORY_ERROR_BODY_MAX_BYTES: usize = 4 * 1024;
+
+async fn history_api_error(mut response: HttpResponse) -> HistoryHttpError {
+    let status = response.status();
+    let mut bytes = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk))
+                if bytes.len().saturating_add(chunk.len()) <= HISTORY_ERROR_BODY_MAX_BYTES =>
+            {
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Ok(Some(_)) | Err(_) => return fallback_history_api_error(status),
+        }
+    }
+    if let Ok(body) = serde_json::from_slice::<HistoryErrorEnvelope>(&bytes) {
+        if !body.error.code.is_empty() && !body.error.message.is_empty() {
+            return HistoryHttpError::Api { status, body };
+        }
+    }
+    fallback_history_api_error(status)
+}
+
+fn fallback_history_api_error(status: reqwest::StatusCode) -> HistoryHttpError {
+    HistoryHttpError::Api {
+        status,
+        body: HistoryErrorEnvelope {
+            error: HistoryErrorBody {
+                code: "HISTORY_HTTP_ERROR".to_string(),
+                message: format!(
+                    "History request failed (HTTP {}): invalid error response",
+                    status.as_u16()
+                ),
+            },
+        },
     }
 }

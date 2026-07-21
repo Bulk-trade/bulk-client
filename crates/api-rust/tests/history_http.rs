@@ -18,14 +18,18 @@ use {
 
 const PUBKEY: &str = "11111111111111111111111111111111";
 
-async fn spawn_json_server(status: &str, body: Value) -> (String, oneshot::Receiver<String>) {
+async fn spawn_server(
+    status: &str,
+    content_type: &str,
+    body: Vec<u8>,
+) -> (String, oneshot::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind fixture server");
     let address = listener.local_addr().expect("fixture address");
     let (request_tx, request_rx) = oneshot::channel();
     let status = status.to_string();
-    let body = body.to_string();
+    let content_type = content_type.to_string();
     tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("accept fixture request");
         let mut request = Vec::new();
@@ -46,15 +50,23 @@ async fn spawn_json_server(status: &str, body: Value) -> (String, oneshot::Recei
         stream
             .write_all(
                 format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
                     body.len()
                 )
                 .as_bytes(),
             )
             .await
             .expect("write fixture response");
+        stream
+            .write_all(&body)
+            .await
+            .expect("write fixture response body");
     });
     (format!("http://{address}"), request_rx)
+}
+
+async fn spawn_json_server(status: &str, body: Value) -> (String, oneshot::Receiver<String>) {
+    spawn_server(status, "application/json", body.to_string().into_bytes()).await
 }
 
 fn page(row: Value) -> Value {
@@ -405,4 +417,49 @@ async fn history_non_success_preserves_structured_error_status_and_body() {
         .await
         .expect("request")
         .starts_with(&format!("GET /accounts/{PUBKEY}/history/risk HTTP/1.1")));
+}
+
+#[tokio::test]
+async fn history_non_contract_error_bodies_preserve_status_with_bounded_fallback() {
+    for (wire_status, status, content_type, body) in [
+        (
+            "502 Bad Gateway",
+            StatusCode::BAD_GATEWAY,
+            "text/plain",
+            vec![],
+        ),
+        (
+            "503 Service Unavailable",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "text/html",
+            vec![b'x'; 16 * 1024],
+        ),
+        (
+            "418 I'm a teapot",
+            StatusCode::IM_A_TEAPOT,
+            "application/json",
+            br#"{"error":"upstream overloaded"}"#.to_vec(),
+        ),
+    ] {
+        let (url, request) = spawn_server(wire_status, content_type, body).await;
+        let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
+
+        match client
+            .get_fills_page(PUBKEY, &HistoryQuery::default())
+            .await
+            .expect_err("non-contract error body must remain a typed API error")
+        {
+            HistoryHttpError::Api {
+                status: actual,
+                body,
+            } => {
+                assert_eq!(actual, status);
+                assert_eq!(body.error.code, "HISTORY_HTTP_ERROR");
+                assert!(body.error.message.contains(&status.as_u16().to_string()));
+                assert!(body.error.message.len() <= 256);
+            }
+            HistoryHttpError::Transport(error) => panic!("unexpected transport error: {error}"),
+        }
+        request.await.expect("captured request");
+    }
 }
