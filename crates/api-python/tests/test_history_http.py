@@ -37,6 +37,7 @@ AccountActivity = history.AccountActivity
 ClosedPosition = history.ClosedPosition
 FundingPayment = history.FundingPayment
 HistoryCoverageStatus = history.HistoryCoverageStatus
+HistoryBackfillStatus = history.HistoryBackfillStatus
 HistoryFill = history.HistoryFill
 HistoryHttpError = history.HistoryHttpError
 RiskEvent = history.RiskEvent
@@ -263,86 +264,119 @@ class HistoryHttpTests(unittest.TestCase):
         self.client = BulkHttpClient(base_url="https://example.test/api/v1")
 
     @patch.object(http.requests, "get")
-    def test_history_first_page_uses_exact_camel_case_params_and_preserves_u64(self, get):
-        get.return_value = FakeResponse(200, page(fill_row()))
+    @patch.object(http.requests, "post")
+    def test_history_first_page_posts_exact_camel_case_body_and_preserves_u64(self, post, get):
+        get.return_value = post.return_value = FakeResponse(200, page(fill_row()))
 
         result = self.client.get_fills_page(
             PUBKEY,
-            limit=500,
+            limit=5000,
             start_slot=9_007_199_254_740_993,
             end_slot=U64_MAX,
         )
 
-        get.assert_called_once_with(
-            f"https://example.test/api/v1/accounts/{PUBKEY}/history/fills",
-            params={
-                "limit": 500,
+        post.assert_called_once_with(
+            "https://example.test/api/v1/account",
+            json={
+                "type": "fills",
+                "user": PUBKEY,
+                "limit": 5000,
                 "startSlot": 9_007_199_254_740_993,
                 "endSlot": U64_MAX,
             },
             timeout=10,
         )
+        get.assert_not_called()
         self.assertIsInstance(result.data[0], HistoryFill)
         self.assertEqual(result.data[0].slot, U64_MAX)
         self.assertEqual(result.page.coverage, HistoryCoverageStatus.COMPLETE)
 
     @patch.object(http.requests, "get")
-    def test_history_continuation_uses_only_limit_and_cursor_without_auto_follow(self, get):
-        get.return_value = FakeResponse(200, page(fill_row()))
+    @patch.object(http.requests, "post")
+    def test_history_continuation_posts_only_limit_and_cursor_without_auto_follow(self, post, get):
+        get.return_value = post.return_value = FakeResponse(200, page(fill_row()))
 
         result = self.client.get_fills_page(PUBKEY, limit=17, cursor="next_page")
 
-        get.assert_called_once_with(
-            f"https://example.test/api/v1/accounts/{PUBKEY}/history/fills",
-            params={"limit": 17, "cursor": "next_page"},
+        post.assert_called_once_with(
+            "https://example.test/api/v1/account",
+            json={
+                "type": "fills",
+                "user": PUBKEY,
+                "limit": 17,
+                "cursor": "next_page",
+            },
             timeout=10,
         )
+        get.assert_not_called()
         self.assertTrue(result.page.has_more)
         self.assertEqual(result.page.next_cursor, "next_page")
 
     @patch.object(http.requests, "get")
-    def test_history_all_six_methods_use_exact_paths_and_distinct_rows(self, get):
+    @patch.object(http.requests, "post")
+    def test_history_all_six_methods_post_exact_types_and_decode_distinct_rows(self, post, get):
         cases = [
             ("get_fills_page", "fills", fill_row(), HistoryFill),
             ("get_positions_page", "positions", position_row(), ClosedPosition),
-            ("get_funding_page", "funding", funding_row(), FundingPayment),
-            ("get_orders_page", "orders", order_row(), TerminalOrder),
-            ("get_activity_page", "activity", activity_row(), AccountActivity),
-            ("get_risk_page", "risk", risk_row(), RiskEvent),
+            ("get_funding_page", "fundingHistory", funding_row(), FundingPayment),
+            ("get_orders_page", "orderHistory", order_row(), TerminalOrder),
+            ("get_activity_page", "activityHistory", activity_row(), AccountActivity),
+            ("get_risk_page", "riskHistory", risk_row(), RiskEvent),
         ]
 
-        for method, kind, row, row_type in cases:
-            with self.subTest(kind=kind):
+        for method, request_type, row, row_type in cases:
+            with self.subTest(request_type=request_type):
                 get.reset_mock()
-                get.return_value = FakeResponse(200, page(row))
+                post.reset_mock()
+                get.return_value = post.return_value = FakeResponse(200, page(row))
                 result = getattr(self.client, method)(PUBKEY)
-                get.assert_called_once_with(
-                    f"https://example.test/api/v1/accounts/{PUBKEY}/history/{kind}",
-                    params={},
+                post.assert_called_once_with(
+                    "https://example.test/api/v1/account",
+                    json={"type": request_type, "user": PUBKEY},
                     timeout=10,
                 )
+                get.assert_not_called()
                 self.assertIsInstance(result.data[0], row_type)
-                if kind == "risk":
+                if request_type == "riskHistory":
                     self.assertEqual(result.data[0].event_type, RiskEventType.RISK_VAULT)
 
-    @patch.object(http.requests, "get")
-    def test_history_risk_rejects_undocumented_event_type(self, get):
+    @patch.object(http.requests, "post")
+    def test_history_risk_rejects_undocumented_event_type(self, post):
         row = risk_row()
         row["eventType"] = "unknown"
-        get.return_value = FakeResponse(200, page(row))
+        post.return_value = FakeResponse(200, page(row))
 
         with self.assertRaisesRegex(ValueError, "unknown risk event type"):
             self.client.get_risk_page(PUBKEY)
 
-    @patch.object(http.requests, "get")
-    def test_history_non_success_preserves_structured_status_and_body(self, get):
+    @patch.object(http.requests, "post")
+    def test_history_backfill_status_is_optional_and_strict(self, post):
+        post.return_value = FakeResponse(200, page(fill_row()))
+        self.assertIsNone(self.client.get_fills_page(PUBKEY).page.backfill_status)
+
+        pending = page(fill_row())
+        pending["page"]["backfillStatus"] = "pending"
+        post.return_value = FakeResponse(200, pending)
+        self.assertEqual(
+            self.client.get_fills_page(PUBKEY).page.backfill_status,
+            HistoryBackfillStatus.PENDING,
+        )
+
+        unknown = page(fill_row())
+        unknown["page"]["backfillStatus"] = "complete"
+        post.return_value = FakeResponse(200, unknown)
+        with self.assertRaises(ValueError):
+            self.client.get_fills_page(PUBKEY)
+
+    @patch.object(http.requests, "post")
+    def test_history_non_success_preserves_structured_status_and_body(self, post):
         body = {
             "error": {
                 "code": "CURSOR_EXPIRED",
                 "message": "history changed",
             }
         }
-        get.return_value = FakeResponse(410, body)
+        post.return_value = FakeResponse(410, body)
 
         with self.assertRaises(HistoryHttpError) as raised:
             self.client.get_risk_page(PUBKEY)
@@ -351,15 +385,15 @@ class HistoryHttpTests(unittest.TestCase):
         self.assertEqual(raised.exception.body.error.code, "CURSOR_EXPIRED")
         self.assertEqual(raised.exception.body.error.message, "history changed")
 
-    @patch.object(http.requests, "get")
-    def test_history_non_contract_errors_preserve_status_with_bounded_fallback(self, get):
+    @patch.object(http.requests, "post")
+    def test_history_non_contract_errors_preserve_status_with_bounded_fallback(self, post):
         for status, content in (
             (502, b""),
             (503, b"<html>" + b"x" * (16 * 1024) + b"</html>"),
             (418, b'{"error":"upstream overloaded"}'),
         ):
             with self.subTest(status=status):
-                get.return_value = FakeResponse(status, content=content)
+                post.return_value = FakeResponse(status, content=content)
 
                 with self.assertRaises(HistoryHttpError) as raised:
                     self.client.get_fills_page(PUBKEY)
@@ -372,9 +406,9 @@ class HistoryHttpTests(unittest.TestCase):
                 self.assertIn(str(status), raised.exception.body.error.message)
                 self.assertLessEqual(len(raised.exception.body.error.message), 256)
 
-    @patch.object(http.requests, "get")
-    def test_history_order_trigger_is_strict_and_typed(self, get):
-        get.return_value = FakeResponse(200, page(order_row()))
+    @patch.object(http.requests, "post")
+    def test_history_order_trigger_is_strict_and_typed(self, post):
+        post.return_value = FakeResponse(200, page(order_row()))
 
         order = self.client.get_orders_page(PUBKEY).data[0]
 
@@ -390,7 +424,7 @@ class HistoryHttpTests(unittest.TestCase):
 
         malformed = order_row()
         del malformed["trigger"]["px"]
-        get.return_value = FakeResponse(200, page(malformed))
+        post.return_value = FakeResponse(200, page(malformed))
         with self.assertRaises(KeyError):
             self.client.get_orders_page(PUBKEY)
 

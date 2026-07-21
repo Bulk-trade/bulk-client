@@ -396,7 +396,7 @@ class BulkHttpClient:
         end_slot: Optional[int] = None,
     ) -> HistoryPage[FundingPayment]:
         return self._get_history_page(
-            user, "funding", FundingPayment, limit, cursor, start_slot, end_slot
+            user, "fundingHistory", FundingPayment, limit, cursor, start_slot, end_slot
         )
 
     def get_orders_page(
@@ -409,7 +409,7 @@ class BulkHttpClient:
         end_slot: Optional[int] = None,
     ) -> HistoryPage[TerminalOrder]:
         return self._get_history_page(
-            user, "orders", TerminalOrder, limit, cursor, start_slot, end_slot
+            user, "orderHistory", TerminalOrder, limit, cursor, start_slot, end_slot
         )
 
     def get_activity_page(
@@ -422,7 +422,7 @@ class BulkHttpClient:
         end_slot: Optional[int] = None,
     ) -> HistoryPage[AccountActivity]:
         return self._get_history_page(
-            user, "activity", AccountActivity, limit, cursor, start_slot, end_slot
+            user, "activityHistory", AccountActivity, limit, cursor, start_slot, end_slot
         )
 
     def get_risk_page(
@@ -435,31 +435,31 @@ class BulkHttpClient:
         end_slot: Optional[int] = None,
     ) -> HistoryPage[RiskEvent]:
         return self._get_history_page(
-            user, "risk", RiskEvent, limit, cursor, start_slot, end_slot
+            user, "riskHistory", RiskEvent, limit, cursor, start_slot, end_slot
         )
 
     def _get_history_page(
         self,
         user: str,
-        kind: str,
+        request_type: str,
         row_type,
         limit: Optional[int],
         cursor: Optional[str],
         start_slot: Optional[int],
         end_slot: Optional[int],
     ) -> HistoryPage:
-        params = {}
+        payload = {"type": request_type, "user": user}
         if limit is not None:
-            params["limit"] = limit
+            payload["limit"] = limit
         if cursor is not None:
-            params["cursor"] = cursor
+            payload["cursor"] = cursor
         if start_slot is not None:
-            params["startSlot"] = start_slot
+            payload["startSlot"] = start_slot
         if end_slot is not None:
-            params["endSlot"] = end_slot
-        response = requests.get(
-            f"{self.base_url}/accounts/{user}/history/{kind}",
-            params=params,
+            payload["endSlot"] = end_slot
+        response = requests.post(
+            f"{self.base_url}/account",
+            json=payload,
             timeout=self.timeout,
         )
         if not 200 <= response.status_code < 300:

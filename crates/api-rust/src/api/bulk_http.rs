@@ -344,7 +344,7 @@ impl BulkHttpClient {
         user: &str,
         query: &HistoryQuery,
     ) -> Result<HistoryPage<FundingPayment>, HistoryHttpError> {
-        self.get_history_page(user, "funding", query).await
+        self.get_history_page(user, "fundingHistory", query).await
     }
 
     /// Get one bounded page of terminal orders.
@@ -353,7 +353,7 @@ impl BulkHttpClient {
         user: &str,
         query: &HistoryQuery,
     ) -> Result<HistoryPage<TerminalOrder>, HistoryHttpError> {
-        self.get_history_page(user, "orders", query).await
+        self.get_history_page(user, "orderHistory", query).await
     }
 
     /// Get one bounded page of account activity.
@@ -362,7 +362,7 @@ impl BulkHttpClient {
         user: &str,
         query: &HistoryQuery,
     ) -> Result<HistoryPage<AccountActivity>, HistoryHttpError> {
-        self.get_history_page(user, "activity", query).await
+        self.get_history_page(user, "activityHistory", query).await
     }
 
     /// Get one bounded page of account risk events.
@@ -371,22 +371,33 @@ impl BulkHttpClient {
         user: &str,
         query: &HistoryQuery,
     ) -> Result<HistoryPage<RiskEvent>, HistoryHttpError> {
-        self.get_history_page(user, "risk", query).await
+        self.get_history_page(user, "riskHistory", query).await
     }
 
     async fn get_history_page<T: DeserializeOwned>(
         &self,
         user: &str,
-        kind: &str,
+        request_type: &'static str,
         query: &HistoryQuery,
     ) -> Result<HistoryPage<T>, HistoryHttpError> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct AccountHistoryRequest<'a> {
+            #[serde(rename = "type")]
+            request_type: &'static str,
+            user: &'a str,
+            #[serde(flatten)]
+            query: &'a HistoryQuery,
+        }
+
         let response = self
             .client
-            .get(format!(
-                "{}/accounts/{user}/history/{kind}",
-                self.config.base_url
-            ))
-            .query(query)
+            .post(format!("{}/account", self.config.base_url))
+            .json(&AccountHistoryRequest {
+                request_type,
+                user,
+                query,
+            })
             .send()
             .await?;
         if response.status().is_success() {

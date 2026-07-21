@@ -166,17 +166,18 @@ for entry in orders:
 
 ### Paginated account history
 
-The public history methods return one typed `HistoryPage` and never follow
-`next_cursor` automatically:
+All six public history methods use the unsigned `POST /api/v1/account`
+endpoint, return one typed `HistoryPage`, and never follow `next_cursor`
+automatically:
 
-| Method | Row type |
-|---|---|
-| `get_fills_page` | `HistoryFill` |
-| `get_positions_page` | `ClosedPosition` |
-| `get_funding_page` | `FundingPayment` |
-| `get_orders_page` | `TerminalOrder` |
-| `get_activity_page` | `AccountActivity` |
-| `get_risk_page` | `RiskEvent` |
+| Method | Request `type` | Row type |
+|---|---|---|
+| `get_fills_page` | `fills` | `HistoryFill` |
+| `get_positions_page` | `positions` | `ClosedPosition` |
+| `get_funding_page` | `fundingHistory` | `FundingPayment` |
+| `get_orders_page` | `orderHistory` | `TerminalOrder` |
+| `get_activity_page` | `activityHistory` | `AccountActivity` |
+| `get_risk_page` | `riskHistory` | `RiskEvent` |
 
 ```python
 page = client.get_fills_page(
@@ -195,9 +196,17 @@ if page.page.next_cursor is not None:
     )
 ```
 
-The keyword-only query arguments are `limit`, `cursor`, `start_slot`, and
-`end_slot`. Do not combine a cursor with either slot bound. Non-success responses
-raise `HistoryHttpError`, preserving `status` and the structured server body.
+The keyword-only arguments are added to the `/account` JSON body beside `user`
+and `type`; unset fields are omitted. On a first page, `start_slot` and
+`end_slot` are inclusive and `limit` is `1..=5000`, defaulting to `5000` when
+omitted. A continuation may change `limit`, but must send only `limit` and the
+opaque `cursor`, without slot bounds. Non-success responses raise
+`HistoryHttpError`, preserving `status` and the structured server body.
+
+`HistoryPage.page.backfill_status` is `HistoryBackfillStatus.PENDING` only when the
+server returns `page.backfillStatus: "pending"`; complete and legacy responses
+omit the field and deserialize as `None`. Unknown status strings raise
+`ValueError`.
 
 ---
 

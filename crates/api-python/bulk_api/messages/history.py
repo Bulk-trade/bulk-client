@@ -9,6 +9,10 @@ class HistoryCoverageStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class HistoryBackfillStatus(str, Enum):
+    PENDING = "pending"
+
+
 @dataclass
 class HistoryPageInfo:
     next_cursor: Optional[str]
@@ -18,6 +22,7 @@ class HistoryPageInfo:
     end_slot: int
     coverage: HistoryCoverageStatus
     min_available_slot: Optional[int]
+    backfill_status: Optional[HistoryBackfillStatus] = None
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "HistoryPageInfo":
@@ -29,6 +34,11 @@ class HistoryPageInfo:
             end_slot=data["endSlot"],
             coverage=HistoryCoverageStatus(data["coverage"]),
             min_available_slot=data.get("minAvailableSlot"),
+            backfill_status=(
+                HistoryBackfillStatus(data["backfillStatus"])
+                if data.get("backfillStatus") is not None
+                else None
+            ),
         )
 
 
