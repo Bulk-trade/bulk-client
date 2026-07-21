@@ -306,6 +306,12 @@ class AccountActivity:
         )
 
 
+class RiskEventType(str, Enum):
+    LIQUIDATION = "liquidation"
+    ADL = "adl"
+    RISK_VAULT = "risk_vault"
+
+
 @dataclass
 class RiskEvent:
     owner: str
@@ -313,7 +319,7 @@ class RiskEvent:
     is_buy: bool
     amount: float
     price: float
-    event_type: str
+    event_type: RiskEventType
     margin_prior: Optional[float]
     margin_after: Optional[float]
     reason: Optional[str]
@@ -325,13 +331,17 @@ class RiskEvent:
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "RiskEvent":
+        try:
+            event_type = RiskEventType(data["eventType"])
+        except ValueError as error:
+            raise ValueError(f"unknown risk event type: {data['eventType']}") from error
         return cls(
             owner=data["owner"],
             symbol=data["symbol"],
             is_buy=data["isBuy"],
             amount=data["amount"],
             price=data["price"],
-            event_type=data["eventType"],
+            event_type=event_type,
             margin_prior=data.get("marginPrior"),
             margin_after=data.get("marginAfter"),
             reason=data.get("reason"),
