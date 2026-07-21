@@ -1,9 +1,9 @@
 use {
     bulk_client::{
         msgs::{
-            AccountActivity, ClosedPosition, FundingPayment, HistoryCoverageStatus, HistoryFill,
-            HistoryHttpError, HistoryPage, HistoryQuery, HistoryTrigger, RiskEvent, RiskEventType,
-            TerminalOrder,
+            AccountActivity, ClosedPosition, FundingPayment, HistoryBackfillStatus,
+            HistoryCoverageStatus, HistoryFill, HistoryHttpError, HistoryPage, HistoryQuery,
+            HistoryTrigger, RiskEvent, RiskEventType, TerminalOrder,
         },
         BulkHttpClient,
     },
@@ -40,8 +40,20 @@ async fn spawn_server(
                 break;
             }
             request.extend_from_slice(&bytes[..read]);
-            if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                break;
+            if let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                let headers =
+                    std::str::from_utf8(&request[..header_end]).expect("request headers are UTF-8");
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("content-length: ")
+                            .or_else(|| line.strip_prefix("Content-Length: "))
+                    })
+                    .map(|length| length.parse::<usize>().expect("valid content length"))
+                    .unwrap_or_default();
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
             }
         }
         request_tx
@@ -82,6 +94,16 @@ fn page(row: Value) -> Value {
             "minAvailableSlot": 9_007_199_254_740_993_u64
         }
     })
+}
+
+fn captured_body(request: &str) -> Value {
+    serde_json::from_str(
+        request
+            .split_once("\r\n\r\n")
+            .expect("request has headers and body")
+            .1,
+    )
+    .expect("request body is JSON")
 }
 
 fn fill_row() -> Value {
@@ -215,14 +237,14 @@ fn risk_row() -> Value {
 }
 
 #[tokio::test]
-async fn history_first_page_uses_exact_camel_case_query_and_preserves_u64() {
+async fn history_first_page_posts_exact_camel_case_body_and_preserves_u64() {
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
     let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
     let response: HistoryPage<HistoryFill> = client
         .get_fills_page(
             PUBKEY,
             &HistoryQuery {
-                limit: Some(500),
+                limit: Some(5000),
                 cursor: None,
                 start_slot: Some(9_007_199_254_740_993),
                 end_slot: Some(u64::MAX),
@@ -231,16 +253,20 @@ async fn history_first_page_uses_exact_camel_case_query_and_preserves_u64() {
         .await
         .expect("fetch fills page");
 
+    let request = request.await.expect("captured request");
     assert_eq!(
-        request
-            .await
-            .expect("captured request")
-            .lines()
-            .next()
-            .expect("request line"),
-        format!(
-            "GET /accounts/{PUBKEY}/history/fills?limit=500&startSlot=9007199254740993&endSlot=18446744073709551615 HTTP/1.1"
-        )
+        request.lines().next().expect("request line"),
+        "POST /account HTTP/1.1"
+    );
+    assert_eq!(
+        captured_body(&request),
+        json!({
+            "type": "fills",
+            "user": PUBKEY,
+            "limit": 5000,
+            "startSlot": 9_007_199_254_740_993_u64,
+            "endSlot": u64::MAX
+        })
     );
     assert_eq!(response.data[0].slot, u64::MAX);
     assert_eq!(response.data[0].sequence, u64::MAX - 2);
@@ -249,7 +275,7 @@ async fn history_first_page_uses_exact_camel_case_query_and_preserves_u64() {
 }
 
 #[tokio::test]
-async fn history_continuation_sends_only_limit_and_cursor_and_does_not_auto_follow() {
+async fn history_continuation_posts_only_limit_and_cursor_and_does_not_auto_follow() {
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
     let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
     let response = client
@@ -265,21 +291,26 @@ async fn history_continuation_sends_only_limit_and_cursor_and_does_not_auto_foll
         .await
         .expect("fetch one continuation page");
 
+    let request = request.await.expect("captured request");
     assert_eq!(
-        request
-            .await
-            .expect("captured request")
-            .lines()
-            .next()
-            .expect("request line"),
-        format!("GET /accounts/{PUBKEY}/history/fills?limit=17&cursor=next_page HTTP/1.1")
+        request.lines().next().expect("request line"),
+        "POST /account HTTP/1.1"
+    );
+    assert_eq!(
+        captured_body(&request),
+        json!({
+            "type": "fills",
+            "user": PUBKEY,
+            "limit": 17,
+            "cursor": "next_page"
+        })
     );
     assert!(response.page.has_more);
     assert_eq!(response.page.next_cursor.as_deref(), Some("next_page"));
 }
 
 #[tokio::test]
-async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
+async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows() {
     let query = HistoryQuery::default();
 
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
@@ -288,10 +319,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_fills_page(PUBKEY, &query)
         .await
         .expect("fills");
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/fills HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "fills", "user": PUBKEY })
+    );
     assert!(fill.data[0].iso);
 
     let (url, request) = spawn_json_server("200 OK", page(position_row())).await;
@@ -300,9 +333,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_positions_page(PUBKEY, &query)
         .await
         .expect("positions");
-    assert!(request.await.expect("request").starts_with(&format!(
-        "GET /accounts/{PUBKEY}/history/positions HTTP/1.1"
-    )));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "positions", "user": PUBKEY })
+    );
     assert_eq!(position.data[0].close_slot, u64::MAX - 8);
 
     let (url, request) = spawn_json_server("200 OK", page(funding_row())).await;
@@ -311,10 +347,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_funding_page(PUBKEY, &query)
         .await
         .expect("funding");
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/funding HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "fundingHistory", "user": PUBKEY })
+    );
     assert_eq!(funding.data[0].sequence, u64::MAX - 4);
 
     let (url, request) = spawn_json_server("200 OK", page(order_row())).await;
@@ -323,10 +361,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_orders_page(PUBKEY, &query)
         .await
         .expect("orders");
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/orders HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "orderHistory", "user": PUBKEY })
+    );
     assert_eq!(order.data[0].status, "filled");
     let trigger: &HistoryTrigger = order.data[0].trigger.as_ref().expect("typed trigger");
     assert_eq!(trigger.is_above, Some(true));
@@ -348,10 +388,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_activity_page(PUBKEY, &query)
         .await
         .expect("activity");
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/activity HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "activityHistory", "user": PUBKEY })
+    );
     assert_eq!(activity.data[0].activity_type, "transfer");
 
     let (url, request) = spawn_json_server("200 OK", page(risk_row())).await;
@@ -360,10 +402,12 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .get_risk_page(PUBKEY, &query)
         .await
         .expect("risk");
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/risk HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "riskHistory", "user": PUBKEY })
+    );
     assert_eq!(risk.data[0].event_type, RiskEventType::RiskVault);
 }
 
@@ -385,6 +429,27 @@ fn history_order_rejects_malformed_oco_hash() {
         .expect_err("malformed OCO must not deserialize");
 
     assert!(error.to_string().contains("base58"));
+}
+
+#[test]
+fn history_page_backfill_status_is_optional_and_strict() {
+    let without_backfill = serde_json::from_value::<HistoryPage<HistoryFill>>(page(fill_row()))
+        .expect("legacy page without backfill status");
+    assert_eq!(without_backfill.page.backfill_status, None);
+
+    let mut pending = page(fill_row());
+    pending["page"]["backfillStatus"] = json!("pending");
+    let pending = serde_json::from_value::<HistoryPage<HistoryFill>>(pending)
+        .expect("page with pending backfill status");
+    assert_eq!(
+        pending.page.backfill_status,
+        Some(HistoryBackfillStatus::Pending)
+    );
+
+    let mut unknown = page(fill_row());
+    unknown["page"]["backfillStatus"] = json!("complete");
+    serde_json::from_value::<HistoryPage<HistoryFill>>(unknown)
+        .expect_err("unknown backfill status must not deserialize");
 }
 
 #[tokio::test]
@@ -413,10 +478,12 @@ async fn history_non_success_preserves_structured_error_status_and_body() {
         }
         HistoryHttpError::Transport(error) => panic!("unexpected transport error: {error}"),
     }
-    assert!(request
-        .await
-        .expect("request")
-        .starts_with(&format!("GET /accounts/{PUBKEY}/history/risk HTTP/1.1")));
+    let request = request.await.expect("request");
+    assert!(request.starts_with("POST /account HTTP/1.1"));
+    assert_eq!(
+        captured_body(&request),
+        json!({ "type": "riskHistory", "user": PUBKEY })
+    );
 }
 
 #[tokio::test]
