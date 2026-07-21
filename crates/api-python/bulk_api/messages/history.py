@@ -29,7 +29,14 @@ class HistoryPageInfo:
         if not isinstance(data, dict):
             raise ValueError("history page metadata must be an object")
 
-        for field in ("hasMore", "asOfSlot", "startSlot", "endSlot", "coverage"):
+        for field in (
+            "nextCursor",
+            "hasMore",
+            "asOfSlot",
+            "startSlot",
+            "endSlot",
+            "coverage",
+        ):
             if field not in data:
                 raise ValueError(f"history page metadata is missing {field}")
 

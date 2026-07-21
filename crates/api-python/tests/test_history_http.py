@@ -262,6 +262,14 @@ def risk_row():
 
 
 class HistoryPageEnvelopeTests(unittest.TestCase):
+    def test_rejects_missing_next_cursor(self):
+        metadata = page(fill_row())["page"]
+        metadata["hasMore"] = False
+        del metadata["nextCursor"]
+
+        with self.assertRaisesRegex(ValueError, "nextCursor"):
+            HistoryPageInfo.from_api(metadata)
+
     def test_rejects_invalid_primitives_and_u64_values(self):
         cases = (
             ("nextCursor", 1),
