@@ -40,6 +40,8 @@ HistoryCoverageStatus = history.HistoryCoverageStatus
 HistoryBackfillStatus = history.HistoryBackfillStatus
 HistoryFill = history.HistoryFill
 HistoryHttpError = history.HistoryHttpError
+HistoryPage = history.HistoryPage
+HistoryPageInfo = history.HistoryPageInfo
 RiskEvent = history.RiskEvent
 RiskEventType = history.RiskEventType
 TerminalOrder = history.TerminalOrder
@@ -257,6 +259,92 @@ def risk_row():
         "timestamp": U64_MAX - 14,
         "sequence": U64_MAX - 13,
     }
+
+
+class HistoryPageEnvelopeTests(unittest.TestCase):
+    def test_rejects_invalid_primitives_and_u64_values(self):
+        cases = (
+            ("nextCursor", 1),
+            ("hasMore", 1),
+            ("asOfSlot", True),
+            ("asOfSlot", -1),
+            ("startSlot", U64_MAX + 1),
+            ("endSlot", 1.0),
+            ("coverage", True),
+            ("minAvailableSlot", False),
+            ("backfillStatus", 1),
+        )
+
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                metadata = page(fill_row())["page"]
+                metadata[field] = value
+                with self.assertRaisesRegex(ValueError, field):
+                    HistoryPageInfo.from_api(metadata)
+
+    def test_rejects_inconsistent_cursor_and_slot_bounds(self):
+        cases = (
+            {"hasMore": True, "nextCursor": None},
+            {"hasMore": True, "nextCursor": ""},
+            {"hasMore": False, "nextCursor": "next_page"},
+            {"hasMore": False, "nextCursor": ""},
+            {"startSlot": 11, "endSlot": 10},
+            {"endSlot": 11, "asOfSlot": 10},
+            {
+                "minAvailableSlot": 11,
+                "startSlot": 0,
+                "endSlot": 10,
+                "asOfSlot": 10,
+            },
+        )
+
+        for updates in cases:
+            with self.subTest(updates=updates):
+                metadata = page(fill_row())["page"]
+                metadata.update(updates)
+                with self.assertRaises(ValueError):
+                    HistoryPageInfo.from_api(metadata)
+
+    def test_accepts_unknown_page_below_retained_floor(self):
+        metadata = page(fill_row())["page"]
+        metadata.update(
+            {
+                "nextCursor": None,
+                "hasMore": False,
+                "asOfSlot": 20,
+                "startSlot": 20,
+                "endSlot": 20,
+                "coverage": "unknown",
+                "minAvailableSlot": 50,
+            }
+        )
+
+        result = HistoryPageInfo.from_api(metadata)
+
+        self.assertEqual(result.coverage, HistoryCoverageStatus.UNKNOWN)
+        self.assertEqual(result.min_available_slot, 50)
+
+    def test_rejects_malformed_envelope_before_decoding_rows(self):
+        class FailIfDecoded:
+            @classmethod
+            def from_api(cls, _data):
+                raise AssertionError("row decoding must not run")
+
+        malformed = (
+            None,
+            [],
+            {"data": {}, "page": page(fill_row())["page"]},
+            {"data": [fill_row()], "page": []},
+            {
+                "data": [fill_row()],
+                "page": {**page(fill_row())["page"], "hasMore": 1},
+            },
+        )
+
+        for payload in malformed:
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    HistoryPage.from_api(payload, FailIfDecoded)
 
 
 class HistoryHttpTests(unittest.TestCase):
