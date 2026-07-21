@@ -2,7 +2,8 @@ use {
     bulk_client::{
         msgs::{
             AccountActivity, ClosedPosition, FundingPayment, HistoryCoverageStatus, HistoryFill,
-            HistoryHttpError, HistoryPage, HistoryQuery, HistoryTrigger, RiskEvent, TerminalOrder,
+            HistoryHttpError, HistoryPage, HistoryQuery, HistoryTrigger, RiskEvent, RiskEventType,
+            TerminalOrder,
         },
         BulkHttpClient,
     },
@@ -189,7 +190,7 @@ fn risk_row() -> Value {
         "isBuy": false,
         "amount": 0.5,
         "price": 80_000.0,
-        "eventType": "liquidation",
+        "eventType": "risk_vault",
         "marginPrior": 10.0,
         "marginAfter": 2.0,
         "reason": "maintenance margin",
@@ -351,7 +352,16 @@ async fn history_methods_use_all_six_exact_paths_and_distinct_plain_rows() {
         .await
         .expect("request")
         .starts_with(&format!("GET /accounts/{PUBKEY}/history/risk HTTP/1.1")));
-    assert_eq!(risk.data[0].event_type, "liquidation");
+    assert_eq!(risk.data[0].event_type, RiskEventType::RiskVault);
+}
+
+#[test]
+fn history_risk_rejects_undocumented_event_type() {
+    let mut row = risk_row();
+    row["eventType"] = json!("unknown");
+
+    serde_json::from_value::<HistoryPage<RiskEvent>>(page(row))
+        .expect_err("undocumented risk event type must not deserialize");
 }
 
 #[test]

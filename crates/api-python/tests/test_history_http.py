@@ -39,6 +39,7 @@ HistoryCoverageStatus = history.HistoryCoverageStatus
 HistoryFill = history.HistoryFill
 HistoryHttpError = history.HistoryHttpError
 RiskEvent = history.RiskEvent
+RiskEventType = history.RiskEventType
 TerminalOrder = history.TerminalOrder
 HistoryTrigger = history.HistoryTrigger
 
@@ -241,7 +242,7 @@ def risk_row():
         "isBuy": False,
         "amount": 0.5,
         "price": 80_000.0,
-        "eventType": "liquidation",
+        "eventType": "risk_vault",
         "marginPrior": 10.0,
         "marginAfter": 2.0,
         "reason": "maintenance margin",
@@ -317,6 +318,17 @@ class HistoryHttpTests(unittest.TestCase):
                     timeout=10,
                 )
                 self.assertIsInstance(result.data[0], row_type)
+                if kind == "risk":
+                    self.assertEqual(result.data[0].event_type, RiskEventType.RISK_VAULT)
+
+    @patch.object(http.requests, "get")
+    def test_history_risk_rejects_undocumented_event_type(self, get):
+        row = risk_row()
+        row["eventType"] = "unknown"
+        get.return_value = FakeResponse(200, page(row))
+
+        with self.assertRaisesRegex(ValueError, "unknown risk event type"):
+            self.client.get_risk_page(PUBKEY)
 
     @patch.object(http.requests, "get")
     def test_history_non_success_preserves_structured_status_and_body(self, get):

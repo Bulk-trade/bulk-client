@@ -263,6 +263,14 @@ pub struct AccountActivity {
     pub sequence: u64,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskEventType {
+    Liquidation,
+    Adl,
+    RiskVault,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RiskEvent {
@@ -272,7 +280,7 @@ pub struct RiskEvent {
     pub is_buy: bool,
     pub amount: f64,
     pub price: f64,
-    pub event_type: String,
+    pub event_type: RiskEventType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin_prior: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
