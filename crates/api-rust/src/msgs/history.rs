@@ -37,8 +37,6 @@ pub struct HistoryPageInfo {
     pub coverage: HistoryCoverageStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_available_slot: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backfill_status: Option<HistoryBackfillStatus>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,12 +45,6 @@ pub enum HistoryCoverageStatus {
     Complete,
     Partial,
     Unknown,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum HistoryBackfillStatus {
-    Pending,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

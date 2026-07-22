@@ -37,7 +37,6 @@ AccountActivity = history.AccountActivity
 ClosedPosition = history.ClosedPosition
 FundingPayment = history.FundingPayment
 HistoryCoverageStatus = history.HistoryCoverageStatus
-HistoryBackfillStatus = history.HistoryBackfillStatus
 HistoryFill = history.HistoryFill
 HistoryHttpError = history.HistoryHttpError
 HistoryPage = history.HistoryPage
@@ -280,7 +279,6 @@ class HistoryPageEnvelopeTests(unittest.TestCase):
             ("endSlot", 1.0),
             ("coverage", True),
             ("minAvailableSlot", False),
-            ("backfillStatus", 1),
         )
 
         for field, value in cases:
@@ -446,23 +444,15 @@ class HistoryHttpTests(unittest.TestCase):
             self.client.get_risk_page(PUBKEY)
 
     @patch.object(http.requests, "post")
-    def test_history_backfill_status_is_optional_and_strict(self, post):
-        post.return_value = FakeResponse(200, page(fill_row()))
-        self.assertIsNone(self.client.get_fills_page(PUBKEY).page.backfill_status)
+    def test_history_page_does_not_expose_backfill_status(self, post):
+        payload = page(fill_row())
+        payload["page"]["backfillStatus"] = "pending"
+        post.return_value = FakeResponse(200, payload)
 
-        pending = page(fill_row())
-        pending["page"]["backfillStatus"] = "pending"
-        post.return_value = FakeResponse(200, pending)
-        self.assertEqual(
-            self.client.get_fills_page(PUBKEY).page.backfill_status,
-            HistoryBackfillStatus.PENDING,
-        )
+        result = self.client.get_fills_page(PUBKEY)
 
-        unknown = page(fill_row())
-        unknown["page"]["backfillStatus"] = "complete"
-        post.return_value = FakeResponse(200, unknown)
-        with self.assertRaises(ValueError):
-            self.client.get_fills_page(PUBKEY)
+        self.assertFalse(hasattr(result.page, "backfill_status"))
+        self.assertFalse(hasattr(history, "HistoryBackfillStatus"))
 
     @patch.object(http.requests, "post")
     def test_history_non_success_preserves_structured_status_and_body(self, post):

@@ -1,9 +1,9 @@
 use {
     bulk_client::{
         msgs::{
-            AccountActivity, ClosedPosition, FundingPayment, HistoryBackfillStatus,
-            HistoryCoverageStatus, HistoryFill, HistoryHttpError, HistoryPage, HistoryQuery,
-            HistoryTrigger, RiskEvent, RiskEventType, TerminalOrder,
+            AccountActivity, ClosedPosition, FundingPayment, HistoryCoverageStatus, HistoryFill,
+            HistoryHttpError, HistoryPage, HistoryQuery, HistoryTrigger, RiskEvent, RiskEventType,
+            TerminalOrder,
         },
         BulkHttpClient,
     },
@@ -432,24 +432,15 @@ fn history_order_rejects_malformed_oco_hash() {
 }
 
 #[test]
-fn history_page_backfill_status_is_optional_and_strict() {
-    let without_backfill = serde_json::from_value::<HistoryPage<HistoryFill>>(page(fill_row()))
-        .expect("legacy page without backfill status");
-    assert_eq!(without_backfill.page.backfill_status, None);
+fn history_page_does_not_serialize_backfill_status() {
+    let mut payload = page(fill_row());
+    payload["page"]["backfillStatus"] = json!("pending");
 
-    let mut pending = page(fill_row());
-    pending["page"]["backfillStatus"] = json!("pending");
-    let pending = serde_json::from_value::<HistoryPage<HistoryFill>>(pending)
-        .expect("page with pending backfill status");
-    assert_eq!(
-        pending.page.backfill_status,
-        Some(HistoryBackfillStatus::Pending)
-    );
+    let page = serde_json::from_value::<HistoryPage<HistoryFill>>(payload)
+        .expect("legacy backfill status must not break page decoding");
+    let serialized = serde_json::to_value(page).expect("serialize history page");
 
-    let mut unknown = page(fill_row());
-    unknown["page"]["backfillStatus"] = json!("complete");
-    serde_json::from_value::<HistoryPage<HistoryFill>>(unknown)
-        .expect_err("unknown backfill status must not deserialize");
+    assert!(serialized["page"].get("backfillStatus").is_none());
 }
 
 #[tokio::test]
