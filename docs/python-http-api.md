@@ -203,10 +203,9 @@ omitted. A continuation may change `limit`, but must send only `limit` and the
 opaque `cursor`, without slot bounds. Non-success responses raise
 `HistoryHttpError`, preserving `status` and the structured server body.
 
-`HistoryPage.page.backfill_status` is `HistoryBackfillStatus.PENDING` only when the
-server returns `page.backfillStatus: "pending"`; complete and legacy responses
-omit the field and deserialize as `None`. Unknown status strings raise
-`ValueError`.
+`HistoryPage.page.coverage` is the canonical completeness signal.
+`min_available_slot` identifies the oldest retained slot when the server knows
+that boundary.
 
 ---
 

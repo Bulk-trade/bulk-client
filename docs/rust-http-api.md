@@ -236,9 +236,8 @@ change `limit`, but must send only `limit` and the opaque `cursor`, without slot
 bounds. Non-success responses return `HistoryHttpError::Api { status, body }`,
 preserving the server error code and message.
 
-`page.backfill_status` is `Some(HistoryBackfillStatus::Pending)` only when the
-server returns `page.backfillStatus: "pending"`; complete and legacy responses
-omit the field and deserialize as `None`. Unknown status strings are rejected.
+`page.coverage` is the canonical completeness signal. `min_available_slot`
+identifies the oldest retained slot when the server knows that boundary.
 
 ---
 

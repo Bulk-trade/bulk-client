@@ -9,10 +9,6 @@ class HistoryCoverageStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
-class HistoryBackfillStatus(str, Enum):
-    PENDING = "pending"
-
-
 @dataclass
 class HistoryPageInfo:
     next_cursor: Optional[str]
@@ -22,7 +18,6 @@ class HistoryPageInfo:
     end_slot: int
     coverage: HistoryCoverageStatus
     min_available_slot: Optional[int]
-    backfill_status: Optional[HistoryBackfillStatus] = None
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "HistoryPageInfo":
@@ -59,10 +54,6 @@ class HistoryPageInfo:
             raise ValueError("history page minAvailableSlot must be a u64 integer or null")
         if not isinstance(data["coverage"], str):
             raise ValueError("history page coverage must be a string")
-        if data.get("backfillStatus") is not None and not isinstance(
-            data["backfillStatus"], str
-        ):
-            raise ValueError("history page backfillStatus must be a string or null")
         if data["hasMore"] and not data.get("nextCursor"):
             raise ValueError("history page hasMore and nextCursor are inconsistent")
         if not data["hasMore"] and data.get("nextCursor") is not None:
@@ -88,11 +79,6 @@ class HistoryPageInfo:
             end_slot=data["endSlot"],
             coverage=HistoryCoverageStatus(data["coverage"]),
             min_available_slot=data.get("minAvailableSlot"),
-            backfill_status=(
-                HistoryBackfillStatus(data["backfillStatus"])
-                if data.get("backfillStatus") is not None
-                else None
-            ),
         )
 
 
