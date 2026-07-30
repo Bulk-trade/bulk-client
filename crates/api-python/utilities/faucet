@@ -22,6 +22,7 @@ from typing import Optional
 
 sys.path.insert(0, '../api')
 from bulk_api import BulkHttpClient
+from bulk_api.common import SignatureDomain
 
 
 
@@ -50,7 +51,11 @@ def fund(
 
     # Initialize admin client with auth key
     print(f"Initializing HTTP client with admin key...")
-    admin_client = BulkHttpClient(base_url=base_url, private_key=private_key)
+    admin_client = BulkHttpClient(
+        base_url=base_url,
+        private_key=private_key,
+        signature_domain=SignatureDomain.TESTNET,
+    )
 
     pubkey = admin_client.signer.public_key
     print(f"Target public key: {pubkey}")

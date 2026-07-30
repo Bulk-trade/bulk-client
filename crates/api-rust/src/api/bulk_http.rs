@@ -12,12 +12,13 @@
 //! use bulk_client::*;
 //! use bulk_client::common::side::Side;
 //! use bulk_client::common::tif::TimeInForce;
+//! use bulk_client::transaction::SignatureDomain;
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
 //!     // Read-only client (market data + account queries)
 //!     let client = BulkHttpClient::with_url(
-//!         "https://exchange-api.bulk.trade/api/v1", None,
+//!         "https://exchange-api.bulk.trade/api/v1", None, None,
 //!     )?;
 //!
 //!     let ticker = client.get_ticker("BTC-USD").await?;
@@ -27,6 +28,7 @@
 //!     let client = BulkHttpClient::with_url(
 //!         "https://exchange-api.bulk.trade/api/v1",
 //!         Some("your_base58_private_key"),
+//!         Some(SignatureDomain::Mainnet),
 //!     )?;
 //!     let resp = client.place_limit_order(
 //!         "BTC-USD", Side::Buy, 95_000.0, 0.001,
@@ -40,7 +42,7 @@ use crate::api::parts::{make_nonce, HttpConfig};
 use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::msgs::*;
-use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
+use crate::transaction::{Action, ActionMeta, SignatureDomain, Transaction, TransactionSigner};
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -64,6 +66,28 @@ pub struct BulkHttpClient {
     is_localhost: bool,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_signer_requires_explicit_signature_domain() {
+        let error = BulkHttpClient::new(&HttpConfig {
+            base_url: "http://localhost".to_string(),
+            signer: Some(
+                TransactionSigner::from_private_key("1111111111111111111111111111111111111111111")
+                    .expect("test signer"),
+            ),
+            signature_domain: None,
+            default_timeout: Duration::from_secs(1),
+        })
+        .err()
+        .expect("missing domain must fail");
+
+        assert!(error.to_string().contains("signature domain is required"));
+    }
+}
+
 #[allow(unused)]
 impl BulkHttpClient {
     /// Create bulk HTTP client
@@ -71,6 +95,11 @@ impl BulkHttpClient {
     /// # Arguments
     /// - `config`: http client config
     pub fn new(config: &HttpConfig) -> eyre::Result<Self> {
+        if config.signer.is_some() && config.signature_domain.is_none() {
+            return Err(eyre::eyre!(
+                "signature domain is required when an HTTP signer is configured"
+            ));
+        }
         let client = Client::builder().timeout(config.default_timeout).build()?;
 
         let is_localhost = Self::is_localhost(&config.base_url);
@@ -87,12 +116,17 @@ impl BulkHttpClient {
     /// # Arguments
     /// - `base_url`: http client url
     /// - `private_key`: optional private key
-    pub fn with_url(base_url: &str, private_key: Option<&str>) -> eyre::Result<Self> {
+    pub fn with_url(
+        base_url: &str,
+        private_key: Option<&str>,
+        signature_domain: Option<SignatureDomain>,
+    ) -> eyre::Result<Self> {
         if let Some(private_key) = private_key {
             let signer = TransactionSigner::from_private_key(private_key)?;
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: Some(signer),
+                signature_domain,
                 default_timeout: Duration::from_secs(10),
             };
             Self::new(&config)
@@ -100,6 +134,7 @@ impl BulkHttpClient {
             let config = HttpConfig {
                 base_url: base_url.to_string(),
                 signer: None,
+                signature_domain: None,
                 default_timeout: Duration::from_secs(10),
             };
             Self::new(&config)
@@ -111,13 +146,22 @@ impl BulkHttpClient {
     /// # Example
     /// ```text
     /// let signer = TransactionSigner::from_ledger("usb://ledger", None)?;
-    /// let client = BulkHttpClient::with_signer("https://exchange-api.bulk.trade/api/v1", signer)?;
+    /// let client = BulkHttpClient::with_signer(
+    ///     "https://exchange-api.bulk.trade/api/v1",
+    ///     signer,
+    ///     SignatureDomain::Mainnet,
+    /// )?;
     /// let resp = client.request_faucet(None, None, None).await?;
     /// ```
-    pub fn with_signer(base_url: &str, signer: TransactionSigner) -> eyre::Result<Self> {
+    pub fn with_signer(
+        base_url: &str,
+        signer: TransactionSigner,
+        signature_domain: SignatureDomain,
+    ) -> eyre::Result<Self> {
         let config = HttpConfig {
             base_url: base_url.to_string(),
             signer: Some(signer),
+            signature_domain: Some(signature_domain),
             default_timeout: Duration::from_secs(10),
         };
         Self::new(&config)
@@ -347,7 +391,12 @@ impl BulkHttpClient {
             signer: signer.public_key(),
             signature: Default::default(),
         };
-        tx.sign(signer)?;
+        tx.sign(
+            signer,
+            self.config
+                .signature_domain
+                .ok_or_else(|| eyre::eyre!("signature domain is required for signed requests"))?,
+        )?;
 
         // Build JSON body via tx serialization
         let body = serde_json::to_string(&tx)?;
@@ -829,9 +878,14 @@ impl BulkHttpClient {
         // The Python SDK signs the JSON-serialized action string.
         // For order transactions we use the binary Signable path instead,
         // but for generic endpoints (leverage, faucet, agent wallet, etc.)
-        // the exchange expects a signature over the canonical JSON.
+        // the exchange expects canonical JSON bound to its configured network.
         let message = serde_json::to_string(action)?;
-        let sig = signer.sign_bytes(message.as_bytes())?;
+        let sig = signer.sign_bytes(
+            message.as_bytes(),
+            self.config
+                .signature_domain
+                .ok_or_else(|| eyre::eyre!("signature domain is required for signed requests"))?,
+        )?;
         Ok(bs58::encode(sig).into_string())
     }
 }

@@ -115,12 +115,14 @@ async fn main() -> eyre::Result<()> {
 
 ```rust
 use bulk_client::*;
+use bulk_client::transaction::SignatureDomain;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let client = BulkHttpClient::with_url(
         "https://exchange-api.bulk.trade/api/v1",
         Some("your_base58_private_key"),
+        Some(SignatureDomain::Mainnet),
     )?;
 
     let resp = client.place_limit_order(
@@ -138,12 +140,14 @@ async fn main() -> eyre::Result<()> {
 ```rust
 use std::sync::Arc;
 use bulk_client::*;
+use bulk_client::transaction::SignatureDomain;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let client = BulkHttpClient::with_url(
         "https://exchange-api.bulk.trade/api/v1",
         Some("your_base58_private_key"),
+        Some(SignatureDomain::Mainnet),
     )?;
 
     let actions = vec![
@@ -176,12 +180,14 @@ async fn main() -> eyre::Result<()> {
 ```rust
 use std::sync::Arc;
 use bulk_client::*;
+use bulk_client::transaction::SignatureDomain;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let client = BulkHttpClient::with_url(
         "https://exchange-api.bulk.trade/api/v1",
         Some("your_base58_private_key"),
+        Some(SignatureDomain::Mainnet),
     )?;
 
     // Single transaction: collar stop at 90k, TP at 110k
@@ -224,12 +230,13 @@ print(f"Best bid: {book['levels'][0][0]}")
 
 ```python
 from bulk_client import BulkHttpClient
-from bulk_api.common import Side, TimeInForce
+from bulk_api.common import SignatureDomain, Side, TimeInForce
 from bulk_api.messages import LimitOrder
 
 client = BulkHttpClient(
     base_url="https://exchange-api.bulk.trade/api/v1",
     private_key="your_base58_private_key",
+    signature_domain=SignatureDomain.MAINNET,
 )
 
 resp = client.place_orders([

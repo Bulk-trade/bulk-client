@@ -1,4 +1,4 @@
-use crate::transaction::TransactionSigner;
+use crate::transaction::{SignatureDomain, TransactionSigner};
 use std::time::Duration;
 
 /// Bulk Websocket API configuration
@@ -7,6 +7,7 @@ pub struct WSConfig {
     pub url: String,
     pub symbols: Vec<String>,
     pub signer: Option<TransactionSigner>,
+    pub signature_domain: Option<SignatureDomain>,
     pub default_timeout: Duration,
     pub track_account: bool,
     pub track_ticker: bool,
@@ -17,6 +18,7 @@ pub struct WSConfig {
 pub struct HttpConfig {
     pub base_url: String,
     pub signer: Option<TransactionSigner>,
+    pub signature_domain: Option<SignatureDomain>,
     pub default_timeout: Duration,
 }
 
@@ -26,6 +28,7 @@ impl Default for WSConfig {
             url: "wss://exchange-wss.bulk.trade".into(),
             symbols: vec!["BTC-USD".into(), "ETH-USD".into(), "SOL-USD".into()],
             signer: None,
+            signature_domain: None,
             default_timeout: Duration::from_secs(10),
             track_ticker: true,
             track_account: true,
@@ -38,6 +41,7 @@ impl Default for HttpConfig {
         Self {
             base_url: "https://exchange-api2.bulk.trade/api/v1".into(),
             signer: None,
+            signature_domain: None,
             default_timeout: Duration::from_secs(10),
         }
     }

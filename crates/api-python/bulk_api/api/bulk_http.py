@@ -14,7 +14,7 @@ import time
 import requests
 from typing import Dict, List, Optional, Union, Any, Literal
 
-from bulk_api.common import TransactionSigner, Side, TimeInForce
+from bulk_api.common import SignatureDomain, TransactionSigner, Side, TimeInForce
 from bulk_api.messages import ApproveBuilderCode, LimitOrder, CancelOrder, MarketOrder, CancelAll, RevokeBuilderCode
 
 
@@ -25,6 +25,7 @@ class BulkHttpClient:
         self,
         base_url: str = "https://exchange-api2.bulk.trade/api/v1",
         private_key: Optional[str] = None,
+        signature_domain: Optional[SignatureDomain] = None,
         timeout: int = 10
     ):
         """
@@ -33,11 +34,17 @@ class BulkHttpClient:
         Args:
             base_url: Base URL for API endpoints
             private_key: Base58 encoded private key for signing transactions
+            signature_domain: Explicit network accepted by the signature
             timeout: Request timeout in seconds
         """
+        if private_key and not isinstance(signature_domain, SignatureDomain):
+            raise ValueError(
+                "explicit SignatureDomain is required when private_key is configured"
+            )
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         self.signer = TransactionSigner(private_key) if private_key else None
+        self.signature_domain = signature_domain
 
     # ===================================================================
     # MARKET DATA ENDPOINTS (PUBLIC, UNSIGNED)
@@ -447,7 +454,7 @@ class BulkHttpClient:
             "signer": account
         }
         
-        transaction = self.signer.sign_transaction(transaction)
+        transaction = self.signer.sign_transaction(transaction, self.signature_domain)
         ser = json.dumps(transaction)
         
         # Send request
@@ -509,7 +516,7 @@ class BulkHttpClient:
         }
 
         # Sign transaction
-        transaction = self.signer.sign_transaction(transaction)
+        transaction = self.signer.sign_transaction(transaction, self.signature_domain)
 
         # Send request
         response = requests.post(
@@ -561,7 +568,7 @@ class BulkHttpClient:
         }
 
         # Sign transaction
-        transaction = self.signer.sign_transaction(transaction)
+        transaction = self.signer.sign_transaction(transaction, self.signature_domain)
 
         # Send request
         response = requests.post(
@@ -629,7 +636,7 @@ class BulkHttpClient:
         }
 
         # Sign transaction
-        signed_tx = self.signer.sign_transaction(transaction)
+        signed_tx = self.signer.sign_transaction(transaction, self.signature_domain)
 
         # Send request
         response = requests.post(
@@ -696,7 +703,7 @@ class BulkHttpClient:
             }
 
         # Sign transaction
-        tx = self.signer.sign_transaction(transaction)
+        tx = self.signer.sign_transaction(transaction, self.signature_domain)
         
         print(f"Sending tx: {tx}")
         
@@ -743,7 +750,11 @@ def load_or_create_keys(key_file: str = "/tmp/bulk_keys") -> tuple[str, str]:
 
         # Request faucet (testnet only)
         base_url = "https://exchange-api2.bulk.trade/api/v1"
-        client = BulkHttpClient(base_url=base_url, private_key=private_key)
+        client = BulkHttpClient(
+            base_url=base_url,
+            private_key=private_key,
+            signature_domain=SignatureDomain.TESTNET,
+        )
         try:
             faucet_result = client.request_faucet()
             print(f"Faucet request: {faucet_result}")
@@ -766,7 +777,11 @@ if __name__ == "__main__":
     private_key, pub_key = load_or_create_keys()
 
     base_url = "https://exchange-api2.bulk.trade/api/v1"
-    client = BulkHttpClient(base_url=base_url, private_key=private_key)
+    client = BulkHttpClient(
+        base_url=base_url,
+        private_key=private_key,
+        signature_domain=SignatureDomain.TESTNET,
+    )
 
 
     # Example 1: Get orderbook

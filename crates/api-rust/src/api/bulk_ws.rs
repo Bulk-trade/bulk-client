@@ -25,7 +25,7 @@
 //! use bulk_client::*;
 //! use bulk_client::common::side::Side;
 //! use bulk_client::common::tif::TimeInForce;
-//! use bulk_client::transaction::TransactionSigner;
+//! use bulk_client::transaction::{SignatureDomain, TransactionSigner};
 //! use bulk_client::parts::WSConfig;
 //!
 //! #[tokio::main]
@@ -36,6 +36,7 @@
 //!         url: "wss://exchange-wss.bulk.trade".into(),
 //!         symbols: vec!["BTC-USD".into(), "ETH-USD".into()],
 //!         signer: Some(signer),
+//!         signature_domain: Some(SignatureDomain::Mainnet),
 //!         ..Default::default()
 //!     }).await?;
 //!
@@ -82,7 +83,7 @@ use crate::msgs::{
     ApproveCommissionFee, CancelAll, CancelOrder, LimitOrder, MarketOrder, Price,
     RevokeCommissionFee,
 };
-use crate::transaction::{Action, ActionMeta, Transaction, TransactionSigner};
+use crate::transaction::{Action, ActionMeta, SignatureDomain, Transaction, TransactionSigner};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -146,6 +147,7 @@ pub struct BulkWsClient {
 
     // ── Config carried on the handle for convenience ───────────────────
     signer: Option<TransactionSigner>,
+    signature_domain: Option<SignatureDomain>,
     default_timeout: Duration,
 
     // Monotonic request ID (atomic — no lock needed)
@@ -176,6 +178,9 @@ impl BulkWsClient {
     /// # Arguments
     /// - `config`: web socket config
     pub async fn connect(config: WSConfig) -> eyre::Result<Self> {
+        if config.signer.is_some() && config.signature_domain.is_none() {
+            bail!("signature domain is required when a WebSocket signer is configured");
+        }
         info!("Connecting to {}", config.url);
         let (ws_stream, _) = connect_async(&config.url).await?;
         let (ws_write, ws_read) = ws_stream.split();
@@ -249,6 +254,7 @@ impl BulkWsClient {
             ticker_rx,
             account_rx,
             signer: config.signer,
+            signature_domain: config.signature_domain,
             default_timeout: config.default_timeout,
             next_request_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
             actor_handle: std::sync::Arc::new(tokio::sync::Mutex::new(Some(actor_handle))),
@@ -432,7 +438,11 @@ impl BulkWsClient {
             signer: signer.public_key(),
             signature: Default::default(),
         };
-        tx.sign(signer)?;
+        tx.sign(
+            signer,
+            self.signature_domain
+                .ok_or_else(|| eyre::eyre!("signature domain is required for signed requests"))?,
+        )?;
 
         let request_id = self
             .next_request_id
@@ -505,7 +515,11 @@ impl BulkWsClient {
             signer: signer.public_key(),
             signature: Default::default(),
         };
-        tx.sign(signer)?;
+        tx.sign(
+            signer,
+            self.signature_domain
+                .ok_or_else(|| eyre::eyre!("signature domain is required for signed requests"))?,
+        )?;
 
         let request_id = self
             .next_request_id

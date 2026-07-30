@@ -22,6 +22,7 @@ WebSocket handshake before returning a handle.
 | `url` | `String` | — | WebSocket endpoint (`wss://...`) |
 | `symbols` | `Vec<String>` | `[]` | Symbols to auto-subscribe tickers for |
 | `signer` | `Option<TransactionSigner>` | `None` | Required for any trading operation |
+| `signature_domain` | `Option<SignatureDomain>` | `None` | Required when `signer` is set; selects mainnet, testnet, or devnet |
 | `track_account` | `bool` | `true` | Auto-subscribe to account stream if signer present |
 | `track_ticker` | `bool` | `true` | Auto-subscribe to tickers for `symbols` |
 | `default_timeout` | `Duration` | 5 s | Timeout applied to every order response |
@@ -55,7 +56,7 @@ will auto-subscribe to the account stream (margin, positions, open orders, lever
 alongside the tickers for `symbols`.
 
 ```rust
-use bulk_sdk::{BulkWsClient, WSConfig, TransactionSigner};
+use bulk_sdk::{BulkWsClient, SignatureDomain, WSConfig, TransactionSigner};
 use std::time::Duration;
 
 #[tokio::main]
@@ -66,6 +67,7 @@ async fn main() -> eyre::Result<()> {
         url: "wss://exchange-wss.bulk.trade".into(),
         symbols: vec!["BTC-USD".into(), "SOL-USD".into()],
         signer: Some(signer),
+        signature_domain: Some(SignatureDomain::Mainnet),
         default_timeout: Duration::from_secs(10),
         ..Default::default()
     })
@@ -483,7 +485,7 @@ if resp.is_placement() {
 ## 6. Full Example — Combining Market Data and Trading
 
 ```rust
-use bulk_sdk::{BulkWsClient, WSConfig, TransactionSigner, Topic, Event, Side, TimeInForce};
+use bulk_sdk::{BulkWsClient, SignatureDomain, WSConfig, TransactionSigner, Topic, Event, Side, TimeInForce};
 use std::time::Duration;
 
 #[tokio::main]
@@ -494,6 +496,7 @@ async fn main() -> eyre::Result<()> {
         url: "wss://exchange-wss.bulk.trade".into(),
         symbols: vec!["BTC-USD".into()],
         signer: Some(signer),
+        signature_domain: Some(SignatureDomain::Mainnet),
         ..Default::default()
     })
     .await?;

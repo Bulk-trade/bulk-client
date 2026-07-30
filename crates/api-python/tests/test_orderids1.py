@@ -23,7 +23,7 @@ from pathlib import Path
 
 from bulk_api import BulkHttpClient
 from bulk_api.common import Side, TimeInForce, Topic
-from bulk_api.common.signer import TransactionSigner
+from bulk_api.common.signer import SignatureDomain, TransactionSigner
 from bulk_api.messages.trade import LimitOrder, OrderResponse
 from bulk_api.api import BulkWebSocketClient
 
@@ -57,6 +57,7 @@ class OrderIDTest:
             url="ws://localhost:12001/",
             symbols=["BTC-USD"],
             signer=self.signer,
+            signature_domain=SignatureDomain.DEVNET,
             logger=logger
         )
 

@@ -15,6 +15,7 @@ from typing import Optional
 
 sys.path.insert(0, '../api')
 from bulk_api import BulkHttpClient
+from bulk_api.common import SignatureDomain
 
 
 
@@ -26,7 +27,11 @@ def position_history(
     """
     Load account info
     """
-    client = BulkHttpClient(base_url=url, private_key=auth)
+    client = BulkHttpClient(
+        base_url=url,
+        private_key=auth,
+        signature_domain=SignatureDomain.TESTNET,
+    )
     return client.get_position_history(user=account)
 
 

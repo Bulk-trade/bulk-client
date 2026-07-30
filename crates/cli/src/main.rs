@@ -27,7 +27,7 @@ use crate::handlers::multisig::{
 use crate::handlers::orders::{handle_modify, handle_place};
 use crate::handlers::risk::{handle_liquidator_config, handle_risk_config};
 use bulk_client::parts::HttpConfig;
-use bulk_client::transaction::TransactionSigner;
+use bulk_client::transaction::{SignatureDomain, TransactionSigner};
 use bulk_client::BulkHttpClient;
 use clap::{Parser, Subcommand};
 use std::time::Duration;
@@ -57,6 +57,10 @@ struct Cli {
     /// Exchange API base URL.
     #[arg(long, global = true)]
     api_url: Option<String>,
+
+    /// Signature network domain (mainnet, testnet, or devnet).
+    #[arg(long, env = "BULK_SIGNATURE_DOMAIN", global = true)]
+    signature_domain: Option<SignatureDomain>,
 
     /// Show transaction preview before signing.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set, global = true)]
@@ -344,10 +348,14 @@ async fn main() -> eyre::Result<()> {
             .ok_or_else(|| eyre::eyre!("--private-key is required unless --ledger is used"))?;
         TransactionSigner::from_private_key(key)?
     };
+    let signature_domain = cli
+        .signature_domain
+        .ok_or_else(|| eyre::eyre!("--signature-domain is required for signed commands"))?;
 
     let config = HttpConfig {
         base_url: api_url,
         signer: Some(signer),
+        signature_domain: Some(signature_domain),
         default_timeout,
     };
     let mut api = BulkHttpClient::new(&config)?;
