@@ -16,7 +16,7 @@ from websockets.asyncio.client import ClientConnection, connect as ws_connect
 
 from bulk_api.common import Side, TimeInForce, LoggingWebSocket
 from bulk_api.common.inventory import Inventory, Pnl
-from bulk_api.common.signer import TransactionSigner
+from bulk_api.common.signer import SignatureDomain, TransactionSigner
 from bulk_api.messages import SubscriptionRequest
 from bulk_api.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
@@ -54,6 +54,7 @@ class BulkWebSocketClient:
         url: str = "wss://exchange-wss.bulk.trade",
         symbols: List[str] = ["BTC-USD", "ETH-USD", "SOL-USD"],
         signer: Optional[TransactionSigner] = None,
+        signature_domain: Optional[SignatureDomain] = None,
         inventory: Optional[Inventory] = None,
         logger: Optional[logging.Logger] = None,
         handlers: Optional[Dict[Topic,Callable]] = None,
@@ -66,12 +67,18 @@ class BulkWebSocketClient:
             url: WebSocket endpoint URL
             symbols: List of symbols to subscribe to
             signer: TransactionSigner for signing orders
+            signature_domain: Explicit network accepted by the signature
             inventory: Inventory instance for position tracking
             logger: Logger instance
         """
+        if signer and not isinstance(signature_domain, SignatureDomain):
+            raise ValueError(
+                "explicit SignatureDomain is required when signer is configured"
+            )
         self.url = url
         self.symbols = symbols
         self.signer = signer
+        self.signature_domain = signature_domain
         self.inventory = inventory or Inventory()
         self.logger = logger or logging.getLogger(__name__)
 
@@ -295,7 +302,7 @@ class BulkWebSocketClient:
             "account": self.signer.public_key,
             "signer": self.signer.public_key,
         }
-        tx = self.signer.sign_transaction(tx)
+        tx = self.signer.sign_transaction(tx, self.signature_domain)
 
         # Build WebSocket request
         request = {
@@ -359,7 +366,7 @@ class BulkWebSocketClient:
             "account": account,
             "signer": account,
         }
-        tx = self.signer.sign_transaction(tx)
+        tx = self.signer.sign_transaction(tx, self.signature_domain)
 
         # Build WebSocket request
         request = {

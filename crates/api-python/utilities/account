@@ -17,6 +17,7 @@ from typing import Optional
 
 sys.path.insert(0, '../api')
 from bulk_api import BulkHttpClient
+from bulk_api.common import SignatureDomain
 
 
 
@@ -28,7 +29,11 @@ def account_info(
     """
     Load account info
     """
-    admin_client = BulkHttpClient(base_url=url, private_key=auth)
+    admin_client = BulkHttpClient(
+        base_url=url,
+        private_key=auth,
+        signature_domain=SignatureDomain.TESTNET,
+    )
     return admin_client.get_full_account(user=account)
 
 

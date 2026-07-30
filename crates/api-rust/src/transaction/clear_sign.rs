@@ -1,7 +1,7 @@
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
 use crate::msgs::multisig::{CreateMultisig, UpdateMultisigPolicy};
 use crate::msgs::UpdateUserSettings;
-use crate::transaction::Action;
+use crate::transaction::{Action, SignatureDomain, Transaction};
 use solana_pubkey::Pubkey;
 use std::fmt::Write as _;
 
@@ -10,19 +10,32 @@ pub struct ClearSignMessageOptions {
     pub include_signable_schema: bool,
 }
 
-pub fn canonical_message(account: Pubkey, nonce: u64, actions: &[Action]) -> eyre::Result<String> {
-    canonical_message_with_options(account, nonce, actions, ClearSignMessageOptions::default())
+pub fn canonical_message(
+    signature_domain: SignatureDomain,
+    account: Pubkey,
+    nonce: u64,
+    actions: &[Action],
+) -> eyre::Result<String> {
+    canonical_message_with_options(
+        signature_domain,
+        account,
+        nonce,
+        actions,
+        ClearSignMessageOptions::default(),
+    )
 }
 
 pub fn canonical_message_with_options(
+    signature_domain: SignatureDomain,
     account: Pubkey,
     nonce: u64,
     actions: &[Action],
     options: ClearSignMessageOptions,
 ) -> eyre::Result<String> {
-    let signable = signable_bytes(account, nonce, actions)?;
+    let signable = Transaction::raw_signable_bytes(signature_domain, account, nonce, actions)?;
     let mut message = String::with_capacity(256 + actions.len().saturating_mul(96));
     let _ = writeln!(message, "Bulk Exchange Transaction");
+    let _ = writeln!(message, "Network: {signature_domain}");
     let _ = writeln!(message, "Account: {account}");
     let _ = writeln!(message, "Nonce: {nonce}");
     let _ = writeln!(message, "Actions: {}", actions.len());
@@ -34,20 +47,13 @@ pub fn canonical_message_with_options(
     if options.include_signable_schema {
         let _ = writeln!(
             message,
-            "Signable-Schema: bincode(actions)||nonce_le_u64||account_bytes"
+            "Signable-Schema: bincode(commission_signable_actions)||nonce_le_u64||account_bytes||signature_domain_u8"
         );
     }
     for (index, action) in actions.iter().enumerate() {
         let _ = writeln!(message, "[{}] {}", index, action_line(action));
     }
     Ok(message)
-}
-
-fn signable_bytes(account: Pubkey, nonce: u64, actions: &[Action]) -> eyre::Result<Vec<u8>> {
-    let mut signable = bincode::serialize(actions)?;
-    signable.extend_from_slice(&nonce.to_le_bytes());
-    signable.extend_from_slice(account.as_ref());
-    Ok(signable)
 }
 
 fn sha256_hex(payload: &[u8]) -> String {
@@ -343,7 +349,7 @@ mod tests {
     use super::canonical_message;
     use crate::common::tif::TimeInForce;
     use crate::msgs::{BuilderCode, Faucet, LimitOrder, OpaqueAction};
-    use crate::transaction::{Action, ActionMeta};
+    use crate::transaction::{Action, ActionMeta, SignatureDomain};
     use solana_pubkey::Pubkey;
     use std::sync::Arc;
 
@@ -368,9 +374,29 @@ mod tests {
             builder_code: None,
             meta: ActionMeta::default(),
         })];
-        let first = canonical_message(account, 42, actions.as_slice()).expect("build message");
-        let second = canonical_message(account, 42, actions.as_slice()).expect("build message");
+        let first = canonical_message(SignatureDomain::Devnet, account, 42, actions.as_slice())
+            .expect("build message");
+        let second = canonical_message(SignatureDomain::Devnet, account, 42, actions.as_slice())
+            .expect("build message");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn message_displays_and_binds_signature_domain() {
+        let account = Pubkey::new_unique();
+        let actions = [Action::Faucet(Faucet {
+            user: account,
+            amount: None,
+            meta: ActionMeta::default(),
+        })];
+        let mainnet = canonical_message(SignatureDomain::Mainnet, account, 42, &actions)
+            .expect("mainnet message");
+        let testnet = canonical_message(SignatureDomain::Testnet, account, 42, &actions)
+            .expect("testnet message");
+
+        assert!(mainnet.contains("Network: mainnet"));
+        assert!(testnet.contains("Network: testnet"));
+        assert_ne!(signable_hash_line(&mainnet), signable_hash_line(&testnet));
     }
 
     #[test]
@@ -381,7 +407,8 @@ mod tests {
             amount: None,
             meta: ActionMeta::default(),
         })];
-        let message = canonical_message(account, 42, actions.as_slice()).expect("build message");
+        let message = canonical_message(SignatureDomain::Devnet, account, 42, actions.as_slice())
+            .expect("build message");
         assert!(message.contains("Bulk Exchange Transaction"));
         assert!(message.contains(&format!("Account: {account}")));
         assert!(message.contains("Nonce: 42"));
@@ -404,7 +431,8 @@ mod tests {
             builder_code: None,
             meta: ActionMeta::default(),
         })];
-        let message = canonical_message(account, 99, actions.as_slice()).expect("build message");
+        let message = canonical_message(SignatureDomain::Devnet, account, 99, actions.as_slice())
+            .expect("build message");
         assert!(message.contains("ETH-USD"));
         assert!(message.contains("Sell"));
         assert!(message.contains("3500.00000000"));
@@ -429,7 +457,8 @@ mod tests {
             }),
             meta: ActionMeta::default(),
         })];
-        let message = canonical_message(account, 99, actions.as_slice()).expect("build message");
+        let message = canonical_message(SignatureDomain::Devnet, account, 99, actions.as_slice())
+            .expect("build message");
         assert!(message.contains(&format!("builder_code_to={recipient}")));
         assert!(message.contains("builder_code_fee=5bps"));
         assert!(!message.contains("commission_to"));
@@ -449,8 +478,12 @@ mod tests {
             amount: Some(1.0000000002),
             meta: ActionMeta::default(),
         })];
-        let msg_one = canonical_message(account, 42, actions_one.as_slice()).expect("one");
-        let msg_two = canonical_message(account, 42, actions_two.as_slice()).expect("two");
+        let msg_one =
+            canonical_message(SignatureDomain::Devnet, account, 42, actions_one.as_slice())
+                .expect("one");
+        let msg_two =
+            canonical_message(SignatureDomain::Devnet, account, 42, actions_two.as_slice())
+                .expect("two");
         assert_ne!(msg_one, msg_two);
         assert!(msg_one.contains("amount=1.00000000"));
         assert!(msg_two.contains("amount=1.00000000"));
@@ -467,7 +500,8 @@ mod tests {
             payload: vec![7; 128],
             meta: ActionMeta::default(),
         })];
-        let message = canonical_message(account, 42, actions.as_slice()).expect("build message");
+        let message = canonical_message(SignatureDomain::Devnet, account, 42, actions.as_slice())
+            .expect("build message");
 
         assert!(message.contains("ConfigRiskMatrix payload_len=128 payload_sha256="));
         assert!(!message.contains("payload=7"));

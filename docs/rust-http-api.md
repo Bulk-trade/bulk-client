@@ -17,18 +17,25 @@ It covers three categories of endpoints:
 |---|---|---|---|
 | `base_url` | `String` | — | HTTP endpoint (`https://...`) |
 | `signer` | `Option<TransactionSigner>` | `None` | Required for any trading or settings operation |
+| `signature_domain` | `Option<SignatureDomain>` | `None` | Required when `signer` is set; selects mainnet, testnet, or devnet |
 | `default_timeout` | `Duration` | 10 s | Per-request timeout applied to every call |
+
+The configured domain binds every authenticated signature. Binary transactions
+append its one-byte value to the signable bytes; generic canonical-JSON
+signatures append the same byte, while Ledger clear-sign envelopes place it in
+the first application-domain byte. The domain is not sent as a request field.
 
 ### `BulkHttpClient::new(config)` — from `HttpConfig`
 
 ```rust
-use bulk_sdk::{BulkHttpClient, HttpConfig, TransactionSigner};
+use bulk_sdk::{BulkHttpClient, HttpConfig, SignatureDomain, TransactionSigner};
 use std::time::Duration;
 
 // Read-only (market data + account queries)
 let config = HttpConfig {
     base_url: "https://exchange.bulk.trade".into(),
     signer: None,
+    signature_domain: None,
     default_timeout: Duration::from_secs(10),
 };
 let client = BulkHttpClient::new(&config)?;
@@ -40,21 +47,26 @@ let signer = TransactionSigner::from_private_key("YOUR_BASE58_PRIVATE_KEY")?;
 let config = HttpConfig {
     base_url: "https://exchange.bulk.trade".into(),
     signer: Some(signer),
+    signature_domain: Some(SignatureDomain::Mainnet),
     default_timeout: Duration::from_secs(10),
 };
 let client = BulkHttpClient::new(&config)?;
 ```
 
-### `BulkHttpClient::with_url(base_url, private_key)` — convenience constructor
+### `BulkHttpClient::with_url(base_url, private_key, signature_domain)` — convenience constructor
 
 Builds an `HttpConfig` internally with a 10-second default timeout.
 
 ```rust
 // Read-only
-let client = BulkHttpClient::with_url("https://exchange.bulk.trade", None)?;
+let client = BulkHttpClient::with_url("https://exchange.bulk.trade", None, None)?;
 
 // Authenticated
-let client = BulkHttpClient::with_url("https://exchange.bulk.trade", Some("YOUR_BASE58_PRIVATE_KEY"))?;
+let client = BulkHttpClient::with_url(
+    "https://exchange.bulk.trade",
+    Some("YOUR_BASE58_PRIVATE_KEY"),
+    Some(SignatureDomain::Mainnet),
+)?;
 ```
 
 ### Accessor helpers
@@ -429,7 +441,7 @@ use bulk_sdk::BulkHttpClient;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = BulkHttpClient::with_url("https://exchange.bulk.trade", None)?;
+    let client = BulkHttpClient::with_url("https://exchange.bulk.trade", None, None)?;
 
     let ticker = client.get_ticker("BTC-USD").await?;
     println!("BTC mark={} funding={:.6}", ticker.mark_price, ticker.funding_rate);
@@ -446,7 +458,9 @@ async fn main() -> eyre::Result<()> {
 ### Authenticated: place a ladder and cancel all on error
 
 ```rust
-use bulk_sdk::{BulkHttpClient, Action, LimitOrder, ActionMeta, Side, TimeInForce};
+use bulk_sdk::{
+    Action, ActionMeta, BulkHttpClient, LimitOrder, Side, SignatureDomain, TimeInForce,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -454,6 +468,7 @@ async fn main() -> eyre::Result<()> {
     let client = BulkHttpClient::with_url(
         "https://exchange.bulk.trade",
         Some("YOUR_BASE58_PRIVATE_KEY"),
+        Some(SignatureDomain::Mainnet),
     )?;
 
     // Ladder: three bids at descending price levels

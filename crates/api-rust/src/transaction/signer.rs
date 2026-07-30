@@ -1,3 +1,4 @@
+use crate::transaction::SignatureDomain;
 use eyre::bail;
 use solana_keypair::{keypair_from_seed, Keypair};
 use solana_pubkey::Pubkey;
@@ -18,7 +19,7 @@ use {
 const HID_GLOBAL_USAGE_PAGE: u16 = 0xFF00;
 #[cfg(feature = "ledger")]
 const HID_USB_DEVICE_CLASS: i32 = 0;
-#[cfg(feature = "ledger")]
+#[cfg(any(feature = "ledger", test))]
 const OFFCHAIN_SIGNING_DOMAIN: &[u8; 16] = b"\xffsolana offchain";
 
 /// Ed25519 signer for Bulk exchange transactions.
@@ -28,7 +29,7 @@ const OFFCHAIN_SIGNING_DOMAIN: &[u8; 16] = b"\xffsolana offchain";
 /// ```text
 /// let signer = TransactionSigner::from_private_key("base58_key")?;
 /// let mut tx = Transaction { .. };
-/// tx.sign(&signer)?;
+/// tx.sign(&signer, SignatureDomain::Devnet)?;
 /// ```
 #[derive(Debug)]
 #[allow(unused)]
@@ -162,14 +163,25 @@ impl TransactionSigner {
         })
     }
 
-    /// Sign an arbitrary byte slice and return the raw 64-byte signature.
+    /// Sign a generic authenticated payload bound to one Bulk network.
     ///
     /// Used by [`BulkHttpClient`] for generic (non-`Signable`) payloads
     /// such as leverage updates, agent wallet management, and faucet requests,
-    /// where the exchange expects a signature over the canonical JSON string.
-    pub fn sign_bytes(&self, message: &[u8]) -> eyre::Result<Signature> {
+    /// where software wallets sign `canonical_json || signature_domain_u8`.
+    /// Ledger wallets bind the same domain in the first application-domain byte
+    /// of the Solana offchain-message envelope.
+    pub fn sign_bytes(
+        &self,
+        message: &[u8],
+        signature_domain: SignatureDomain,
+    ) -> eyre::Result<Signature> {
         match &self.kind {
-            SignerKind::Software(keypair) => Ok(keypair.sign_message(message)),
+            SignerKind::Software(keypair) => {
+                let mut preimage = Vec::with_capacity(message.len() + 1);
+                preimage.extend_from_slice(message);
+                preimage.push(signature_domain as u8);
+                Ok(keypair.sign_message(&preimage))
+            }
             #[cfg(feature = "ledger")]
             SignerKind::Ledger(cfg) => {
                 let resolved = resolve_ledger_wallet(
@@ -178,13 +190,18 @@ impl TransactionSigner {
                     cfg.confirm_key,
                     &cfg.keypair_name,
                 )?;
-                let offchain = offchain_message_envelope_bytes(message, &cfg.pubkey)?;
-                sign_ledger_offchain(&resolved.wallet, &cfg.derivation_path, message, &offchain)
+                let offchain =
+                    offchain_message_envelope_bytes(message, &cfg.pubkey, signature_domain)?;
+                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
             }
         }
     }
 
-    pub fn sign_transaction_bytes(&self, message: &[u8]) -> eyre::Result<Signature> {
+    pub fn sign_transaction_bytes(
+        &self,
+        message: &[u8],
+        signature_domain: SignatureDomain,
+    ) -> eyre::Result<Signature> {
         match &self.kind {
             SignerKind::Software(keypair) => Ok(keypair.sign_message(message)),
             #[cfg(feature = "ledger")]
@@ -196,13 +213,21 @@ impl TransactionSigner {
                     &cfg.keypair_name,
                 )?;
                 let payload = format!("bulk-tx:{}", bs58::encode(message).into_string());
-                let offchain = offchain_message_envelope_bytes(payload.as_bytes(), &cfg.pubkey)?;
+                let offchain = offchain_message_envelope_bytes(
+                    payload.as_bytes(),
+                    &cfg.pubkey,
+                    signature_domain,
+                )?;
                 sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
             }
         }
     }
 
-    pub fn sign_transaction_clear(&self, clear_text: &str) -> eyre::Result<Signature> {
+    pub fn sign_transaction_clear(
+        &self,
+        clear_text: &str,
+        signature_domain: SignatureDomain,
+    ) -> eyre::Result<Signature> {
         match &self.kind {
             SignerKind::Software(keypair) => Ok(keypair.sign_message(clear_text.as_bytes())),
             #[cfg(feature = "ledger")]
@@ -213,7 +238,11 @@ impl TransactionSigner {
                     cfg.confirm_key,
                     &cfg.keypair_name,
                 )?;
-                let offchain = offchain_message_envelope_bytes(clear_text.as_bytes(), &cfg.pubkey)?;
+                let offchain = offchain_message_envelope_bytes(
+                    clear_text.as_bytes(),
+                    &cfg.pubkey,
+                    signature_domain,
+                )?;
                 sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
             }
         }
@@ -401,8 +430,12 @@ fn resolve_ledger_wallet(
     fallback_match.ok_or_else(|| eyre::eyre!(RemoteWalletError::NoDeviceFound))
 }
 
-#[cfg(feature = "ledger")]
-fn offchain_message_envelope_bytes(payload: &[u8], signer: &Pubkey) -> eyre::Result<Vec<u8>> {
+#[cfg(any(feature = "ledger", test))]
+fn offchain_message_envelope_bytes(
+    payload: &[u8],
+    signer: &Pubkey,
+    signature_domain: SignatureDomain,
+) -> eyre::Result<Vec<u8>> {
     if payload.is_empty() {
         bail!("offchain payload cannot be empty");
     }
@@ -422,7 +455,8 @@ fn offchain_message_envelope_bytes(payload: &[u8], signer: &Pubkey) -> eyre::Res
     let mut out = Vec::with_capacity(16 + 1 + 32 + 1 + 1 + 32 + 2 + payload.len());
     out.extend_from_slice(OFFCHAIN_SIGNING_DOMAIN);
     out.push(0);
-    out.extend_from_slice(&[0u8; 32]);
+    out.push(signature_domain as u8);
+    out.extend_from_slice(&[0u8; 31]);
     out.push(format);
     out.push(1);
     out.extend_from_slice(signer.as_ref());
@@ -431,49 +465,39 @@ fn offchain_message_envelope_bytes(payload: &[u8], signer: &Pubkey) -> eyre::Res
     Ok(out)
 }
 
-#[cfg(feature = "ledger")]
-fn offchain_message_v0_bytes(payload: &[u8]) -> eyre::Result<Vec<u8>> {
-    if payload.is_empty() {
-        bail!("offchain payload cannot be empty");
-    }
-    if payload.len() > u16::MAX as usize {
-        bail!("offchain payload too large");
-    }
-    let mut out = Vec::with_capacity(3 + payload.len());
-    out.push(0); // restricted ascii
-    out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-    out.extend_from_slice(payload);
-    Ok(out)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[cfg(feature = "ledger")]
-fn sign_ledger_offchain(
-    wallet: &LedgerWallet,
-    derivation_path: &DerivationPath,
-    payload: &[u8],
-    envelope: &[u8],
-) -> eyre::Result<Signature> {
-    match wallet.sign_offchain_message(derivation_path, envelope) {
-        Ok(sig) => Ok(sig),
-        Err(first_err) => {
-            let msg = first_err.to_string().to_lowercase();
-            if !msg.contains("invalid header") {
-                return Err(eyre::eyre!("ledger sign failed: {first_err}"));
-            }
-            let v0 = offchain_message_v0_bytes(payload)?;
-            match wallet.sign_offchain_message(derivation_path, &v0) {
-                Ok(sig) => Ok(sig),
-                Err(second_err) => {
-                    let msg2 = second_err.to_string().to_lowercase();
-                    if !msg2.contains("invalid header") {
-                        return Err(eyre::eyre!("ledger sign failed: {second_err}"));
-                    }
-                    wallet
-                        .sign_offchain_message(derivation_path, payload)
-                        .map_err(|e| eyre::eyre!("ledger sign failed: {e}"))
-                }
-            }
-        }
+    #[test]
+    fn generic_signature_is_bound_to_one_domain() {
+        let signer =
+            TransactionSigner::from_private_key("1111111111111111111111111111111111111111111")
+                .expect("test signer");
+        let mainnet = signer
+            .sign_bytes(b"{\"action\":\"faucet\"}", SignatureDomain::Mainnet)
+            .expect("mainnet signature");
+        let testnet = signer
+            .sign_bytes(b"{\"action\":\"faucet\"}", SignatureDomain::Testnet)
+            .expect("testnet signature");
+        let mut mainnet_preimage = b"{\"action\":\"faucet\"}".to_vec();
+        mainnet_preimage.push(SignatureDomain::Mainnet as u8);
+
+        assert_ne!(mainnet, testnet);
+        assert!(mainnet.verify(signer.public_key().as_ref(), &mainnet_preimage));
+    }
+
+    #[test]
+    fn transaction_offchain_envelope_uses_first_app_domain_byte() {
+        let envelope = offchain_message_envelope_bytes(
+            b"Bulk Exchange Transaction",
+            &Pubkey::new_unique(),
+            SignatureDomain::Testnet,
+        )
+        .expect("offchain envelope");
+
+        assert_eq!(envelope[17], SignatureDomain::Testnet as u8);
+        assert_eq!(&envelope[18..49], &[0; 31]);
     }
 }
 

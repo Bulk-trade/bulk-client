@@ -15,6 +15,7 @@ It covers three categories of endpoints:
 BulkHttpClient(
     base_url: str = "https://exchange-api2.bulk.trade/api/v1",
     private_key: Optional[str] = None,
+    signature_domain: Optional[SignatureDomain] = None,
     timeout: int = 10
 )
 ```
@@ -23,6 +24,7 @@ BulkHttpClient(
 |---|---|---|---|
 | `base_url` | `str` | `"https://exchange-api2.bulk.trade/api/v1"` | HTTP endpoint |
 | `private_key` | `Optional[str]` | `None` | Base58-encoded private key. Required for trading and settings operations |
+| `signature_domain` | `Optional[SignatureDomain]` | `None` | Required when `private_key` is set; selects mainnet, testnet, or devnet |
 | `timeout` | `int` | `10` | Per-request timeout in seconds |
 
 ### Read-only client (market data + account queries)
@@ -41,8 +43,12 @@ client = BulkHttpClient()
 ```python
 import os
 from bulk_api import BulkHttpClient
+from bulk_api.common import SignatureDomain
 
-client = BulkHttpClient(private_key=os.environ["BULK_PRIVATE_KEY"])
+client = BulkHttpClient(
+    private_key=os.environ["BULK_PRIVATE_KEY"],
+    signature_domain=SignatureDomain.MAINNET,
+)
 print(f"Trading as: {client.signer.public_key}")
 ```
 
@@ -460,9 +466,12 @@ print(f"latest close={candles[-1]['c']}")
 import os
 from bulk_api import BulkHttpClient
 from bulk_api.messages import LimitOrder, CancelAll, OrderResponse
-from bulk_api.common import Side, TimeInForce
+from bulk_api.common import SignatureDomain, Side, TimeInForce
 
-client = BulkHttpClient(private_key=os.environ["BULK_PRIVATE_KEY"])
+client = BulkHttpClient(
+    private_key=os.environ["BULK_PRIVATE_KEY"],
+    signature_domain=SignatureDomain.MAINNET,
+)
 
 # Ladder: three bids at descending price levels
 raw = client.place_orders([
@@ -490,7 +499,7 @@ else:
 
 | Feature | Python | Rust |
 |---|---|---|
-| Construction | `BulkHttpClient(base_url, private_key, timeout)` | `BulkHttpClient::with_url(base_url, private_key)` or `BulkHttpClient::new(&config)` |
+| Construction | `BulkHttpClient(base_url, private_key, signature_domain, timeout)` | `BulkHttpClient::with_url(base_url, private_key, signature_domain)` or `BulkHttpClient::new(&config)` |
 | Action types | `LimitOrder`, `MarketOrder`, `CancelOrder`, `CancelAll` dataclasses | `Action` enum variants |
 | Batch submit | `place_orders(txns)` | `place_tx(actions, account, nonce)` |
 | Single order helpers | — (use `place_orders` with one item) | `place_limit_order()`, `place_market_order()` |

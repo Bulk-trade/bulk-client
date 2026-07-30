@@ -43,6 +43,7 @@ by calling `await client.connect()`.
 | `url` | `str` | `"wss://exchange-wss.bulk.trade"` | WebSocket endpoint |
 | `symbols` | `List[str]` | `["BTC-USD", "ETH-USD", "SOL-USD"]` | Symbols to auto-subscribe tickers for |
 | `signer` | `Optional[TransactionSigner]` | `None` | Required for any trading operation |
+| `signature_domain` | `Optional[SignatureDomain]` | `None` | Required when `signer` is set; selects mainnet, testnet, or devnet |
 | `inventory` | `Optional[Inventory]` | `Inventory()` | Position and P&L tracker; a fresh one is created if omitted |
 | `logger` | `Optional[logging.Logger]` | module logger | Pass your own logger to integrate with your log pipeline |
 | `handlers` | `Optional[Dict[Topic, Callable]]` | `None` | Register event handlers at construction time |
@@ -84,7 +85,7 @@ asyncio.run(main())
 ```python
 import asyncio
 from bulk_api import BulkWebSocketClient
-from bulk_api.common.signer import TransactionSigner
+from bulk_api.common.signer import SignatureDomain, TransactionSigner
 
 async def main():
     signer = TransactionSigner("YOUR_BASE58_PRIVATE_KEY")
@@ -93,6 +94,7 @@ async def main():
         url="wss://exchange-wss.bulk.trade",
         symbols=["BTC-USD", "SOL-USD"],
         signer=signer,
+        signature_domain=SignatureDomain.MAINNET,
     )
 
     await client.connect()
@@ -113,7 +115,7 @@ You can pass an initial handler map to the constructor to avoid a window between
 `connect()` and your first `on()` call:
 
 ```python
-from bulk_api.common import Topic
+from bulk_api.common import SignatureDomain, Topic
 
 async def on_ticker(ticker):
     print(f"[ticker] {ticker.symbol} mark={ticker.mark_price}")
@@ -121,6 +123,7 @@ async def on_ticker(ticker):
 client = BulkWebSocketClient(
     symbols=["BTC-USD"],
     signer=signer,
+    signature_domain=SignatureDomain.MAINNET,
     handlers={
         Topic.TICKER: on_ticker,
     },
@@ -427,7 +430,7 @@ import asyncio
 import logging
 from bulk_api import BulkWebSocketClient
 from bulk_api.common import Side, TimeInForce, Topic
-from bulk_api.common.signer import TransactionSigner
+from bulk_api.common.signer import SignatureDomain, TransactionSigner
 
 logging.basicConfig(level=logging.INFO)
 
@@ -438,6 +441,7 @@ async def main():
         url="wss://exchange-wss.bulk.trade",
         symbols=["BTC-USD"],
         signer=signer,
+        signature_domain=SignatureDomain.MAINNET,
     )
 
     # Subscribe to book data

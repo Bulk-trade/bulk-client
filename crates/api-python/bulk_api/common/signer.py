@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple, Optional, Union
+from enum import IntEnum
 
 from nacl.exceptions import BadSignatureError
 from nacl.signing import SigningKey, VerifyKey
@@ -17,6 +18,15 @@ TIME_IN_FORCE_MAP = {
     "alo": 2,
 }
 
+
+class SignatureDomain(IntEnum):
+    """Stable one-byte network registry used only in signature preimages."""
+
+    MAINNET = 1
+    TESTNET = 2
+    DEVNET = 3
+
+
 class TransactionSigner:
     """Handle Ed25519 transaction signing with serialization of bulk payloads"""
     
@@ -33,7 +43,7 @@ class TransactionSigner:
         self.private_key = private_key
         self.nonce = 0
         
-    def sign_transaction(self, tx: Dict) -> str:
+    def sign_transaction(self, tx: Dict, signature_domain: SignatureDomain) -> str:
         """
         Sign a transaction with Ed25519
 
@@ -49,7 +59,7 @@ class TransactionSigner:
         account = tx.get("account", self.public_key)
         signer = tx.get("signer", self.public_key)
         
-        message = self.serialize_transaction(action, nonce, account)
+        message = self.serialize_transaction(action, nonce, account, signature_domain)
         signed = self.signing_key.sign(message)
         
         sig = base58.b58encode(signed.signature).decode()
@@ -57,7 +67,7 @@ class TransactionSigner:
         tx["signature"] = sig
         return tx
 
-    def verify(self, tx: Dict) -> bool:
+    def verify(self, tx: Dict, signature_domain: SignatureDomain) -> bool:
         """
         Verify an Ed25519 transaction signature.
 
@@ -76,7 +86,9 @@ class TransactionSigner:
         account = tx.get("account")
         signer = tx.get("signer", account)
 
-        message = TransactionSigner.serialize_transaction(actions, nonce, account)
+        message = TransactionSigner.serialize_transaction(
+            actions, nonce, account, signature_domain
+        )
 
         signer_pubkey_bytes = base58.b58decode(signer)
         signature_bytes = base58.b58decode(signature_b58)
@@ -111,7 +123,8 @@ class TransactionSigner:
     def serialize_transaction(
         actions: List[Dict],
         nonce: Union[int, str],
-        account: str) -> bytes:
+        account: str,
+        signature_domain: SignatureDomain) -> bytes:
         """
         Serialize transaction using bincode format
 
@@ -123,12 +136,15 @@ class TransactionSigner:
         Returns:
             Binary serialized transaction
         """
+        if not isinstance(signature_domain, SignatureDomain):
+            raise ValueError("explicit SignatureDomain is required")
         parts = [TransactionSigner.write_u64(len(actions))]
         for action in actions:
             parts.append(TransactionSigner.serialize_action(action))
 
         parts.append(TransactionSigner.write_u64(int(nonce)))
         parts.append(TransactionSigner.decode_and_validate_32_bytes(account))
+        parts.append(TransactionSigner.write_u8(signature_domain.value))
         return b''.join(parts)
 
     @staticmethod
@@ -414,7 +430,7 @@ def _test_faucet1():
         'signer': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS'
     }
     signer = TransactionSigner("1111111111111111111111111111111111111111111")
-    signed = signer.sign_transaction(faucet)
+    signed = signer.sign_transaction(faucet, SignatureDomain.DEVNET)
     print(signed)
 
 def _test_faucet2():
@@ -427,7 +443,7 @@ def _test_faucet2():
         'signer': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di'
     }
     signer = TransactionSigner("9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH")
-    signed = signer.sign_transaction(faucet)
+    signed = signer.sign_transaction(faucet, SignatureDomain.DEVNET)
     print(signed)
 
 def _test_trailing():
@@ -441,8 +457,8 @@ def _test_trailing():
     }
     signer = TransactionSigner("1111111111111111111111111111111111111111111")
 
-    signed = signer.sign_transaction(orders)
-    assert signer.verify(orders)
+    signed = signer.sign_transaction(orders, SignatureDomain.DEVNET)
+    assert signer.verify(orders, SignatureDomain.DEVNET)
     print(signed)
 
 
@@ -467,8 +483,8 @@ def _test_orders():
     }
     signer = TransactionSigner("5BkyJozwQDSrs261gZc176uRfrXRvr9ec4RcfQhqnavj")
 
-    signed = signer.sign_transaction(orders)
-    assert signer.verify(orders)
+    signed = signer.sign_transaction(orders, SignatureDomain.DEVNET)
+    assert signer.verify(orders, SignatureDomain.DEVNET)
     print(signed)
 
 if __name__ == '__main__':

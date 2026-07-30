@@ -5,6 +5,48 @@ use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use std::fmt::Debug;
+use std::str::FromStr;
+
+/// Stable signature-domain registry. Zero is deliberately unassigned so a
+/// missing or legacy domain cannot silently select a live network.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignatureDomain {
+    Mainnet = 1,
+    Testnet = 2,
+    Devnet = 3,
+}
+
+impl SignatureDomain {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mainnet => "mainnet",
+            Self::Testnet => "testnet",
+            Self::Devnet => "devnet",
+        }
+    }
+}
+
+impl std::fmt::Display for SignatureDomain {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SignatureDomain {
+    type Err = eyre::Report;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "mainnet" => Ok(Self::Mainnet),
+            "testnet" => Ok(Self::Testnet),
+            "devnet" => Ok(Self::Devnet),
+            _ => Err(eyre::eyre!(
+                "invalid signature domain `{value}`; expected mainnet, testnet, or devnet"
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
@@ -25,7 +67,8 @@ pub struct Transaction {
 
 #[allow(unused)]
 impl Transaction {
-    fn raw_signable_bytes(
+    pub(crate) fn raw_signable_bytes(
+        signature_domain: SignatureDomain,
         account: Pubkey,
         nonce: u64,
         actions: &[Action],
@@ -33,6 +76,7 @@ impl Transaction {
         let mut serialized = bincode::serialize(&RawSignableActions(actions))?;
         serialized.extend_from_slice(&nonce.to_le_bytes());
         serialized.extend_from_slice(account.as_ref());
+        serialized.push(signature_domain as u8);
         Ok(serialized)
     }
 
@@ -41,22 +85,33 @@ impl Transaction {
     ///
     /// # Arguments
     /// - `signer`: tx signer
-    pub fn sign(&mut self, signer: &TransactionSigner) -> eyre::Result<()> {
+    pub fn sign(
+        &mut self,
+        signer: &TransactionSigner,
+        signature_domain: SignatureDomain,
+    ) -> eyre::Result<()> {
         use crate::transaction::signer::TxSignatureMode;
 
         match signer.tx_signature_mode() {
             TxSignatureMode::Offchain => {
                 let clear_text = crate::transaction::clear_sign::canonical_message(
+                    signature_domain,
                     self.account,
                     self.nonce,
                     &self.actions,
                 )?;
-                self.signature = signer.sign_transaction_clear(&clear_text)?;
+                self.signature = signer.sign_transaction_clear(&clear_text, signature_domain)?;
             }
             TxSignatureMode::Raw => {
                 self.signature = signer.sign_transaction_bytes(
-                    Self::raw_signable_bytes(self.account, self.nonce, self.actions.as_slice())?
-                        .as_slice(),
+                    Self::raw_signable_bytes(
+                        signature_domain,
+                        self.account,
+                        self.nonce,
+                        self.actions.as_slice(),
+                    )?
+                    .as_slice(),
+                    signature_domain,
                 )?;
             }
         }
@@ -65,10 +120,16 @@ impl Transaction {
     }
 
     /// Determine if tx was properly signed
-    pub fn verify(&self) -> eyre::Result<bool> {
+    pub fn verify(&self, signature_domain: SignatureDomain) -> eyre::Result<bool> {
         Ok(self.signature.verify(
             &self.signer.to_bytes(),
-            Self::raw_signable_bytes(self.account, self.nonce, self.actions.as_slice())?.as_slice(),
+            Self::raw_signable_bytes(
+                signature_domain,
+                self.account,
+                self.nonce,
+                self.actions.as_slice(),
+            )?
+            .as_slice(),
         ))
     }
 }
@@ -280,6 +341,7 @@ mod tests {
     use super::*;
     use crate::common::tif::TimeInForce;
     use crate::msgs::conditional::StopOrTP;
+    use crate::msgs::liquidator::LiqConfig;
     use crate::msgs::{CancelAll, Faucet, LimitOrder};
     use crate::transaction::ActionMeta;
     use std::sync::Arc;
@@ -290,6 +352,72 @@ mod tests {
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
     const TEST_PRIVATE_KEY1: &str = "1111111111111111111111111111111111111111111";
     const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
+
+    #[test]
+    fn signature_domain_registry_is_stable_and_compact() {
+        assert_eq!(SignatureDomain::Mainnet as u8, 1);
+        assert_eq!(SignatureDomain::Testnet as u8, 2);
+        assert_eq!(SignatureDomain::Devnet as u8, 3);
+        assert_eq!(std::mem::size_of::<SignatureDomain>(), 1);
+    }
+
+    #[test]
+    fn update_liquidator_config_uses_sdk_ordinal_43() {
+        let signable = Transaction::raw_signable_bytes(
+            SignatureDomain::Devnet,
+            Pubkey::default(),
+            0,
+            &[Action::UpdateLiquidatorConfig(LiqConfig::default())],
+        )
+        .expect("signable bytes");
+
+        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 43);
+    }
+
+    #[test]
+    fn transaction_signature_is_bound_to_one_domain() {
+        let (mut tx, signer) = make_limit_order_tx();
+        tx.sign(&signer, SignatureDomain::Mainnet)
+            .expect("mainnet signature");
+
+        assert!(tx
+            .verify(SignatureDomain::Mainnet)
+            .expect("mainnet verification"));
+        assert!(!tx
+            .verify(SignatureDomain::Testnet)
+            .expect("testnet verification"));
+        assert!(!tx
+            .verify(SignatureDomain::Devnet)
+            .expect("devnet verification"));
+        assert!(serde_json::to_value(&tx)
+            .expect("transaction JSON")
+            .get("signatureDomain")
+            .is_none());
+    }
+
+    #[test]
+    fn signature_domain_changes_only_the_signable_suffix() {
+        let (tx, _) = make_limit_order_tx();
+        let mainnet = Transaction::raw_signable_bytes(
+            SignatureDomain::Mainnet,
+            tx.account,
+            tx.nonce,
+            &tx.actions,
+        )
+        .expect("mainnet bytes");
+        let testnet = Transaction::raw_signable_bytes(
+            SignatureDomain::Testnet,
+            tx.account,
+            tx.nonce,
+            &tx.actions,
+        )
+        .expect("testnet bytes");
+
+        assert_eq!(mainnet.len(), testnet.len());
+        assert_eq!(&mainnet[..mainnet.len() - 1], &testnet[..testnet.len() - 1]);
+        assert_eq!(mainnet[mainnet.len() - 1], SignatureDomain::Mainnet as u8);
+        assert_eq!(testnet[testnet.len() - 1], SignatureDomain::Testnet as u8);
+    }
 
     // -----------------------------------------------------------------------
     // LimitOrder
@@ -333,7 +461,8 @@ mod tests {
     fn limit_order_tx_sign_and_verify() {
         let (mut tx, signer) = make_limit_order_tx();
 
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         // Signer pubkey must be populated after signing
         assert_eq!(tx.signer, signer.public_key());
@@ -345,7 +474,8 @@ mod tests {
 
         // Verification must pass
         assert!(
-            tx.verify().expect("verify should not error"),
+            tx.verify(SignatureDomain::Devnet)
+                .expect("verify should not error"),
             "limit order signature verification failed"
         );
     }
@@ -356,7 +486,8 @@ mod tests {
     #[test]
     fn limit_order_signature_verifies_after_sdk_json_deserialize() {
         let (mut tx, signer) = make_limit_order_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert!(
             serde_json::from_str::<bulk_transaction::Transaction>(
@@ -365,7 +496,7 @@ mod tests {
                     .as_str()
             )
             .expect("sdk transaction should deserialize")
-            .verify()
+            .verify(bulk_transaction::SignatureDomain::Devnet)
             .expect("sdk verify should not error"),
             "client-signed limit order must verify with sdk server bytes"
         );
@@ -381,7 +512,8 @@ mod tests {
                 fee: 5,
             });
         }
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert!(
             serde_json::from_str::<bulk_transaction::Transaction>(
@@ -390,7 +522,7 @@ mod tests {
                     .as_str()
             )
             .expect("sdk transaction should deserialize")
-            .verify()
+            .verify(bulk_transaction::SignatureDomain::Devnet)
             .expect("sdk verify should not error"),
             "client-signed commissioned limit order must verify with sdk server bytes"
         );
@@ -399,14 +531,17 @@ mod tests {
     #[test]
     fn limit_order_tx_tampered_price_fails_verify() {
         let (mut tx, signer) = make_limit_order_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         // Tamper with the action payload after signing
         if let Action::LimitOrder(ref mut o) = tx.actions[0] {
             o.price = 1.0;
         }
 
-        let valid = tx.verify().expect("verify should not error");
+        let valid = tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify should not error");
         assert!(!valid, "tampered limit order should not verify");
     }
 
@@ -447,7 +582,8 @@ mod tests {
     #[test]
     fn market_order_signature_verifies_after_sdk_json_deserialize() {
         let (mut tx, signer) = make_market_order_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert!(
             serde_json::from_str::<bulk_transaction::Transaction>(
@@ -456,7 +592,7 @@ mod tests {
                     .as_str()
             )
             .expect("sdk transaction should deserialize")
-            .verify()
+            .verify(bulk_transaction::SignatureDomain::Devnet)
             .expect("sdk verify should not error"),
             "client-signed market order must verify with sdk server bytes"
         );
@@ -472,7 +608,8 @@ mod tests {
                 fee: 15,
             });
         }
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert!(
             serde_json::from_str::<bulk_transaction::Transaction>(
@@ -481,7 +618,7 @@ mod tests {
                     .as_str()
             )
             .expect("sdk transaction should deserialize")
-            .verify()
+            .verify(bulk_transaction::SignatureDomain::Devnet)
             .expect("sdk verify should not error"),
             "client-signed commissioned market order must verify with sdk server bytes"
         );
@@ -521,7 +658,8 @@ mod tests {
             signer: Pubkey::default(),
             signature: Signature::default(),
         };
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert!(
             serde_json::from_str::<bulk_transaction::Transaction>(
@@ -530,7 +668,7 @@ mod tests {
                     .as_str()
             )
             .expect("sdk transaction should deserialize")
-            .verify()
+            .verify(bulk_transaction::SignatureDomain::Devnet)
             .expect("sdk verify should not error"),
             "client-signed commission approval actions must verify with sdk server bytes"
         );
@@ -571,7 +709,8 @@ mod tests {
     fn cancel_all_tx_sign_and_verify() {
         let (mut tx, signer) = make_cancel_all_tx();
 
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         // Signer pubkey must be populated after signing
         assert_eq!(tx.signer, signer.public_key());
@@ -583,7 +722,8 @@ mod tests {
 
         // Verification must pass
         assert!(
-            tx.verify().expect("verify should not error"),
+            tx.verify(SignatureDomain::Devnet)
+                .expect("verify should not error"),
             "cancel_all signature verification failed"
         );
     }
@@ -591,14 +731,17 @@ mod tests {
     #[test]
     fn cancel_all_tx_tampered_symbols_fails_verify() {
         let (mut tx, signer) = make_cancel_all_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         // Tamper with the symbol list after signing
         if let Action::CancelAll(ref mut c) = tx.actions[0] {
             c.symbols.push("SOL-PERP".to_string());
         }
 
-        let valid = tx.verify().expect("verify should not error");
+        let valid = tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify should not error");
         assert!(!valid, "tampered cancel_all should not verify");
     }
 
@@ -633,7 +776,8 @@ mod tests {
     fn faucet_tx_sign_and_verify() {
         let (mut tx, signer) = make_faucet_tx();
 
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert_eq!(tx.signer, signer.public_key());
         assert_ne!(tx.signature, Signature::default());
@@ -645,7 +789,8 @@ mod tests {
         );
 
         assert!(
-            tx.verify().expect("verify should not error"),
+            tx.verify(SignatureDomain::Devnet)
+                .expect("verify should not error"),
             "faucet signature verification failed"
         );
     }
@@ -653,14 +798,17 @@ mod tests {
     #[test]
     fn faucet_tx_tampered_user_fails_verify() {
         let (mut tx, signer) = make_faucet_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         // Tamper with the user pubkey after signing
         if let Action::Faucet(ref mut f) = tx.actions[0] {
             f.user = Pubkey::new_unique();
         }
 
-        let valid = tx.verify().expect("verify should not error");
+        let valid = tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify should not error");
         assert!(!valid, "tampered faucet user should not verify");
     }
 
@@ -724,7 +872,8 @@ mod tests {
     fn take_profit_tx_sign_and_verify1() {
         let (mut tx, signer) = make_take_profit_tx();
 
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert_eq!(tx.signer, signer.public_key());
         assert_ne!(tx.signature, Signature::default());
@@ -732,7 +881,8 @@ mod tests {
         eprintln!("take_profit1 signature: {}", tx.signature);
 
         assert!(
-            tx.verify().expect("verify should not error"),
+            tx.verify(SignatureDomain::Devnet)
+                .expect("verify should not error"),
             "take_profit signature verification failed"
         );
     }
@@ -741,7 +891,8 @@ mod tests {
     fn take_profit_tx_sign_and_verify2() {
         let (mut tx, signer) = make_take_profit_tx2();
 
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         assert_eq!(tx.signer, signer.public_key());
         assert_ne!(tx.signature, Signature::default());
@@ -749,7 +900,8 @@ mod tests {
         eprintln!("take_profit2 signature: {}", tx.signature);
 
         assert!(
-            tx.verify().expect("verify should not error"),
+            tx.verify(SignatureDomain::Devnet)
+                .expect("verify should not error"),
             "take_profit signature verification failed"
         );
     }
@@ -757,26 +909,32 @@ mod tests {
     #[test]
     fn take_profit_tx_tampered_threshold_fails_verify() {
         let (mut tx, signer) = make_take_profit_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         if let Action::TakeProfit(ref mut tp) = tx.actions[0] {
             tp.threshold = 80_000.0;
         }
 
-        let valid = tx.verify().expect("verify should not error");
+        let valid = tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify should not error");
         assert!(!valid, "tampered take_profit threshold should not verify");
     }
 
     #[test]
     fn take_profit_tx_tampered_size_fails_verify() {
         let (mut tx, signer) = make_take_profit_tx();
-        tx.sign(&signer).expect("sign should succeed");
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign should succeed");
 
         if let Action::TakeProfit(ref mut tp) = tx.actions[0] {
             tp.size = 1.0;
         }
 
-        let valid = tx.verify().expect("verify should not error");
+        let valid = tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify should not error");
         assert!(!valid, "tampered take_profit size should not verify");
     }
 }

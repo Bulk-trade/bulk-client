@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Tuple
 
 from bulk_api.api import Topic
-from bulk_api.common import TransactionSigner, Side
+from bulk_api.common import SignatureDomain, TransactionSigner, Side
 from bulk_api.api import BulkHttpClient
 from bulk_api.api import BulkWebSocketClient
 from bulk_api.messages.trade import MarketOrder
@@ -81,7 +81,8 @@ async def request_faucet_funds(private_key: str, public_key: str):
 
     http_client = BulkHttpClient(
         base_url=TESTNET_HTTP_URL,
-        private_key=private_key
+        private_key=private_key,
+        signature_domain=SignatureDomain.TESTNET,
     )
 
     try:
@@ -174,6 +175,7 @@ async def test_market_order():
     ws_client = BulkWebSocketClient(
         url=TESTNET_WS_URL,
         signer=signer,
+        signature_domain=SignatureDomain.TESTNET,
         handlers={
             Topic.ACCOUNT: on_account_snapshot,
             Topic.FILL: on_fill,

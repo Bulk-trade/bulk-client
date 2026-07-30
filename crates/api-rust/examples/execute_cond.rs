@@ -9,7 +9,7 @@
 use bulk_client::api::parts::HttpConfig;
 use bulk_client::api::BulkHttpClient;
 use bulk_client::msgs::conditional::StopOrTP;
-use bulk_client::transaction::{Action, ActionMeta, TransactionSigner};
+use bulk_client::transaction::{Action, ActionMeta, SignatureDomain, TransactionSigner};
 use clap::Parser;
 use solana_pubkey::Pubkey;
 use std::str::FromStr;
@@ -24,6 +24,10 @@ struct Args {
     /// WebSocket URL
     #[arg(long, default_value = "http://localhost:12000/api/v1")]
     url: String,
+
+    /// Network domain bound into the transaction signature.
+    #[arg(long, env = "BULK_SIGNATURE_DOMAIN")]
+    signature_domain: SignatureDomain,
 }
 
 #[tokio::main]
@@ -40,6 +44,7 @@ async fn main() -> eyre::Result<()> {
     let client = BulkHttpClient::new(&HttpConfig {
         base_url: args.url,
         signer: Some(signer.clone()),
+        signature_domain: Some(args.signature_domain),
         ..Default::default()
     })
     .unwrap();

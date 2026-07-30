@@ -23,7 +23,13 @@ pub async fn submit_actions(
     let account = signer.public_key();
 
     if options.preview {
-        let preview = canonical_message(account, nonce, &actions)?;
+        let preview = canonical_message(
+            cfg.signature_domain
+                .ok_or_else(|| eyre::eyre!("signature domain required"))?,
+            account,
+            nonce,
+            &actions,
+        )?;
         eprintln!("--- transaction preview ---");
         eprint!("{}", preview);
         if !options.auto_yes {
