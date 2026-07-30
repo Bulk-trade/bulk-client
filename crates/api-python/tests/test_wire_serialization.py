@@ -249,9 +249,46 @@ def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     assert on_fill_bytes.hex() == expected_on_fill, on_fill_bytes.hex()
 
 
+def test_python_signer_rejects_top_level_trigger_iso_only():
+    signer = load_signer()
+
+    try:
+        signer.TransactionSigner.serialize_action({
+            "trig": {
+                "c": "BTC-USD",
+                "d": True,
+                "tr": 100.0,
+                "i": False,
+                "actions": [],
+            }
+        })
+    except ValueError as error:
+        assert "trigger" in str(error)
+    else:
+        raise AssertionError("top-level trigger i must be rejected")
+
+    signer.TransactionSigner.serialize_action({
+        "trig": {
+            "c": "BTC-USD",
+            "d": True,
+            "tr": 100.0,
+            "actions": [{
+                "m": {
+                    "c": "BTC-USD",
+                    "b": True,
+                    "sz": 1.0,
+                    "r": False,
+                    "i": True,
+                }
+            }],
+        }
+    })
+
+
 if __name__ == "__main__":
     test_trailing_stop_uses_signer_field_name()
     test_whitelist_faucet_accepts_client_payload_shape()
     test_whitelist_faucet_accepts_legacy_payload_shape()
     test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields()
     test_python_trigger_and_on_fill_signing_match_current_sdk_vectors()
+    test_python_signer_rejects_top_level_trigger_iso_only()

@@ -84,6 +84,7 @@ pub struct Range {
 
 /// Trigger evaluates a collection of actions when trigger reached
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Trigger {
     /// Which Instrument
     #[serde(rename = "c")]
@@ -237,5 +238,37 @@ mod tests {
                 .get("i")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn trigger_rejects_a_top_level_iso_field_but_allows_it_on_nested_orders() {
+        assert!(serde_json::from_value::<Action>(json!({
+            "trig": {
+                "c": "BTC-USD",
+                "d": true,
+                "tr": 100.0,
+                "i": false,
+                "actions": []
+            }
+        }))
+        .is_err());
+
+        serde_json::from_value::<Action>(json!({
+            "trig": {
+                "c": "BTC-USD",
+                "d": true,
+                "tr": 100.0,
+                "actions": [{
+                    "m": {
+                        "c": "BTC-USD",
+                        "b": true,
+                        "sz": 1.0,
+                        "r": false,
+                        "i": true
+                    }
+                }]
+            }
+        }))
+        .expect("nested order iso remains valid");
     }
 }
