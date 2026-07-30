@@ -108,6 +108,7 @@ fn captured_body(request: &str) -> Value {
 
 fn fill_row() -> Value {
     json!({
+        "tradeId": "18446744073709551615:18446744073709551613",
         "maker": PUBKEY,
         "taker": PUBKEY,
         "orderIdMaker": PUBKEY,
@@ -128,6 +129,91 @@ fn fill_row() -> Value {
         "timestamp": u64::MAX - 1,
         "sequence": u64::MAX - 2
     })
+}
+
+#[test]
+fn history_fill_requires_a_lossless_trade_id() {
+    let fill: HistoryFill = serde_json::from_value(fill_row()).expect("valid history fill");
+    assert_eq!(
+        serde_json::to_value(fill).expect("serialize history fill")["tradeId"],
+        "18446744073709551615:18446744073709551613"
+    );
+
+    for invalid in [
+        json!(null),
+        json!(1),
+        json!("1"),
+        json!("1:"),
+        json!(":1"),
+        json!("1:2:3"),
+        json!("01:2"),
+        json!("1:02"),
+        json!("-1:2"),
+        json!("18446744073709551616:0"),
+    ] {
+        let mut row = fill_row();
+        row["tradeId"] = invalid;
+        assert!(
+            serde_json::from_value::<HistoryFill>(row).is_err(),
+            "invalid trade ID must be rejected"
+        );
+    }
+}
+
+#[test]
+fn rust_history_page_accepts_an_explicit_null_terminal_cursor() {
+    let mut terminal = page(fill_row());
+    terminal["page"]["nextCursor"] = Value::Null;
+    terminal["page"]["hasMore"] = json!(false);
+
+    serde_json::from_value::<HistoryPage<HistoryFill>>(terminal)
+        .expect("explicit null is the canonical terminal cursor");
+}
+
+#[test]
+fn rust_history_page_rejects_invalid_metadata_invariants() {
+    let mut cases = Vec::new();
+
+    let mut missing_cursor = page(fill_row());
+    missing_cursor["page"]
+        .as_object_mut()
+        .expect("page object")
+        .remove("nextCursor");
+    cases.push(missing_cursor);
+
+    let mut has_more_without_cursor = page(fill_row());
+    has_more_without_cursor["page"]["nextCursor"] = Value::Null;
+    cases.push(has_more_without_cursor);
+
+    let mut terminal_with_cursor = page(fill_row());
+    terminal_with_cursor["page"]["hasMore"] = json!(false);
+    cases.push(terminal_with_cursor);
+
+    let mut empty_cursor = page(fill_row());
+    empty_cursor["page"]["nextCursor"] = json!("");
+    cases.push(empty_cursor);
+
+    let mut reversed_bounds = page(fill_row());
+    reversed_bounds["page"]["startSlot"] = json!(11);
+    reversed_bounds["page"]["endSlot"] = json!(10);
+    cases.push(reversed_bounds);
+
+    let mut end_after_snapshot = page(fill_row());
+    end_after_snapshot["page"]["endSlot"] = json!(11);
+    end_after_snapshot["page"]["asOfSlot"] = json!(10);
+    cases.push(end_after_snapshot);
+
+    let mut invalid_complete_floor = page(fill_row());
+    invalid_complete_floor["page"]["startSlot"] = json!(10);
+    invalid_complete_floor["page"]["minAvailableSlot"] = json!(11);
+    cases.push(invalid_complete_floor);
+
+    for payload in cases {
+        assert!(
+            serde_json::from_value::<HistoryPage<HistoryFill>>(payload).is_err(),
+            "invalid history metadata must be rejected"
+        );
+    }
 }
 
 fn position_row() -> Value {
@@ -239,7 +325,7 @@ fn risk_row() -> Value {
 #[tokio::test]
 async fn history_first_page_posts_exact_camel_case_body_and_preserves_u64() {
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
-    let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
+    let client = BulkHttpClient::with_url(&url, None, None).expect("create HTTP client");
     let response: HistoryPage<HistoryFill> = client
         .get_fills_page(
             PUBKEY,
@@ -277,7 +363,7 @@ async fn history_first_page_posts_exact_camel_case_body_and_preserves_u64() {
 #[tokio::test]
 async fn history_continuation_posts_only_limit_and_cursor_and_does_not_auto_follow() {
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
-    let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
+    let client = BulkHttpClient::with_url(&url, None, None).expect("create HTTP client");
     let response = client
         .get_fills_page(
             PUBKEY,
@@ -314,7 +400,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     let query = HistoryQuery::default();
 
     let (url, request) = spawn_json_server("200 OK", page(fill_row())).await;
-    let fill: HistoryPage<HistoryFill> = BulkHttpClient::with_url(&url, None)
+    let fill: HistoryPage<HistoryFill> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_fills_page(PUBKEY, &query)
         .await
@@ -328,7 +414,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     assert!(fill.data[0].iso);
 
     let (url, request) = spawn_json_server("200 OK", page(position_row())).await;
-    let position: HistoryPage<ClosedPosition> = BulkHttpClient::with_url(&url, None)
+    let position: HistoryPage<ClosedPosition> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_positions_page(PUBKEY, &query)
         .await
@@ -342,7 +428,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     assert_eq!(position.data[0].close_slot, u64::MAX - 8);
 
     let (url, request) = spawn_json_server("200 OK", page(funding_row())).await;
-    let funding: HistoryPage<FundingPayment> = BulkHttpClient::with_url(&url, None)
+    let funding: HistoryPage<FundingPayment> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_funding_page(PUBKEY, &query)
         .await
@@ -356,7 +442,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     assert_eq!(funding.data[0].sequence, u64::MAX - 4);
 
     let (url, request) = spawn_json_server("200 OK", page(order_row())).await;
-    let order: HistoryPage<TerminalOrder> = BulkHttpClient::with_url(&url, None)
+    let order: HistoryPage<TerminalOrder> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_orders_page(PUBKEY, &query)
         .await
@@ -383,7 +469,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     );
 
     let (url, request) = spawn_json_server("200 OK", page(activity_row())).await;
-    let activity: HistoryPage<AccountActivity> = BulkHttpClient::with_url(&url, None)
+    let activity: HistoryPage<AccountActivity> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_activity_page(PUBKEY, &query)
         .await
@@ -397,7 +483,7 @@ async fn history_methods_post_all_six_exact_types_and_decode_distinct_plain_rows
     assert_eq!(activity.data[0].activity_type, "transfer");
 
     let (url, request) = spawn_json_server("200 OK", page(risk_row())).await;
-    let risk: HistoryPage<RiskEvent> = BulkHttpClient::with_url(&url, None)
+    let risk: HistoryPage<RiskEvent> = BulkHttpClient::with_url(&url, None, None)
         .expect("client")
         .get_risk_page(PUBKEY, &query)
         .await
@@ -455,7 +541,7 @@ async fn history_non_success_preserves_structured_error_status_and_body() {
         }),
     )
     .await;
-    let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
+    let client = BulkHttpClient::with_url(&url, None, None).expect("create HTTP client");
 
     match client
         .get_risk_page(PUBKEY, &HistoryQuery::default())
@@ -500,7 +586,7 @@ async fn history_non_contract_error_bodies_preserve_status_with_bounded_fallback
         ),
     ] {
         let (url, request) = spawn_server(wire_status, content_type, body).await;
-        let client = BulkHttpClient::with_url(&url, None).expect("create HTTP client");
+        let client = BulkHttpClient::with_url(&url, None, None).expect("create HTTP client");
 
         match client
             .get_fills_page(PUBKEY, &HistoryQuery::default())

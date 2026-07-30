@@ -141,7 +141,117 @@ def test_whitelist_faucet_accepts_legacy_payload_shape():
     assert encoded.endswith(bytes([0]))
 
 
+def test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields():
+    trade = load_trade()
+
+    assert trade.Stop("BTC-USD", True, 1.0, 100.0, iso=True).to_api()["st"]["i"] is True
+    assert (
+        trade.TakeProfit("BTC-USD", False, 1.0, 100.0, iso=True).to_api()["tp"]["i"]
+        is True
+    )
+    assert (
+        trade.Range(
+            "BTC-USD",
+            True,
+            1.0,
+            90.0,
+            110.0,
+            iso=True,
+        ).to_api()["rng"]["i"]
+        is True
+    )
+    assert (
+        trade.TrailingStop(
+            "BTC-USD",
+            trade.Side.BUY,
+            1.0,
+            100,
+            10,
+            iso=True,
+        ).to_api()["trl"]["i"]
+        is True
+    )
+
+    trigger = trade.Trigger(
+        "BTC-USD",
+        True,
+        100.0,
+        [{"m": {"c": "BTC-USD", "b": True, "sz": "1", "r": False, "i": False}}],
+    ).to_api()
+    assert "i" not in trigger["trig"]
+
+    on_fill = trade.OnFill(
+        trigger={"l": {
+            "c": "BTC-USD",
+            "b": True,
+            "px": "100",
+            "sz": "1",
+            "tif": "GTC",
+            "r": False,
+            "i": False,
+        }},
+        actions=[],
+    ).to_api()
+    assert set(on_fill["of"]) == {"trigger", "actions"}
+    assert set(on_fill["of"]["trigger"]) == {"l"}
+
+
+def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
+    signer = load_signer()
+    builder_code = {"to": PUBKEY, "fee": 5}
+
+    trigger = {
+        "trig": {
+            "c": "BTC-USD",
+            "d": True,
+            "tr": 100_000.0,
+            "actions": [
+                {"m": {
+                    "c": "BTC-USD", "b": True, "sz": 1.25,
+                    "r": False, "i": True,
+                }},
+                {"l": {
+                    "c": "ETH-USD", "b": False, "px": 2500.5, "sz": 2.0,
+                    "tif": "ALO", "r": True, "i": False,
+                    "builderCode": builder_code,
+                }},
+            ],
+        }
+    }
+    trigger_bytes = signer.TransactionSigner.serialize_transaction(
+        [trigger], 7, PUBKEY, signer.SignatureDomain.TESTNET
+    )
+    expected_trigger = "01000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d55534401405973070000000000010100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    assert trigger_bytes.hex() == expected_trigger, trigger_bytes.hex()
+
+    on_fill = {
+        "of": {
+            "trigger": {"l": {
+                "c": "ETH-USD", "b": False, "px": 2500.5, "sz": 2.0,
+                "tif": "ALO", "r": True, "i": False,
+            }},
+            "actions": [
+                {"m": {
+                    "c": "BTC-USD", "b": True, "sz": 1.25,
+                    "r": False, "i": True,
+                }},
+                {"m": {
+                    "c": "BTC-USD", "b": True, "sz": 1.25,
+                    "r": False, "i": True, "builderCode": builder_code,
+                }},
+            ],
+        }
+    }
+    on_fill_bytes = signer.TransactionSigner.serialize_transaction(
+        [on_fill], 7, PUBKEY, signer.SignatureDomain.TESTNET
+    )
+    expected_on_fill = "01000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b0000000002000000010002000000000000000000000007000000000000004254432d55534401405973070000000000010000000007000000000000004254432d5553440140597307000000000001010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    assert on_fill_bytes.hex() == expected_on_fill, on_fill_bytes.hex()
+
+
 if __name__ == "__main__":
     test_trailing_stop_uses_signer_field_name()
     test_whitelist_faucet_accepts_client_payload_shape()
     test_whitelist_faucet_accepts_legacy_payload_shape()
+    test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields()
+    test_python_trigger_and_on_fill_signing_match_current_sdk_vectors()

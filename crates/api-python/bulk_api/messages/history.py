@@ -135,12 +135,41 @@ class HistoryHttpError(Exception):
         super().__init__(f"history API returned {status}: {body.error.code}: {body.error.message}")
 
 
+@dataclass(frozen=True)
+class TradeId:
+    slot: int
+    sequence: int
+
+    @classmethod
+    def from_api(cls, value: Any) -> "TradeId":
+        if not isinstance(value, str) or value.count(":") != 1:
+            raise ValueError("tradeId must be <slot>:<sequence>")
+        slot, sequence = value.split(":")
+        if (
+            not slot.isascii()
+            or not sequence.isascii()
+            or not slot.isdigit()
+            or not sequence.isdigit()
+            or (slot != "0" and slot.startswith("0"))
+            or (sequence != "0" and sequence.startswith("0"))
+        ):
+            raise ValueError("tradeId must be <slot>:<sequence>")
+        parsed_slot, parsed_sequence = int(slot), int(sequence)
+        if parsed_slot > (1 << 64) - 1 or parsed_sequence > (1 << 64) - 1:
+            raise ValueError("tradeId components must be u64 integers")
+        return cls(parsed_slot, parsed_sequence)
+
+    def __str__(self) -> str:
+        return f"{self.slot}:{self.sequence}"
+
+
 @dataclass
 class HistoryFill:
     maker: str
     taker: str
     order_id_maker: str
     order_id_taker: str
+    trade_id: TradeId
     is_buy: bool
     symbol: str
     amount: float
@@ -164,6 +193,7 @@ class HistoryFill:
             taker=data["taker"],
             order_id_maker=data["orderIdMaker"],
             order_id_taker=data["orderIdTaker"],
+            trade_id=TradeId.from_api(data.get("tradeId")),
             is_buy=data["isBuy"],
             symbol=data["symbol"],
             amount=data["amount"],

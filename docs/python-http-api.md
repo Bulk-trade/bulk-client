@@ -186,7 +186,7 @@ page = client.get_fills_page(
     start_slot=1_000_000,
 )
 for fill in page.data:
-    print(fill.symbol, fill.amount, fill.price, fill.slot, fill.sequence)
+    print(fill.trade_id, fill.symbol, fill.amount, fill.price)
 
 if page.page.next_cursor is not None:
     next_page = client.get_fills_page(
