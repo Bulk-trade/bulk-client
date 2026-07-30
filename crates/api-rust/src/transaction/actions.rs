@@ -150,7 +150,7 @@ pub enum Action {
     #[serde(rename = "rbc", alias = "revokeBuilderCode")]
     RevokeCommissionFee(RevokeCommissionFee),
 
-    // UpdateLiquidatorConfig = ordinal(42)
+    // UpdateLiquidatorConfig = ordinal(43)
     #[serde(rename = "liq")]
     UpdateLiquidatorConfig(LiqConfig),
 }

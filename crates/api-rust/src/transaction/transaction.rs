@@ -269,7 +269,7 @@ impl Serialize for RawSignableAction<'_> {
                 serializer.serialize_newtype_variant("Action", 41, "RevokeCommissionFee", action)
             }
             Action::UpdateLiquidatorConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 42, "UpdateLiquidatorConfig", action)
+                serializer.serialize_newtype_variant("Action", 43, "UpdateLiquidatorConfig", action)
             }
         }
     }
