@@ -218,6 +218,8 @@ class TransactionSigner:
                 ])
 
             case {"trig": order}:
+                if 'i' in order:
+                    raise ValueError("trigger does not support a top-level iso field")
                 return b''.join([
                     TransactionSigner.write_u32(8),
                     TransactionSigner.write_string(order['c']),
