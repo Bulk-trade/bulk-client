@@ -189,8 +189,8 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['d']),
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_fixedpoint(order['tr']),
-                    TransactionSigner.write_u8(1),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
+                    TransactionSigner.write_bool(order.get('i', False)),
                 ])
 
             case {"tp": order}:
@@ -201,6 +201,33 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
+                    TransactionSigner.write_bool(order.get('i', False)),
+                ])
+
+            case {"rng": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(7),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['d']),
+                    TransactionSigner.write_fixedpoint(order['sz']),
+                    TransactionSigner.write_fixedpoint(order['pmin']),
+                    TransactionSigner.write_fixedpoint(order['pmax']),
+                    TransactionSigner.write_optional_fixedpoint(order['lmin']),
+                    TransactionSigner.write_optional_fixedpoint(order['lmax']),
+                    TransactionSigner.write_bool(order.get('i', False)),
+                ])
+
+            case {"trig": order}:
+                return b''.join([
+                    TransactionSigner.write_u32(8),
+                    TransactionSigner.write_string(order['c']),
+                    TransactionSigner.write_bool(order['d']),
+                    TransactionSigner.write_fixedpoint(order['tr']),
+                    TransactionSigner.write_u64(len(order['actions'])),
+                    *(
+                        TransactionSigner.serialize_action(action)
+                        for action in order['actions']
+                    ),
                 ])
 
             case {"trl": order}:
@@ -212,6 +239,21 @@ class TransactionSigner:
                     TransactionSigner.write_u32(order['trb']),
                     TransactionSigner.write_u32(order['stb']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
+                    TransactionSigner.write_bool(order.get('i', False)),
+                ])
+
+            case {"of": order}:
+                trigger = order['trigger']
+                if len(trigger) != 1 or next(iter(trigger)) not in ("m", "l"):
+                    raise ValueError("on-fill trigger must be a market or limit order")
+                return b''.join([
+                    TransactionSigner.write_u32(10),
+                    TransactionSigner.serialize_action(trigger),
+                    TransactionSigner.write_u64(len(order['actions'])),
+                    *(
+                        TransactionSigner.serialize_action(action)
+                        for action in order['actions']
+                    ),
                 ])
 
             case {"mod": order}:
@@ -336,7 +378,7 @@ class TransactionSigner:
     @staticmethod
     def write_optional_fixedpoint(value: Optional[float]) -> bytes:
         """Write fixed point little-endian format"""
-        if value:
+        if value is not None:
             value = TransactionSigner.round_half_away_from_zero(float(value) * 1e8)
             return b''.join([
                 bytes([0x01]),

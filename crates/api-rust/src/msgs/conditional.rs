@@ -1,5 +1,5 @@
 use crate::transaction::{Action, ActionMeta};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 
 /// Information for either a Stop or Take-Profit Order
@@ -28,6 +28,9 @@ pub struct StopOrTP {
         default = "default_limit"
     )]
     pub limit: Option<f64>,
+
+    #[serde(rename = "i", default)]
+    pub iso: bool,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -71,6 +74,9 @@ pub struct Range {
         default = "default_limit"
     )]
     pub limit_max: Option<f64>,
+
+    #[serde(rename = "i", default)]
+    pub iso: bool,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -133,20 +139,23 @@ pub struct Trailing {
     )]
     pub limit: Option<f64>,
 
+    #[serde(rename = "i", default)]
+    pub iso: bool,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
 
 /// On-fill registration.
 ///
-/// Registers follow-up actions that should execute once the parent action
-/// (identified by `parent_seqno` in the same transaction) receives its first fill.
+/// Registers follow-up actions that should execute once the trigger action
+/// receives its first fill.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnFill {
-    /// Parent action sequence index in the same transaction.
-    #[serde(rename = "p")]
-    pub parent_seqno: u32,
+    /// Market or limit action that serves as the trigger.
+    #[serde(deserialize_with = "deserialize_on_fill_trigger")]
+    pub trigger: Box<Action>,
 
     /// Actions to execute on first parent fill.
     pub actions: Vec<Action>,
@@ -155,6 +164,78 @@ pub struct OnFill {
     pub meta: ActionMeta,
 }
 
+fn deserialize_on_fill_trigger<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Box<Action>, D::Error> {
+    let trigger = Box::<Action>::deserialize(deserializer)?;
+    if matches!(
+        trigger.as_ref(),
+        Action::MarketOrder(_) | Action::LimitOrder(_)
+    ) {
+        Ok(trigger)
+    } else {
+        Err(de::Error::custom(
+            "on-fill trigger must be a market or limit order",
+        ))
+    }
+}
+
 fn default_limit() -> Option<f64> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn conditional_orders_preserve_their_iso_field_but_trigger_does_not_have_one() {
+        for (kind, payload) in [
+            (
+                "st",
+                json!({"c":"BTC-USD","d":true,"sz":1.0,"tr":100.0,"lim":null,"i":true}),
+            ),
+            (
+                "tp",
+                json!({"c":"BTC-USD","d":false,"sz":1.0,"tr":100.0,"lim":null,"i":true}),
+            ),
+            (
+                "rng",
+                json!({
+                    "c":"BTC-USD","d":true,"sz":1.0,"pmin":90.0,"pmax":110.0,
+                    "lmin":null,"lmax":null,"i":true
+                }),
+            ),
+            (
+                "trl",
+                json!({
+                    "c":"BTC-USD","b":true,"sz":1.0,"trb":100,"stb":10,
+                    "lim":null,"i":true
+                }),
+            ),
+        ] {
+            let action: Action =
+                serde_json::from_value(json!({kind: payload})).expect("valid conditional action");
+            assert_eq!(
+                serde_json::to_value(action).expect("serialize conditional action")[kind]["i"],
+                true
+            );
+        }
+
+        let trigger: Action = serde_json::from_value(json!({
+            "trig": {
+                "c": "BTC-USD",
+                "d": true,
+                "tr": 100.0,
+                "actions": []
+            }
+        }))
+        .expect("valid trigger basket");
+        assert!(
+            serde_json::to_value(trigger).expect("serialize trigger")["trig"]
+                .get("i")
+                .is_none()
+        );
+    }
 }

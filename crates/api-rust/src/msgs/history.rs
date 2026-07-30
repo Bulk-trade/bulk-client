@@ -1,6 +1,6 @@
 use {
     reqwest::StatusCode,
-    serde::{Deserialize, Serialize},
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     solana_hash::Hash,
     solana_pubkey::Pubkey,
     std::{error::Error, fmt, str::FromStr},
@@ -26,7 +26,7 @@ pub struct HistoryPage<T> {
     pub page: HistoryPageInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPageInfo {
     pub next_cursor: Option<String>,
@@ -37,6 +37,71 @@ pub struct HistoryPageInfo {
     pub coverage: HistoryCoverageStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_available_slot: Option<u64>,
+}
+
+impl<'de> Deserialize<'de> for HistoryPageInfo {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire {
+            #[serde(default, deserialize_with = "deserialize_present_nullable")]
+            next_cursor: Option<Option<String>>,
+            has_more: bool,
+            as_of_slot: u64,
+            start_slot: u64,
+            end_slot: u64,
+            coverage: HistoryCoverageStatus,
+            #[serde(default)]
+            min_available_slot: Option<u64>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        let next_cursor = wire
+            .next_cursor
+            .ok_or_else(|| de::Error::missing_field("nextCursor"))?;
+        if wire.has_more != next_cursor.is_some()
+            || next_cursor.as_ref().is_some_and(String::is_empty)
+        {
+            return Err(de::Error::custom(
+                "history page hasMore and nextCursor are inconsistent",
+            ));
+        }
+        if wire.start_slot > wire.end_slot {
+            return Err(de::Error::custom(
+                "history page startSlot must not exceed endSlot",
+            ));
+        }
+        if wire.end_slot > wire.as_of_slot {
+            return Err(de::Error::custom(
+                "history page endSlot must not exceed asOfSlot",
+            ));
+        }
+        if wire.coverage == HistoryCoverageStatus::Complete
+            && wire
+                .min_available_slot
+                .is_some_and(|slot| slot > wire.start_slot)
+        {
+            return Err(de::Error::custom(
+                "history page minAvailableSlot must not exceed startSlot when coverage is complete",
+            ));
+        }
+
+        Ok(Self {
+            next_cursor,
+            has_more: wire.has_more,
+            as_of_slot: wire.as_of_slot,
+            start_slot: wire.start_slot,
+            end_slot: wire.end_slot,
+            coverage: wire.coverage,
+            min_available_slot: wire.min_available_slot,
+        })
+    }
+}
+
+fn deserialize_present_nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -95,6 +160,46 @@ impl From<reqwest::Error> for HistoryHttpError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TradeId {
+    pub slot: u64,
+    pub sequence: u64,
+}
+
+impl fmt::Display for TradeId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}:{}", self.slot, self.sequence)
+    }
+}
+
+impl Serialize for TradeId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for TradeId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        let (slot, sequence) = value
+            .split_once(':')
+            .filter(|(slot, sequence)| {
+                !slot.is_empty()
+                    && !sequence.is_empty()
+                    && slot.bytes().all(|byte| byte.is_ascii_digit())
+                    && sequence.bytes().all(|byte| byte.is_ascii_digit())
+                    && (*slot == "0" || !slot.starts_with('0'))
+                    && (*sequence == "0" || !sequence.starts_with('0'))
+                    && !sequence.contains(':')
+            })
+            .ok_or_else(|| de::Error::custom("tradeId must be <slot>:<sequence>"))?;
+        Ok(Self {
+            slot: slot.parse().map_err(de::Error::custom)?,
+            sequence: sequence.parse().map_err(de::Error::custom)?,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryFill {
@@ -106,6 +211,7 @@ pub struct HistoryFill {
     pub order_id_maker: Hash,
     #[serde(with = "crate::msgs::serde_hash")]
     pub order_id_taker: Hash,
+    pub trade_id: TradeId,
     pub is_buy: bool,
     pub symbol: String,
     pub amount: f64,

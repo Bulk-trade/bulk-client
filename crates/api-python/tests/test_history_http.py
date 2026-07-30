@@ -49,6 +49,7 @@ HistoryTrigger = history.HistoryTrigger
 
 def load_http():
     common = types.ModuleType("bulk_api.common")
+    common.SignatureDomain = object
     common.TransactionSigner = object
     common.Side = object
     common.TimeInForce = object
@@ -132,6 +133,7 @@ def page(row):
 
 def fill_row():
     return {
+        "tradeId": "18446744073709551615:18446744073709551613",
         "maker": PUBKEY,
         "taker": PUBKEY,
         "orderIdMaker": PUBKEY,
@@ -152,6 +154,31 @@ def fill_row():
         "timestamp": U64_MAX - 1,
         "sequence": U64_MAX - 2,
     }
+
+
+class TradeIdTests(unittest.TestCase):
+    def test_history_fill_requires_a_lossless_trade_id(self):
+        fill = HistoryFill.from_api(fill_row())
+        self.assertEqual(fill.trade_id.slot, U64_MAX)
+        self.assertEqual(fill.trade_id.sequence, U64_MAX - 2)
+        self.assertEqual(str(fill.trade_id), f"{U64_MAX}:{U64_MAX - 2}")
+
+        for invalid in (
+            None,
+            1,
+            "1",
+            "1:",
+            ":1",
+            "1:2:3",
+            "01:2",
+            "1:02",
+            "-1:2",
+            f"{U64_MAX + 1}:0",
+        ):
+            row = fill_row()
+            row["tradeId"] = invalid
+            with self.assertRaisesRegex(ValueError, "tradeId"):
+                HistoryFill.from_api(row)
 
 
 def position_row():

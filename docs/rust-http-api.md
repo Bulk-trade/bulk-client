@@ -213,6 +213,10 @@ let first: HistoryPage<HistoryFill> = client
     )
     .await?;
 
+for fill in &first.data {
+    println!("trade={} px={} amount={}", fill.trade_id, fill.price, fill.amount);
+}
+
 if let Some(cursor) = first.page.next_cursor {
     let next = client
         .get_fills_page(

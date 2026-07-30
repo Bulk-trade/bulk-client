@@ -180,6 +180,38 @@ impl Serialize for RawSignableLimitOrder<'_> {
     }
 }
 
+struct RawSignableTrigger<'a>(&'a crate::msgs::conditional::Trigger);
+
+impl Serialize for RawSignableTrigger<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple = serializer.serialize_tuple(5)?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_above)?;
+        tuple.serialize_element(&RawSafeF64(self.0.threshold))?;
+        tuple.serialize_element(&RawSignableActions(&self.0.actions))?;
+        tuple.end()
+    }
+}
+
+struct RawSignableOnFill<'a>(&'a crate::msgs::conditional::OnFill);
+
+impl Serialize for RawSignableOnFill<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if !matches!(
+            self.0.trigger.as_ref(),
+            Action::MarketOrder(_) | Action::LimitOrder(_)
+        ) {
+            return Err(serde::ser::Error::custom(
+                "on-fill trigger must be a market or limit order",
+            ));
+        }
+        let mut tuple = serializer.serialize_tuple(2)?;
+        tuple.serialize_element(&RawSignableAction(&self.0.trigger))?;
+        tuple.serialize_element(&RawSignableActions(&self.0.actions))?;
+        tuple.end()
+    }
+}
+
 struct RawSignableActions<'a>(&'a [Action]);
 
 impl Serialize for RawSignableActions<'_> {
@@ -227,15 +259,21 @@ impl Serialize for RawSignableAction<'_> {
             Action::Range(action) => {
                 serializer.serialize_newtype_variant("Action", 7, "Range", action)
             }
-            Action::Trigger(action) => {
-                serializer.serialize_newtype_variant("Action", 8, "Trigger", action)
-            }
+            Action::Trigger(action) => serializer.serialize_newtype_variant(
+                "Action",
+                8,
+                "Trigger",
+                &RawSignableTrigger(action),
+            ),
             Action::Trailing(action) => {
                 serializer.serialize_newtype_variant("Action", 9, "Trailing", action)
             }
-            Action::OnFill(action) => {
-                serializer.serialize_newtype_variant("Action", 10, "OnFill", action)
-            }
+            Action::OnFill(action) => serializer.serialize_newtype_variant(
+                "Action",
+                10,
+                "OnFill",
+                &RawSignableOnFill(action),
+            ),
             Action::Price(action) => {
                 serializer.serialize_newtype_variant("Action", 11, "Price", action)
             }
@@ -352,6 +390,117 @@ mod tests {
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
     const TEST_PRIVATE_KEY1: &str = "1111111111111111111111111111111111111111111";
     const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
+
+    fn bytes_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    #[test]
+    fn trigger_signing_matches_current_sdk_recursive_vector() {
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "trig": {
+                "c": "BTC-USD",
+                "d": true,
+                "tr": 100000.0,
+                "actions": [
+                    {"m": {
+                        "c": "BTC-USD", "b": true, "sz": 1.25,
+                        "r": false, "i": true
+                    }},
+                    {"l": {
+                        "c": "ETH-USD", "b": false, "px": 2500.5, "sz": 2.0,
+                        "tif": "ALO", "r": true, "i": false,
+                        "builderCode": {
+                            "to": "11111111111111111111111111111111",
+                            "fee": 5
+                        }
+                    }}
+                ]
+            }
+        }))
+        .expect("canonical trigger JSON");
+
+        assert_eq!(
+            bytes_hex(
+                &Transaction::raw_signable_bytes(
+                    SignatureDomain::Testnet,
+                    Pubkey::default(),
+                    7,
+                    &[action],
+                )
+                .expect("serialize trigger")
+            ),
+            "01000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d55534401405973070000000000010100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+        );
+    }
+
+    #[test]
+    fn on_fill_signing_matches_current_sdk_inline_trigger_vector() {
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "of": {
+                "trigger": {"l": {
+                    "c": "ETH-USD", "b": false, "px": 2500.5, "sz": 2.0,
+                    "tif": "ALO", "r": true, "i": false
+                }},
+                "actions": [
+                    {"m": {
+                        "c": "BTC-USD", "b": true, "sz": 1.25,
+                        "r": false, "i": true
+                    }},
+                    {"m": {
+                        "c": "BTC-USD", "b": true, "sz": 1.25,
+                        "r": false, "i": true,
+                        "builderCode": {
+                            "to": "11111111111111111111111111111111",
+                            "fee": 5
+                        }
+                    }}
+                ]
+            }
+        }))
+        .expect("canonical on-fill JSON");
+
+        assert_eq!(
+            bytes_hex(
+                &Transaction::raw_signable_bytes(
+                    SignatureDomain::Testnet,
+                    Pubkey::default(),
+                    7,
+                    &[action],
+                )
+                .expect("serialize on-fill")
+            ),
+            "01000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b0000000002000000010002000000000000000000000007000000000000004254432d55534401405973070000000000010000000007000000000000004254432d5553440140597307000000000001010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+        );
+    }
+
+    #[test]
+    fn on_fill_signing_rejects_a_non_order_trigger_constructed_in_rust() {
+        let on_fill = Action::OnFill(crate::msgs::conditional::OnFill {
+            trigger: Box::new(Action::Stop(StopOrTP {
+                symbol: Arc::from("BTC-USD"),
+                is_above: true,
+                size: 1.0,
+                threshold: 100.0,
+                limit: None,
+                iso: false,
+                meta: ActionMeta::default(),
+            })),
+            actions: Vec::new(),
+            meta: ActionMeta::default(),
+        });
+
+        assert!(
+            Transaction::raw_signable_bytes(
+                SignatureDomain::Testnet,
+                Pubkey::default(),
+                7,
+                &[on_fill],
+            )
+            .is_err(),
+            "programmatic on-fill values must enforce the same trigger contract as JSON"
+        );
+    }
 
     #[test]
     fn signature_domain_registry_is_stable_and_compact() {
@@ -828,6 +977,7 @@ mod tests {
             size: 2.0,
             threshold: 60_000.0,
             limit: Some(60_010.0),
+            iso: false,
             meta: Default::default(),
         });
 
@@ -854,6 +1004,7 @@ mod tests {
             size: 2.0,
             threshold: 60_000.0,
             limit: None,
+            iso: false,
             meta: Default::default(),
         });
 

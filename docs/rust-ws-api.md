@@ -125,7 +125,7 @@ Action::TakeProfit(StopOrTP)         // Take-profit conditional
 Action::Trailing(Trailing)           // Trailing stop
 Action::Range(Range)                 // Range conditional order
 Action::Trigger(Trigger)             // Generic trigger
-Action::OnFill(OnFill)               // Post-fill action
+Action::OnFill(OnFill)               // Inline market/limit trigger + follow-up actions
 // ... and admin actions (oracle updates, sub-accounts, multisig, etc.)
 ```
 

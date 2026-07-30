@@ -3,7 +3,7 @@ import json
 import struct
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, List, Union
+from typing import Any, Dict, Optional, List, Union
 
 import base58
 from bulk_api.common import OrderStatus, TimeInForce, Side
@@ -395,6 +395,7 @@ class Stop:
     size: float
     threshold: float
     limit: Optional[float] = None
+    iso: bool = False
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -409,6 +410,7 @@ class Stop:
                 'sz': f"{self.size}",
                 'tr': self.threshold,
                 'lim': self.limit,
+                'i': self.iso,
             }
         }
         return order
@@ -426,6 +428,7 @@ class TakeProfit:
     size: float
     threshold: float
     limit: Optional[float] = None
+    iso: bool = False
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -440,6 +443,7 @@ class TakeProfit:
                 'sz': f"{self.size}",
                 'tr': self.threshold,
                 'lim': self.limit,
+                'i': self.iso,
             }
         }
         return order
@@ -458,6 +462,7 @@ class TrailingStop:
     trail_bps: int
     step_bps: int
     limit: Optional[float] = None
+    iso: bool = False
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -474,9 +479,79 @@ class TrailingStop:
                 'trb': self.trail_bps,
                 'stb': self.step_bps,
                 'lim': self.limit,
+                'i': self.iso,
             }
         }
         return order
+
+
+def _action_to_api(action: Any) -> Dict:
+    if isinstance(action, dict):
+        return action
+    if hasattr(action, "to_api"):
+        return action.to_api()
+    raise TypeError("nested action must be an action object or API dictionary")
+
+
+@dataclass
+class Range:
+    symbol: str
+    is_buy: bool
+    size: float
+    collar_min: float
+    collar_max: float
+    limit_min: Optional[float] = None
+    limit_max: Optional[float] = None
+    iso: bool = False
+
+    def to_api(self) -> Dict:
+        return {
+            "rng": {
+                "c": self.symbol,
+                "d": self.is_buy,
+                "sz": f"{self.size}",
+                "pmin": self.collar_min,
+                "pmax": self.collar_max,
+                "lmin": self.limit_min,
+                "lmax": self.limit_max,
+                "i": self.iso,
+            }
+        }
+
+
+@dataclass
+class Trigger:
+    symbol: str
+    is_above: bool
+    threshold: float
+    actions: List[Any]
+
+    def to_api(self) -> Dict:
+        return {
+            "trig": {
+                "c": self.symbol,
+                "d": self.is_above,
+                "tr": self.threshold,
+                "actions": [_action_to_api(action) for action in self.actions],
+            }
+        }
+
+
+@dataclass
+class OnFill:
+    trigger: Any
+    actions: List[Any]
+
+    def to_api(self) -> Dict:
+        trigger = _action_to_api(self.trigger)
+        if len(trigger) != 1 or next(iter(trigger)) not in ("m", "l"):
+            raise ValueError("on-fill trigger must be a market or limit order")
+        return {
+            "of": {
+                "trigger": trigger,
+                "actions": [_action_to_api(action) for action in self.actions],
+            }
+        }
 
 
 

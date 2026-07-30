@@ -296,8 +296,8 @@ fn trailing(action: &Trailing) -> String {
 
 fn on_fill(action: &OnFill) -> String {
     format!(
-        "OnFill parent={} nested={}",
-        action.parent_seqno,
+        "OnFill trigger=({}) nested={}",
+        action_line(&action.trigger),
         action.actions.len()
     )
 }
