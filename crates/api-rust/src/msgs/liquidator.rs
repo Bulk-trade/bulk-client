@@ -1,6 +1,6 @@
-use solana_keypair::Pubkey;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use solana_pubkey::Pubkey;
 use crate::transaction::ActionMeta;
 
 /// Per instrument liquidation strategy config
