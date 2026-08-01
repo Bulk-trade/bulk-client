@@ -24,7 +24,7 @@ name = "execute_limit"
 name = "execute_cond"
 
 [features]
-with-sdk = []
+with-sdk = ["dep:bulk-sdk-core"]
 ledger = [
     "dep:solana-remote-wallet",
     "dep:solana-derivation-path",
@@ -59,8 +59,11 @@ solana-hash = { version = "3.0.1", features = ["serde"] }
 solana-signature = { version = "3.0.1", features = ["serde"] }
 solana-signer = "3.0.0"
 solana-pubkey = { version = "3.0.0", features = ["serde"] }
-solana-keypair = "=3.0.1"
+solana-keypair = "=3.1.2"
 solana-offchain-message = "3.0.0"
+
+# Optional SDK dependency
+bulk-sdk-core = { path = "../../../bulk-sdk/core", optional = true }
 
 tracing = "0.1.44"
 clap = { version = "4.5.58", features = ["derive", "env"] }
