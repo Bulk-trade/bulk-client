@@ -37,31 +37,6 @@ from bulk_api.messages import (
 _HISTORY_ERROR_BODY_MAX_BYTES = 4 * 1024
 
 
-def _history_error_envelope(status: int, content: bytes) -> HistoryErrorEnvelope:
-    if len(content) <= _HISTORY_ERROR_BODY_MAX_BYTES:
-        try:
-            payload = json.loads(content)
-            error = payload["error"]
-            if (
-                isinstance(error, dict)
-                and isinstance(error.get("code"), str)
-                and error["code"]
-                and isinstance(error.get("message"), str)
-                and error["message"]
-            ):
-                return HistoryErrorEnvelope.from_api(payload)
-        except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError):
-            pass
-    return HistoryErrorEnvelope.from_api(
-        {
-            "error": {
-                "code": "HISTORY_HTTP_ERROR",
-                "message": f"History request failed (HTTP {status}): invalid error response",
-            }
-        }
-    )
-
-
 class BulkHttpClient:
     """HTTP REST API client for Bulk Labs exchange"""
 
@@ -438,46 +413,15 @@ class BulkHttpClient:
             user, "riskHistory", RiskEvent, limit, cursor, start_slot, end_slot
         )
 
-    def _get_history_page(
-        self,
-        user: str,
-        request_type: str,
-        row_type,
-        limit: Optional[int],
-        cursor: Optional[str],
-        start_slot: Optional[int],
-        end_slot: Optional[int],
-    ) -> HistoryPage:
-        payload = {"type": request_type, "user": user}
-        if limit is not None:
-            payload["limit"] = limit
-        if cursor is not None:
-            payload["cursor"] = cursor
-        if start_slot is not None:
-            payload["startSlot"] = start_slot
-        if end_slot is not None:
-            payload["endSlot"] = end_slot
-        response = requests.post(
-            f"{self.base_url}/account",
-            json=payload,
-            timeout=self.timeout,
-        )
-        if not 200 <= response.status_code < 300:
-            raise HistoryHttpError(
-                response.status_code,
-                _history_error_envelope(response.status_code, response.content),
-            )
-        return HistoryPage.from_api(response.json(), row_type)
-
     # ===================================================================
     # TRADING ENDPOINTS (SIGNED, STATE-MUTATING)
     # ===================================================================
 
     def place_orders(
         self,
-        txns: List[Union[Dict|LimitOrder|MarketOrder|CancelOrder|CancelAll|ApproveBuilderCode|RevokeBuilderCode]],
-        nonce: Optional[int] = None,
-    ) -> Dict:
+        txns: list[dict | LimitOrder | MarketOrder | CancelOrder | CancelAll | ApproveBuilderCode | RevokeBuilderCode],
+        nonce: int | None = None,
+    ) -> dict:
         """
         Place multiple order-related tx in a single transaction
         - limit orders: either json/dict spec or LimitOrder object
@@ -785,6 +729,64 @@ class BulkHttpClient:
         )
         response.raise_for_status()
         return response.json()
+
+    def _get_history_page(
+        self,
+        user: str,
+        request_type: str,
+        row_type,
+        limit: Optional[int],
+        cursor: Optional[str],
+        start_slot: Optional[int],
+        end_slot: Optional[int],
+    ) -> HistoryPage:
+        payload = {"type": request_type, "user": user}
+        if limit is not None:
+            payload["limit"] = limit
+        if cursor is not None:
+            payload["cursor"] = cursor
+        if start_slot is not None:
+            payload["startSlot"] = start_slot
+        if end_slot is not None:
+            payload["endSlot"] = end_slot
+        response = requests.post(
+            f"{self.base_url}/account",
+            json=payload,
+            timeout=self.timeout,
+        )
+        if not 200 <= response.status_code < 300:
+            raise HistoryHttpError(
+                response.status_code,
+                _history_error_envelope(response.status_code, response.content),
+            )
+        return HistoryPage.from_api(response.json(), row_type)
+
+    @staticmethod
+    def _history_error_envelope(status: int, content: bytes) -> HistoryErrorEnvelope:
+        if len(content) <= _HISTORY_ERROR_BODY_MAX_BYTES:
+            try:
+                payload = json.loads(content)
+                error = payload["error"]
+                if (
+                        isinstance(error, dict)
+                        and isinstance(error.get("code"), str)
+                        and error["code"]
+                        and isinstance(error.get("message"), str)
+                        and error["message"]
+                ):
+                    return HistoryErrorEnvelope.from_api(payload)
+            except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError):
+                pass
+            
+        return HistoryErrorEnvelope.from_api(
+            {
+                "error": {
+                    "code": "HISTORY_HTTP_ERROR",
+                    "message": f"History request failed (HTTP {status}): invalid error response",
+                }
+            }
+        )
+
 
 
 # ===================================================================
