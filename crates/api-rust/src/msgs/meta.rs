@@ -62,6 +62,28 @@ pub struct AddMarket {
     pub meta: ActionMeta,
 }
 
+/// Administrative market operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MarketAction {
+    Open,
+    Suspend,
+    Close,
+}
+
+/// Adjusts the operating state of an existing market.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAdmin {
+    pub symbol: Arc<str>,
+    pub action: MarketAction,
+    #[serde(default, with = "crate::msgs::opt_fixed_point")]
+    pub price: Option<f64>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
 /// Opaque wrapper for special tx
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpaqueAction {

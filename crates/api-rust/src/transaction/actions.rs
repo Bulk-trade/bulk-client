@@ -8,8 +8,8 @@ use crate::msgs::risk::RiskConfigChange;
 use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAccount, Transfer};
 use crate::msgs::{
     AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon, CancelAll, CancelOrder, Faucet,
-    Join, LimitOrder, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price, PythOracle,
-    RevokeCommissionFee, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet,
+    Join, LimitOrder, MarketAdmin, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price,
+    PythOracle, RevokeCommissionFee, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,10 @@ pub enum Action {
     // UpdateLiquidatorConfig = ordinal(43)
     #[serde(rename = "liq")]
     UpdateLiquidatorConfig(LiqConfig),
+
+    // MarketAdmin = ordinal(57)
+    #[serde(rename = "marketAdmin")]
+    MarketAdmin(MarketAdmin),
 }
 
 macro_rules! dispatch {
@@ -207,6 +211,7 @@ macro_rules! dispatch {
             Action::ApproveCommissionFee($x) => $body,
             Action::RevokeCommissionFee($x) => $body,
             Action::UpdateLiquidatorConfig($x) => $body,
+            Action::MarketAdmin($x) => $body,
         }
     };
 }
@@ -408,6 +413,12 @@ impl From<WhitelistFaucet> for Action {
     }
 }
 
+impl From<MarketAdmin> for Action {
+    fn from(o: MarketAdmin) -> Self {
+        Action::MarketAdmin(o)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +499,28 @@ mod tests {
             Action::ConfigRisk(action) => assert_eq!(action.payload, vec![1, 2, 3]),
             action => panic!("expected ConfigRisk, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn market_admin_uses_sdk_json_shape() {
+        let action = Action::MarketAdmin(MarketAdmin {
+            symbol: Arc::from("BTC-USD"),
+            action: crate::msgs::MarketAction::Suspend,
+            price: Some(100_000.5),
+            meta: ActionMeta::default(),
+        });
+
+        let json = serde_json::to_value(&action).expect("market admin should serialize");
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "marketAdmin": {
+                    "symbol": "BTC-USD",
+                    "action": "suspend",
+                    "price": "100000.5"
+                }
+            })
+        );
     }
 }

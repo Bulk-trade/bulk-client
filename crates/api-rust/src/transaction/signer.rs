@@ -1,26 +1,13 @@
+#[cfg(feature = "ledger")]
+pub use crate::transaction::ledger::{LedgerDeviceInfo, LedgerResolveInfo};
+#[cfg(feature = "ledger")]
+use crate::transaction::ledger::LedgerSigner;
 use crate::transaction::SignatureDomain;
 use eyre::bail;
 use solana_keypair::{keypair_from_seed, Keypair};
 use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use solana_signer::Signer;
-#[cfg(feature = "ledger")]
-use {
-    hidapi::HidApi,
-    solana_derivation_path::DerivationPath,
-    solana_remote_wallet::{
-        ledger::{is_valid_ledger, LedgerWallet},
-        locator::Locator,
-        remote_wallet::{RemoteWallet, RemoteWalletError},
-    },
-};
-
-#[cfg(feature = "ledger")]
-const HID_GLOBAL_USAGE_PAGE: u16 = 0xFF00;
-#[cfg(feature = "ledger")]
-const HID_USB_DEVICE_CLASS: i32 = 0;
-#[cfg(any(feature = "ledger", test))]
-const OFFCHAIN_SIGNING_DOMAIN: &[u8; 16] = b"\xffsolana offchain";
 
 /// Ed25519 signer for Bulk exchange transactions.
 ///
@@ -41,7 +28,7 @@ pub struct TransactionSigner {
 enum SignerKind {
     Software(Keypair),
     #[cfg(feature = "ledger")]
-    Ledger(LedgerConfig),
+    Ledger(LedgerSigner),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,40 +37,17 @@ pub enum TxSignatureMode {
     Offchain,
 }
 
-#[cfg(feature = "ledger")]
-#[derive(Debug, Clone)]
-struct LedgerConfig {
-    locator: String,
-    derivation_path: DerivationPath,
-    confirm_key: bool,
-    keypair_name: String,
-    pubkey: Pubkey,
-}
-
-#[cfg(feature = "ledger")]
-#[derive(Debug, Clone)]
-pub struct LedgerDeviceInfo {
-    pub model: String,
-    pub serial: String,
-    pub host_device_path: String,
-    pub pubkey: Pubkey,
-}
-
-#[cfg(feature = "ledger")]
-#[derive(Debug, Clone)]
-pub struct LedgerResolveInfo {
-    pub locator: String,
-    pub derivation_path: String,
-    pub path: String,
-    pub pubkey: Pubkey,
-}
-
 #[allow(unused)]
 impl TransactionSigner {
-    /// Create a signer from a base58-encoded private key (32-byte seed).
+    // ───── Public API Contract ─────────────────────────────────────────────────────────────────
+
+    /// Creates a signer from a base58-encoded private key.
     ///
     /// # Arguments
-    /// - `private_key`: 32 or 64 byte private key
+    /// * `key_b58` - Base58-encoded 32-byte seed or 64-byte keypair.
+    ///
+    /// # Returns
+    /// A software-backed transaction signer.
     pub fn from_private_key(key_b58: &str) -> eyre::Result<Self> {
         let key_bytes = bs58::decode(key_b58).into_vec()?;
 
@@ -109,59 +73,108 @@ impl TransactionSigner {
     }
 
     #[cfg(feature = "ledger")]
+    /// Creates a signer for the Ledger device matching a locator.
+    ///
+    /// # Arguments
+    /// * `locator` - Remote-wallet locator used to select a Ledger device.
+    /// * `derivation_path` - Optional Solana derivation path; defaults to `0/0`.
+    ///
+    /// # Returns
+    /// A Ledger-backed transaction signer.
     pub fn from_ledger(locator: &str, derivation_path: Option<&str>) -> eyre::Result<Self> {
         Self::from_ledger_with_options(locator, derivation_path, false, "bulk-cli")
     }
 
     #[cfg(feature = "ledger")]
+    /// Creates a Ledger signer with explicit device confirmation options.
+    ///
+    /// # Arguments
+    /// * `locator` - Remote-wallet locator used to select a Ledger device.
+    /// * `derivation_path` - Optional Solana derivation path; defaults to `0/0`.
+    /// * `confirm_key` - Whether the device must confirm the derived public key.
+    /// * `keypair_name` - Display name associated with the Ledger keypair.
+    ///
+    /// # Returns
+    /// A configured Ledger-backed transaction signer.
     pub fn from_ledger_with_options(
         locator: &str,
         derivation_path: Option<&str>,
         confirm_key: bool,
         keypair_name: &str,
     ) -> eyre::Result<Self> {
-        let derivation_path = parse_derivation_path(derivation_path)?;
-        let resolved = resolve_ledger_wallet(locator, &derivation_path, confirm_key, keypair_name)?;
         Ok(Self {
-            kind: SignerKind::Ledger(LedgerConfig {
-                locator: locator.to_string(),
+            kind: SignerKind::Ledger(LedgerSigner::new(
+                locator,
                 derivation_path,
                 confirm_key,
-                keypair_name: keypair_name.to_string(),
-                pubkey: resolved.derived_pubkey,
-            }),
+                keypair_name,
+            )?),
         })
     }
 
     #[cfg(feature = "ledger")]
+    /// Lists connected Ledger devices that can provide a Solana public key.
+    ///
+    /// # Returns
+    /// Information about each available Ledger device.
     pub fn list_ledger_devices() -> eyre::Result<Vec<LedgerDeviceInfo>> {
-        Ok(enumerate_ledger_devices()?
-            .into_iter()
-            .map(|d| LedgerDeviceInfo {
-                model: d.model,
-                serial: d.serial,
-                host_device_path: d.host_device_path,
-                pubkey: d.base_pubkey,
-            })
-            .collect())
+        LedgerSigner::list_devices()
     }
 
     #[cfg(feature = "ledger")]
+    /// Resolves a Ledger locator and derivation path to a concrete device and public key.
+    ///
+    /// # Arguments
+    /// * `locator` - Remote-wallet locator used to select a Ledger device.
+    /// * `derivation_path` - Optional Solana derivation path; defaults to `0/0`.
+    /// * `confirm_key` - Whether the device must confirm the derived public key.
+    /// * `keypair_name` - Display name associated with the Ledger keypair.
+    ///
+    /// # Returns
+    /// The selected device path and derived Ledger public key.
     pub fn resolve_ledger_with_options(
         locator: &str,
         derivation_path: Option<&str>,
         confirm_key: bool,
         keypair_name: &str,
     ) -> eyre::Result<LedgerResolveInfo> {
-        let derivation_path = parse_derivation_path(derivation_path)?;
-        let resolved = resolve_ledger_wallet(locator, &derivation_path, confirm_key, keypair_name)?;
-        Ok(LedgerResolveInfo {
-            locator: locator.to_string(),
-            derivation_path: format!("{derivation_path:?}"),
-            path: resolved.host_device_path,
-            pubkey: resolved.derived_pubkey,
-        })
+        LedgerSigner::resolve_info(locator, derivation_path, confirm_key, keypair_name)
     }
+
+    // ───── Accessors ───────────────────────────────────────────────────────────────────────────
+
+    /// Returns the signing mode required for transaction signatures.
+    pub fn tx_signature_mode(&self) -> TxSignatureMode {
+        match &self.kind {
+            SignerKind::Software(_) => TxSignatureMode::Raw,
+            #[cfg(feature = "ledger")]
+            SignerKind::Ledger(_) => TxSignatureMode::Offchain,
+        }
+    }
+
+    /// Returns the HTTP header value that identifies the transaction signature mode.
+    pub fn tx_signature_mode_hint_header_value(&self) -> Option<&'static str> {
+        match self.tx_signature_mode() {
+            TxSignatureMode::Raw => None,
+            TxSignatureMode::Offchain => Some("offchain"),
+        }
+    }
+
+    /// Returns the signer's public key.
+    pub fn public_key(&self) -> Pubkey {
+        match &self.kind {
+            SignerKind::Software(keypair) => keypair.pubkey(),
+            #[cfg(feature = "ledger")]
+            SignerKind::Ledger(ledger) => ledger.public_key(),
+        }
+    }
+
+    /// Returns the signer's public key encoded as base58.
+    pub fn public_key_b58(&self) -> String {
+        self.public_key().to_string()
+    }
+
+    // ───── Signing ─────────────────────────────────────────────────────────────────────────────
 
     /// Sign a generic authenticated payload bound to one Bulk network.
     ///
@@ -183,20 +196,18 @@ impl TransactionSigner {
                 Ok(keypair.sign_message(&preimage))
             }
             #[cfg(feature = "ledger")]
-            SignerKind::Ledger(cfg) => {
-                let resolved = resolve_ledger_wallet(
-                    &cfg.locator,
-                    &cfg.derivation_path,
-                    cfg.confirm_key,
-                    &cfg.keypair_name,
-                )?;
-                let offchain =
-                    offchain_message_envelope_bytes(message, &cfg.pubkey, signature_domain)?;
-                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
-            }
+            SignerKind::Ledger(ledger) => ledger.sign_bytes(message, signature_domain),
         }
     }
 
+    /// Signs serialized transaction bytes in the format required by the signer type.
+    ///
+    /// # Arguments
+    /// * `message` - Serialized transaction bytes to sign.
+    /// * `signature_domain` - Bulk network domain bound to Ledger signatures.
+    ///
+    /// # Returns
+    /// The transaction signature.
     pub fn sign_transaction_bytes(
         &self,
         message: &[u8],
@@ -205,24 +216,18 @@ impl TransactionSigner {
         match &self.kind {
             SignerKind::Software(keypair) => Ok(keypair.sign_message(message)),
             #[cfg(feature = "ledger")]
-            SignerKind::Ledger(cfg) => {
-                let resolved = resolve_ledger_wallet(
-                    &cfg.locator,
-                    &cfg.derivation_path,
-                    cfg.confirm_key,
-                    &cfg.keypair_name,
-                )?;
-                let payload = format!("bulk-tx:{}", bs58::encode(message).into_string());
-                let offchain = offchain_message_envelope_bytes(
-                    payload.as_bytes(),
-                    &cfg.pubkey,
-                    signature_domain,
-                )?;
-                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
-            }
+            SignerKind::Ledger(ledger) => ledger.sign_transaction_bytes(message, signature_domain),
         }
     }
 
+    /// Signs a human-readable transaction message.
+    ///
+    /// # Arguments
+    /// * `clear_text` - Human-readable transaction content to sign.
+    /// * `signature_domain` - Bulk network domain bound to Ledger signatures.
+    ///
+    /// # Returns
+    /// The transaction signature.
     pub fn sign_transaction_clear(
         &self,
         clear_text: &str,
@@ -231,50 +236,10 @@ impl TransactionSigner {
         match &self.kind {
             SignerKind::Software(keypair) => Ok(keypair.sign_message(clear_text.as_bytes())),
             #[cfg(feature = "ledger")]
-            SignerKind::Ledger(cfg) => {
-                let resolved = resolve_ledger_wallet(
-                    &cfg.locator,
-                    &cfg.derivation_path,
-                    cfg.confirm_key,
-                    &cfg.keypair_name,
-                )?;
-                let offchain = offchain_message_envelope_bytes(
-                    clear_text.as_bytes(),
-                    &cfg.pubkey,
-                    signature_domain,
-                )?;
-                sign_ledger_offchain_strict(&resolved.wallet, &cfg.derivation_path, &offchain)
+            SignerKind::Ledger(ledger) => {
+                ledger.sign_transaction_clear(clear_text, signature_domain)
             }
         }
-    }
-
-    pub fn tx_signature_mode(&self) -> TxSignatureMode {
-        match &self.kind {
-            SignerKind::Software(_) => TxSignatureMode::Raw,
-            #[cfg(feature = "ledger")]
-            SignerKind::Ledger(_) => TxSignatureMode::Offchain,
-        }
-    }
-
-    pub fn tx_signature_mode_hint_header_value(&self) -> Option<&'static str> {
-        match self.tx_signature_mode() {
-            TxSignatureMode::Raw => None,
-            TxSignatureMode::Offchain => Some("offchain"),
-        }
-    }
-
-    /// Get pubkey
-    pub fn public_key(&self) -> Pubkey {
-        match &self.kind {
-            SignerKind::Software(keypair) => keypair.pubkey(),
-            #[cfg(feature = "ledger")]
-            SignerKind::Ledger(cfg) => cfg.pubkey,
-        }
-    }
-
-    /// Get pubkey as b58 encoding
-    pub fn public_key_b58(&self) -> String {
-        self.public_key().to_string()
     }
 }
 
@@ -290,179 +255,6 @@ impl Clone for TransactionSigner {
             },
         }
     }
-}
-
-#[cfg(feature = "ledger")]
-fn parse_derivation_path(input: Option<&str>) -> eyre::Result<DerivationPath> {
-    let Some(path) = input.map(str::trim).filter(|s| !s.is_empty()) else {
-        return DerivationPath::from_key_str("0/0")
-            .map_err(|e| eyre::eyre!("failed to set default derivation path 0/0: {e}"));
-    };
-    if path.starts_with("m/") {
-        DerivationPath::from_absolute_path_str(path)
-            .map_err(|e| eyre::eyre!("invalid absolute derivation path `{path}`: {e}"))
-    } else {
-        DerivationPath::from_key_str(path)
-            .map_err(|e| eyre::eyre!("invalid derivation path `{path}`: {e}"))
-    }
-}
-
-#[cfg(feature = "ledger")]
-struct EnumeratedLedger {
-    model: String,
-    serial: String,
-    host_device_path: String,
-    base_pubkey: Pubkey,
-}
-
-#[cfg(feature = "ledger")]
-struct ResolvedLedgerWallet {
-    wallet: LedgerWallet,
-    host_device_path: String,
-    derived_pubkey: Pubkey,
-}
-
-#[cfg(feature = "ledger")]
-fn enumerate_ledger_devices() -> eyre::Result<Vec<EnumeratedLedger>> {
-    let mut hid = HidApi::new()?;
-    hid.refresh_devices()?;
-
-    let mut infos = Vec::new();
-    let mut strict_seen = false;
-
-    for info in hid.device_list() {
-        let strict = is_valid_ledger(info.vendor_id(), info.product_id());
-        let fallback = info.vendor_id() == 0x2c97;
-        let hid_ok = info.usage_page() == HID_GLOBAL_USAGE_PAGE
-            || info.interface_number() == HID_USB_DEVICE_CLASS;
-        if !strict && !fallback {
-            continue;
-        }
-        if !hid_ok {
-            continue;
-        }
-        if strict {
-            strict_seen = true;
-        }
-        if strict_seen && !strict {
-            continue;
-        }
-
-        let Ok(device) = hid.open_path(info.path()) else {
-            continue;
-        };
-        let mut wallet = LedgerWallet::new(device);
-        let Ok(remote_info) = wallet.read_device(info) else {
-            continue;
-        };
-        infos.push(EnumeratedLedger {
-            model: remote_info.model,
-            serial: remote_info.serial,
-            host_device_path: remote_info.host_device_path,
-            base_pubkey: remote_info.pubkey,
-        });
-    }
-
-    Ok(infos)
-}
-
-#[cfg(feature = "ledger")]
-fn resolve_ledger_wallet(
-    locator: &str,
-    derivation_path: &DerivationPath,
-    confirm_key: bool,
-    _keypair_name: &str,
-) -> eyre::Result<ResolvedLedgerWallet> {
-    let locator = Locator::new_from_path(locator)?;
-    let target_pubkey = locator.pubkey;
-
-    let mut hid = HidApi::new()?;
-    hid.refresh_devices()?;
-    let mut strict_seen = false;
-
-    let mut fallback_match: Option<ResolvedLedgerWallet> = None;
-    for info in hid.device_list() {
-        let strict = is_valid_ledger(info.vendor_id(), info.product_id());
-        let fallback = info.vendor_id() == 0x2c97;
-        let hid_ok = info.usage_page() == HID_GLOBAL_USAGE_PAGE
-            || info.interface_number() == HID_USB_DEVICE_CLASS;
-        if !strict && !fallback {
-            continue;
-        }
-        if !hid_ok {
-            continue;
-        }
-        if strict {
-            strict_seen = true;
-        }
-        if strict_seen && !strict {
-            continue;
-        }
-
-        let Ok(device) = hid.open_path(info.path()) else {
-            continue;
-        };
-        let mut wallet = LedgerWallet::new(device);
-        let Ok(remote_info) = wallet.read_device(info) else {
-            continue;
-        };
-        let Ok(derived_pubkey) = wallet.get_pubkey(derivation_path, confirm_key) else {
-            continue;
-        };
-
-        let candidate = ResolvedLedgerWallet {
-            wallet,
-            host_device_path: remote_info.host_device_path,
-            derived_pubkey,
-        };
-
-        if let Some(target) = target_pubkey {
-            if derived_pubkey == target || remote_info.pubkey == target {
-                return Ok(candidate);
-            }
-            continue;
-        }
-        if fallback_match.is_none() {
-            fallback_match = Some(candidate);
-        }
-    }
-
-    fallback_match.ok_or_else(|| eyre::eyre!(RemoteWalletError::NoDeviceFound))
-}
-
-#[cfg(any(feature = "ledger", test))]
-fn offchain_message_envelope_bytes(
-    payload: &[u8],
-    signer: &Pubkey,
-    signature_domain: SignatureDomain,
-) -> eyre::Result<Vec<u8>> {
-    if payload.is_empty() {
-        bail!("offchain payload cannot be empty");
-    }
-    if payload.len() > u16::MAX as usize {
-        bail!("offchain payload too large");
-    }
-    let ascii = payload.iter().all(|b| (0x20..=0x7e).contains(b));
-    let utf8 = std::str::from_utf8(payload).is_ok();
-    let format = if ascii {
-        0u8
-    } else if utf8 {
-        1u8
-    } else {
-        bail!("offchain payload must be ASCII or UTF-8");
-    };
-
-    let mut out = Vec::with_capacity(16 + 1 + 32 + 1 + 1 + 32 + 2 + payload.len());
-    out.extend_from_slice(OFFCHAIN_SIGNING_DOMAIN);
-    out.push(0);
-    out.push(signature_domain as u8);
-    out.extend_from_slice(&[0u8; 31]);
-    out.push(format);
-    out.push(1);
-    out.extend_from_slice(signer.as_ref());
-    out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-    out.extend_from_slice(payload);
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -486,28 +278,4 @@ mod tests {
         assert_ne!(mainnet, testnet);
         assert!(mainnet.verify(signer.public_key().as_ref(), &mainnet_preimage));
     }
-
-    #[test]
-    fn transaction_offchain_envelope_uses_first_app_domain_byte() {
-        let envelope = offchain_message_envelope_bytes(
-            b"Bulk Exchange Transaction",
-            &Pubkey::new_unique(),
-            SignatureDomain::Testnet,
-        )
-        .expect("offchain envelope");
-
-        assert_eq!(envelope[17], SignatureDomain::Testnet as u8);
-        assert_eq!(&envelope[18..49], &[0; 31]);
-    }
-}
-
-#[cfg(feature = "ledger")]
-fn sign_ledger_offchain_strict(
-    wallet: &LedgerWallet,
-    derivation_path: &DerivationPath,
-    envelope: &[u8],
-) -> eyre::Result<Signature> {
-    wallet
-        .sign_offchain_message(derivation_path, envelope)
-        .map_err(|e| eyre::eyre!("ledger sign failed: {e}"))
 }
