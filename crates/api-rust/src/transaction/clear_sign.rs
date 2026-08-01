@@ -199,6 +199,12 @@ fn action_line(action: &Action) -> String {
             )
         }
         Action::AddMarket(action) => format!("AddMarket {}", action.symbol),
+        Action::MarketAdmin(action) => format!(
+            "MarketAdmin {} {:?} price={}",
+            action.symbol,
+            action.action,
+            fmt_opt(action.price)
+        ),
         Action::ConfigFairPrice(action) => opaque_payload("ConfigFairPrice", &action.payload),
         Action::ConfigVolatility(action) => opaque_payload("ConfigVolatility", &action.payload),
         Action::ConfigSecurity(action) => opaque_payload("ConfigSecurity", &action.payload),

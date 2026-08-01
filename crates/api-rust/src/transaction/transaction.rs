@@ -370,6 +370,9 @@ impl Serialize for RawSignableAction<'_> {
             Action::UpdateLiquidatorConfig(action) => {
                 serializer.serialize_newtype_variant("Action", 43, "UpdateLiquidatorConfig", action)
             }
+            Action::MarketAdmin(action) => {
+                serializer.serialize_newtype_variant("Action", 57, "MarketAdmin", action)
+            }
         }
     }
 }
@@ -521,6 +524,24 @@ mod tests {
         .expect("signable bytes");
 
         assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 43);
+    }
+
+    #[test]
+    fn market_admin_uses_sdk_ordinal_57() {
+        let signable = Transaction::raw_signable_bytes(
+            SignatureDomain::Devnet,
+            Pubkey::default(),
+            0,
+            &[Action::MarketAdmin(crate::msgs::MarketAdmin {
+                symbol: Arc::from("BTC-USD"),
+                action: crate::msgs::MarketAction::Open,
+                price: None,
+                meta: ActionMeta::default(),
+            })],
+        )
+        .expect("signable bytes");
+
+        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 57);
     }
 
     #[test]
