@@ -1,6 +1,6 @@
 use crate::transaction::{Action, ActionMeta};
 use serde::{Deserialize, Serialize};
-use solana_keypair::Pubkey;
+use solana_pubkey::Pubkey;
 
 /// Create multi-sig account
 #[derive(Clone, Debug, Serialize, Deserialize)]

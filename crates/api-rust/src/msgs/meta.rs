@@ -1,8 +1,8 @@
 use crate::msgs::sig_bytes;
 use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
-use solana_keypair::Pubkey;
 use std::sync::Arc;
+use solana_pubkey::Pubkey;
 
 /// Per-market configuration returned by the exchange.
 #[derive(Debug, Clone, Deserialize)]

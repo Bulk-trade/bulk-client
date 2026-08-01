@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 use bulk_client::msgs::subaccounts::TransferKind;
-use solana_keypair::Pubkey;
 use std::str::FromStr;
+use solana_pubkey::Pubkey;
 
 #[derive(clap::Args, Debug)]
 pub struct FaucetArgs {

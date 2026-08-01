@@ -14,7 +14,7 @@ use crate::msgs::{
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
 use solana_hash::Hash;
-use solana_keypair::Pubkey;
+use solana_pubkey::Pubkey;
 
 /// Meta data for an action
 #[derive(Clone, Copy, Debug, Default)]
