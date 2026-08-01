@@ -180,7 +180,7 @@ impl From<&L2Snapshot> for SDKL2Snapshot {
     fn from(snap: &L2Snapshot) -> Self {
         let (bids, asks) = &snap.levels;
 
-        let instrument = MktId::new(snap.symbol.as_str()).unwrap();
+        let instrument = MktId::from_str(snap.symbol.as_str()).unwrap();
         let newbids = bids
             .iter()
             .map(|x| SDKPriceLevel {
