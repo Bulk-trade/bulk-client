@@ -24,6 +24,7 @@ pub async fn handle_stop(
         size: args.size,
         threshold: args.threshold,
         limit: args.limit,
+        iso: false,
         meta: Default::default(),
     });
 
@@ -50,6 +51,7 @@ pub async fn handle_take_profit(
         size: args.size,
         threshold: args.threshold,
         limit: args.limit,
+        iso: false,
         meta: Default::default(),
     });
 
@@ -78,6 +80,7 @@ pub async fn handle_range(
         collar_max: args.max,
         limit_min: args.limit_min,
         limit_max: args.limit_max,
+        iso: false,
         meta: Default::default(),
     });
 
@@ -105,6 +108,7 @@ pub async fn handle_trailing(
         trail_bps: args.trail_bps,
         step_bps: args.step_bps,
         limit: args.limit,
+        iso: false,
         meta: Default::default(),
     });
 
