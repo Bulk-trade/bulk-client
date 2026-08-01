@@ -10,7 +10,7 @@ use std::str::FromStr;
 /// Stable signature-domain registry. Zero is deliberately unassigned so a
 /// missing or legacy domain cannot silently select a live network.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum SignatureDomain {
     Mainnet = 1,
     Testnet = 2,
@@ -38,9 +38,9 @@ impl FromStr for SignatureDomain {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "mainnet" => Ok(Self::Mainnet),
-            "testnet" => Ok(Self::Testnet),
-            "devnet" => Ok(Self::Devnet),
+            "mainnet" | "Mainnet" => Ok(Self::Mainnet),
+            "testnet" | "Testnet" => Ok(Self::Testnet),
+            "devnet" | "Devnet" => Ok(Self::Devnet),
             _ => Err(eyre::eyre!(
                 "invalid signature domain `{value}`; expected mainnet, testnet, or devnet"
             )),
