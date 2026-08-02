@@ -305,21 +305,21 @@ class TransactionSigner:
                 if "amount" in order:
                     return b''.join([
                         TransactionSigner.write_u32(16),
-                        TransactionSigner.write_pubkey_serde_bytes(order['u']),
+                        TransactionSigner.decode_and_validate_32_bytes(order['u']),
                         TransactionSigner.write_bool(True),
                         TransactionSigner.write_f64(order['amount']),
                     ])
                 else:
                     return b''.join([
                         TransactionSigner.write_u32(16),
-                        TransactionSigner.write_pubkey_serde_bytes(order['u']),
+                        TransactionSigner.decode_and_validate_32_bytes(order['u']),
                         TransactionSigner.write_bool(False),
                     ])
 
             case {"agentWalletCreation": order}:
                 return b''.join([
                     TransactionSigner.write_u32(17),
-                    TransactionSigner.write_pubkey_serde_bytes(order['a']),
+                    TransactionSigner.decode_and_validate_32_bytes(order['a']),
                     TransactionSigner.write_bool(order['d']),
                 ])
 
@@ -338,7 +338,7 @@ class TransactionSigner:
             case {"whiteListFaucet": order} | {"whitelistFaucet": order}:
                 return b''.join([
                     TransactionSigner.write_u32(19),
-                    TransactionSigner.write_pubkey_serde_bytes(order.get('target', order.get('account'))),
+                    TransactionSigner.decode_and_validate_32_bytes(order.get('target', order.get('account'))),
                     TransactionSigner.write_bool(order['whitelist']),
                 ])
             case {"abc": order}:
@@ -450,16 +450,6 @@ class TransactionSigner:
             raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
         return key_bytes
 
-    @staticmethod
-    def write_pubkey_serde_bytes(key: str) -> bytes:
-        """
-        Encode Pubkey with bincode `serialize_bytes` shape:
-        u64 byte-length prefix + raw bytes.
-        """
-        key_bytes = TransactionSigner.decode_and_validate_32_bytes(key)
-        return TransactionSigner.write_u64(len(key_bytes)) + key_bytes
-
-
 ##
 ## Unit Tests
 ##
@@ -477,12 +467,25 @@ def _test_faucet1():
     signed = signer.sign_transaction(faucet, SignatureDomain.DEVNET)
     print(signed)
 
+def _test_faucet1b():
+    faucet = {
+        'actions': [
+            {'faucet': {'u': '4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA', 'amount': 1000000000.0}}
+        ],
+        'nonce': 1_785_657_602_556,
+        'account': '4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA',
+        'signer': '4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA'
+    }
+    signer = TransactionSigner("4XmiBPzjsmugYJtYFmgh8GWYKQEjt2CtT1MqfZKi8pm4tevpthqRePiACfNoUz4DWtxsxtVYHzBYD8PR7qHC21Kc")
+    signed = signer.sign_transaction(faucet, SignatureDomain.TESTNET)
+    print(signed)
+
 def _test_faucet2():
     faucet = {
         'actions': [
             {'faucet': {'u': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di', 'amount': 100000000.0}}
         ],
-        'nonce': 1776369131694213039,
+        'nonce': '1776369131694213039',
         'account': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di',
         'signer': '2Gg7MCvwmEQ2xSGJomhAVs6Dauf2nLTy8rG9Xm8Lv2di'
     }
@@ -532,6 +535,7 @@ def _test_orders():
     print(signed)
 
 if __name__ == '__main__':
-    _test_trailing()
+    _test_faucet1b()
+    #_test_trailing()
     #_generate_keypair()
     #_test_orders()

@@ -128,6 +128,7 @@ def test_whitelist_faucet_accepts_client_payload_shape():
 
     assert encoded.startswith(struct.pack("<I", 19))
     assert encoded.endswith(bytes([1]))
+    assert len(encoded) == 4 + 32 + 1
 
 
 def test_whitelist_faucet_accepts_legacy_payload_shape():
@@ -139,6 +140,23 @@ def test_whitelist_faucet_accepts_legacy_payload_shape():
 
     assert encoded.startswith(struct.pack("<I", 19))
     assert encoded.endswith(bytes([0]))
+    assert len(encoded) == 4 + 32 + 1
+
+
+def test_account_action_pubkeys_use_fixed_32_byte_bincode_arrays():
+    signer = load_signer()
+
+    faucet = signer.TransactionSigner.serialize_action(
+        {"faucet": {"u": PUBKEY, "amount": 1_000_000_000.0}}
+    )
+    agent_wallet = signer.TransactionSigner.serialize_action(
+        {"agentWalletCreation": {"a": PUBKEY, "d": False}}
+    )
+
+    assert len(faucet) == 4 + 32 + 1 + 8
+    assert faucet[4:36] == bytes(32)
+    assert len(agent_wallet) == 4 + 32 + 1
+    assert agent_wallet[4:36] == bytes(32)
 
 
 def test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields():

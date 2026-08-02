@@ -29,6 +29,29 @@ def test_transaction_signature_is_bound_to_one_domain():
     assert "signatureDomain" not in transaction
 
 
+def test_faucet_signature_matches_rust_testnet_vector():
+    signer = TransactionSigner(
+        "4XmiBPzjsmugYJtYFmgh8GWYKQEjt2CtT1MqfZKi8pm4tevpthqRePiACfNoUz4DWtxsxtVYHzBYD8PR7qHC21Kc"
+    )
+    transaction = {
+        "actions": [{
+            "faucet": {
+                "u": "4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA",
+                "amount": 1_000_000_000.0,
+            }
+        }],
+        "nonce": 1_785_657_602_556,
+        "account": "4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA",
+        "signer": "4WzemKSCJP8u2UmUeJzjuRYeTjrM4yqVTUP57MXwXtAA",
+    }
+
+    signer.sign_transaction(transaction, SignatureDomain.TESTNET)
+
+    assert transaction["signature"] == (
+        "67jDi1jnoefhfYCXFPG2DuACbnA1ChwaDp9Ucz68KphaCMbvq7dudJ4y3h6rx7G1JV1nQNMeQyYcjLK2viFoNyir"
+    )
+
+
 def test_signer_rejects_a_missing_domain():
     signer = TransactionSigner("1111111111111111111111111111111111111111111")
     transaction = {
