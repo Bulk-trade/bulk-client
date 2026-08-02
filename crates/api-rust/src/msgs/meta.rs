@@ -1,8 +1,8 @@
 use crate::msgs::sig_bytes;
 use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use solana_pubkey::Pubkey;
+use std::sync::Arc;
 
 /// Per-market configuration returned by the exchange.
 #[derive(Debug, Clone, Deserialize)]
@@ -80,6 +80,26 @@ pub struct MarketAdmin {
     #[serde(default, with = "crate::msgs::opt_fixed_point")]
     pub price: Option<f64>,
 
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+/// Selects which publishers may update an instrument's oracle price.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OracleSource {
+    #[default]
+    Both,
+    Pyth,
+    Bulk,
+}
+
+/// Configures the accepted oracle source for an instrument.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingAdmin {
+    pub instrument: Arc<str>,
+    pub source: OracleSource,
     #[serde(skip)]
     pub meta: ActionMeta,
 }
