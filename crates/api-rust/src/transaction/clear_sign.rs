@@ -205,6 +205,63 @@ fn action_line(action: &Action) -> String {
             action.action,
             fmt_opt(action.price)
         ),
+        Action::PricingAdmin(action) => {
+            format!("PricingAdmin {} {:?}", action.instrument, action.source)
+        }
+        Action::RewardSettlement(action) => format!(
+            "RewardSettlement epoch={} validators={}",
+            action.epoch,
+            action.weights.len()
+        ),
+        Action::Deposit(action) => format!("Deposit user={} amount={}", action.user, action.amount),
+        Action::Withdraw(action) => {
+            format!("Withdraw user={} amount={}", action.user, action.amount)
+        }
+        Action::WithdrawConfirmation(action) => {
+            format!("WithdrawConfirmation hash={}", action.hash)
+        }
+        Action::NonceCommitment(action) => {
+            format!(
+                "NonceCommitment signer={} session={}",
+                action.signer, action.session_id
+            )
+        }
+        Action::PartialSignature(action) => {
+            format!(
+                "PartialSignature signer={} session={}",
+                action.signer, action.session_id
+            )
+        }
+        Action::WithdrawSubmitted(action) => format!("WithdrawSubmitted hash={}", action.hash),
+        Action::WithdrawFailed(action) => {
+            format!(
+                "WithdrawFailed hash={} reason={}",
+                action.hash, action.reason
+            )
+        }
+        Action::DkgRound1(action) => {
+            format!("DkgRound1 signer={} epoch={}", action.signer, action.epoch)
+        }
+        Action::InitializeVault(action) => format!("InitializeVault vault={}", action.vault),
+        Action::UpdateFrostGroup(action) => {
+            format!("UpdateFrostGroup state={}", action.state)
+        }
+        Action::DkgFinished(action) => {
+            format!(
+                "DkgFinished signer={} epoch={}",
+                action.signer, action.epoch
+            )
+        }
+        Action::SolanaBlockAnchor(action) => {
+            format!(
+                "SolanaBlockAnchor slot={} blockhash={}",
+                action.slot, action.blockhash
+            )
+        }
+        Action::ConfigMakerRebateTier(action) => format!(
+            "ConfigMakerRebateTier {} maker={} tier={:?} expires={:?}",
+            action.instrument, action.maker, action.minimum_tier, action.expires_slot
+        ),
         Action::ConfigFairPrice(action) => opaque_payload("ConfigFairPrice", &action.payload),
         Action::ConfigVolatility(action) => opaque_payload("ConfigVolatility", &action.payload),
         Action::ConfigSecurity(action) => opaque_payload("ConfigSecurity", &action.payload),

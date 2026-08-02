@@ -11,6 +11,7 @@ pub mod responses;
 pub mod risk;
 pub mod subaccounts;
 pub mod subscription;
+pub mod system;
 
 pub use account::*;
 pub use history::*;
@@ -20,6 +21,7 @@ pub use oracle::*;
 pub use order::*;
 pub use responses::*;
 pub use subscription::*;
+pub use system::*;
 
 pub(crate) mod sig_bytes {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

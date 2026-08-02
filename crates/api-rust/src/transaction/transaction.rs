@@ -367,11 +367,56 @@ impl Serialize for RawSignableAction<'_> {
             Action::RevokeCommissionFee(action) => {
                 serializer.serialize_newtype_variant("Action", 41, "RevokeCommissionFee", action)
             }
+            Action::RewardSettlement(action) => {
+                serializer.serialize_newtype_variant("Action", 42, "RewardSettlement", action)
+            }
             Action::UpdateLiquidatorConfig(action) => {
                 serializer.serialize_newtype_variant("Action", 43, "UpdateLiquidatorConfig", action)
             }
+            Action::Deposit(action) => {
+                serializer.serialize_newtype_variant("Action", 44, "Deposit", action)
+            }
+            Action::Withdraw(action) => {
+                serializer.serialize_newtype_variant("Action", 45, "Withdraw", action)
+            }
+            Action::WithdrawConfirmation(action) => {
+                serializer.serialize_newtype_variant("Action", 46, "WithdrawConfirmation", action)
+            }
+            Action::NonceCommitment(action) => {
+                serializer.serialize_newtype_variant("Action", 47, "NonceCommitment", action)
+            }
+            Action::PartialSignature(action) => {
+                serializer.serialize_newtype_variant("Action", 48, "PartialSignature", action)
+            }
+            Action::WithdrawSubmitted(action) => {
+                serializer.serialize_newtype_variant("Action", 49, "WithdrawSubmitted", action)
+            }
+            Action::WithdrawFailed(action) => {
+                serializer.serialize_newtype_variant("Action", 50, "WithdrawFailed", action)
+            }
+            Action::DkgRound1(action) => {
+                serializer.serialize_newtype_variant("Action", 51, "DkgRound1", action)
+            }
+            Action::InitializeVault(action) => {
+                serializer.serialize_newtype_variant("Action", 52, "InitializeVault", action)
+            }
+            Action::UpdateFrostGroup(action) => {
+                serializer.serialize_newtype_variant("Action", 53, "UpdateFrostGroup", action)
+            }
+            Action::DkgFinished(action) => {
+                serializer.serialize_newtype_variant("Action", 54, "DkgFinished", action)
+            }
+            Action::SolanaBlockAnchor(action) => {
+                serializer.serialize_newtype_variant("Action", 55, "SolanaBlockAnchor", action)
+            }
+            Action::ConfigMakerRebateTier(action) => {
+                serializer.serialize_newtype_variant("Action", 56, "ConfigMakerRebateTier", action)
+            }
             Action::MarketAdmin(action) => {
                 serializer.serialize_newtype_variant("Action", 57, "MarketAdmin", action)
+            }
+            Action::PricingAdmin(action) => {
+                serializer.serialize_newtype_variant("Action", 58, "PricingAdmin", action)
             }
         }
     }

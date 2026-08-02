@@ -7,9 +7,12 @@ use crate::msgs::multisig::{
 use crate::msgs::risk::RiskConfigChange;
 use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAccount, Transfer};
 use crate::msgs::{
-    AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon, CancelAll, CancelOrder, Faucet,
-    Join, LimitOrder, MarketAdmin, MarketOrder, Matrix, ModifyOrder, OpaqueAction, Price,
-    PythOracle, RevokeCommissionFee, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet,
+    AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon, CancelAll, CancelOrder,
+    ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1, Faucet, InitializeVault, Join,
+    LimitOrder, MarketAdmin, MarketOrder, Matrix, ModifyOrder, NonceCommitment, OpaqueAction,
+    PartialSignature, Price, PricingAdmin, PythOracle, RevokeCommissionFee, RewardSettlement,
+    SolanaBlockAnchor, UpdateFrostGroup, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet,
+    Withdraw, WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -150,13 +153,60 @@ pub enum Action {
     #[serde(rename = "rbc", alias = "revokeBuilderCode")]
     RevokeCommissionFee(RevokeCommissionFee),
 
+    // RewardSettlement = ordinal(42)
+    #[serde(rename = "rs")]
+    RewardSettlement(RewardSettlement),
+
     // UpdateLiquidatorConfig = ordinal(43)
     #[serde(rename = "liq")]
     UpdateLiquidatorConfig(LiqConfig),
 
+    // Deposit = ordinal(44)
+    #[serde(rename = "deposit")]
+    Deposit(Deposit),
+    // Withdraw = ordinal(45)
+    #[serde(rename = "withdraw")]
+    Withdraw(Withdraw),
+    // WithdrawConfirmation = ordinal(46)
+    #[serde(rename = "WithdrawConfirmation")]
+    WithdrawConfirmation(WithdrawConfirmation),
+    // NonceCommitment = ordinal(47)
+    #[serde(rename = "nonceCommitment")]
+    NonceCommitment(NonceCommitment),
+    // PartialSignature = ordinal(48)
+    #[serde(rename = "partialSignature")]
+    PartialSignature(PartialSignature),
+    // WithdrawSubmitted = ordinal(49)
+    #[serde(rename = "withdrawSubmitted")]
+    WithdrawSubmitted(WithdrawSubmitted),
+    // WithdrawFailed = ordinal(50)
+    #[serde(rename = "withdrawFailed")]
+    WithdrawFailed(WithdrawFailed),
+    // DkgRound1 = ordinal(51)
+    #[serde(rename = "dkgRound1")]
+    DkgRound1(DkgRound1),
+    // InitializeVault = ordinal(52)
+    #[serde(rename = "initializeVault")]
+    InitializeVault(InitializeVault),
+    // UpdateFrostGroup = ordinal(53)
+    #[serde(rename = "updateFrostGroup")]
+    UpdateFrostGroup(UpdateFrostGroup),
+    // DkgFinished = ordinal(54)
+    #[serde(rename = "dkgFinished")]
+    DkgFinished(DkgFinished),
+    // SolanaBlockAnchor = ordinal(55)
+    #[serde(rename = "solanaBlockAnchor")]
+    SolanaBlockAnchor(SolanaBlockAnchor),
+    // ConfigMakerRebateTier = ordinal(56)
+    #[serde(rename = "cmrt", alias = "configMakerRebateTier")]
+    ConfigMakerRebateTier(ConfigMakerRebateTier),
+
     // MarketAdmin = ordinal(57)
     #[serde(rename = "marketAdmin")]
     MarketAdmin(MarketAdmin),
+    // PricingAdmin = ordinal(58)
+    #[serde(rename = "pricingAdmin")]
+    PricingAdmin(PricingAdmin),
 }
 
 macro_rules! dispatch {
@@ -210,8 +260,23 @@ macro_rules! dispatch {
             Action::UpdateRiskConfig($x) => $body,
             Action::ApproveCommissionFee($x) => $body,
             Action::RevokeCommissionFee($x) => $body,
+            Action::RewardSettlement($x) => $body,
             Action::UpdateLiquidatorConfig($x) => $body,
+            Action::Deposit($x) => $body,
+            Action::Withdraw($x) => $body,
+            Action::WithdrawConfirmation($x) => $body,
+            Action::NonceCommitment($x) => $body,
+            Action::PartialSignature($x) => $body,
+            Action::WithdrawSubmitted($x) => $body,
+            Action::WithdrawFailed($x) => $body,
+            Action::DkgRound1($x) => $body,
+            Action::InitializeVault($x) => $body,
+            Action::UpdateFrostGroup($x) => $body,
+            Action::DkgFinished($x) => $body,
+            Action::SolanaBlockAnchor($x) => $body,
+            Action::ConfigMakerRebateTier($x) => $body,
             Action::MarketAdmin($x) => $body,
+            Action::PricingAdmin($x) => $body,
         }
     };
 }
@@ -419,10 +484,37 @@ impl From<MarketAdmin> for Action {
     }
 }
 
+macro_rules! impl_action_from {
+    ($type:ty, $variant:ident) => {
+        impl From<$type> for Action {
+            fn from(action: $type) -> Self {
+                Action::$variant(action)
+            }
+        }
+    };
+}
+
+impl_action_from!(RewardSettlement, RewardSettlement);
+impl_action_from!(Deposit, Deposit);
+impl_action_from!(Withdraw, Withdraw);
+impl_action_from!(WithdrawConfirmation, WithdrawConfirmation);
+impl_action_from!(NonceCommitment, NonceCommitment);
+impl_action_from!(PartialSignature, PartialSignature);
+impl_action_from!(WithdrawSubmitted, WithdrawSubmitted);
+impl_action_from!(WithdrawFailed, WithdrawFailed);
+impl_action_from!(DkgRound1, DkgRound1);
+impl_action_from!(InitializeVault, InitializeVault);
+impl_action_from!(UpdateFrostGroup, UpdateFrostGroup);
+impl_action_from!(DkgFinished, DkgFinished);
+impl_action_from!(SolanaBlockAnchor, SolanaBlockAnchor);
+impl_action_from!(ConfigMakerRebateTier, ConfigMakerRebateTier);
+impl_action_from!(PricingAdmin, PricingAdmin);
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::common::tif::TimeInForce;
+    use crate::msgs::OracleSource;
     use std::sync::Arc;
 
     #[test]
@@ -450,6 +542,27 @@ mod tests {
         assert_eq!(
             hash.to_string(),
             "9BreqftLa7ZAsYLkvJDRBRxiSukzGoTfbQNMBWWkUAUJ"
+        );
+    }
+
+    #[test]
+    fn pricing_admin_uses_wire_ordinal_58_and_camel_case_json() {
+        let action = Action::PricingAdmin(PricingAdmin {
+            instrument: Arc::from("BTC"),
+            source: OracleSource::Bulk,
+            meta: ActionMeta::default(),
+        });
+
+        let encoded = bincode::serialize(&action).expect("serialize pricing admin");
+        assert_eq!(&encoded[..4], &58_u32.to_le_bytes());
+        assert_eq!(
+            serde_json::to_value(action).expect("serialize pricing admin JSON"),
+            serde_json::json!({
+                "pricingAdmin": {
+                    "instrument": "BTC",
+                    "source": "bulk"
+                }
+            })
         );
     }
 

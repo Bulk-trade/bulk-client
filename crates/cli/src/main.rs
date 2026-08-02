@@ -5,9 +5,9 @@ pub mod handlers;
 use crate::commands::{
     AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand,
     CorrsArgs, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs,
-    LiquidatorConfigArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, RangeArgs,
-    RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs,
-    UpdateLeverageArgs, UpdateMultisigPolicyArgs,
+    LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
+    PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
+    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -19,7 +19,9 @@ use crate::handlers::cancel::{handle_cancel, handle_cancel_all};
 use crate::handlers::conditional::{
     handle_range, handle_stop, handle_take_profit, handle_trailing,
 };
-use crate::handlers::deploy::{handle_add_market, handle_corrs};
+use crate::handlers::deploy::{
+    handle_add_market, handle_corrs, handle_market_admin, handle_pricing_admin,
+};
 use crate::handlers::multisig::{
     handle_create_multisig, handle_multisig_approve, handle_multisig_cancel,
     handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy,
@@ -243,11 +245,31 @@ enum Command {
     /// Create a market book after configs are in place.
     #[command(name = "add-market")]
     AddMarket(AddMarketArgs),
+
+    /// Open, suspend, or close an existing market.
+    ///
+    /// Example: bulk market-admin BTC-USD suspend
+    /// Example: bulk market-admin BTC-USD close --price 100000
+    #[command(name = "market-admin")]
+    MarketAdmin(MarketAdminArgs),
+
+    /// Configure accepted oracle publishers for an instrument.
+    ///
+    /// Example: bulk pricing-admin BTC bulk
+    /// Example: bulk pricing-admin BTC both
+    #[command(name = "pricing-admin")]
+    PricingAdmin(PricingAdminArgs),
 }
 
 impl Command {
     fn uses_deploy_timeout(&self) -> bool {
-        matches!(self, Command::Corrs(_) | Command::AddMarket(_))
+        matches!(
+            self,
+            Command::Corrs(_)
+                | Command::AddMarket(_)
+                | Command::MarketAdmin(_)
+                | Command::PricingAdmin(_)
+        )
     }
 }
 
@@ -398,6 +420,8 @@ async fn main() -> eyre::Result<()> {
         Command::LiqConfig(args) => handle_liquidator_config(&mut api, args, &submit).await,
         Command::Corrs(args) => handle_corrs(&mut api, args, &submit).await,
         Command::AddMarket(args) => handle_add_market(&mut api, args, &submit).await,
+        Command::MarketAdmin(args) => handle_market_admin(&mut api, args, &submit).await,
+        Command::PricingAdmin(args) => handle_pricing_admin(&mut api, args, &submit).await,
         Command::LedgerInfo(_) => unreachable!("handled before API setup"),
         Command::Config(_) => unreachable!("handled before API setup"),
     }
@@ -450,6 +474,45 @@ mod tests {
                 assert_eq!(url, "https://exchange-api.bulk.trade/api/v1");
             }
             _ => panic!("expected config set-api-url"),
+        }
+    }
+
+    #[test]
+    fn parse_market_admin_close_with_price() {
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "market-admin",
+            "BTC-USD",
+            "close",
+            "--price",
+            "100000",
+        ])
+        .expect("should parse market-admin");
+
+        match cli.command {
+            Command::MarketAdmin(args) => {
+                assert_eq!(args.symbol, "BTC-USD");
+                assert!(matches!(args.action, crate::commands::MarketActionArg::Close));
+                assert_eq!(args.price, Some(100_000.0));
+            }
+            _ => panic!("expected market-admin"),
+        }
+    }
+
+    #[test]
+    fn parse_pricing_admin_bulk_source() {
+        let cli = Cli::try_parse_from(["bulk", "pricing-admin", "BTC", "bulk"])
+            .expect("should parse pricing-admin");
+
+        match cli.command {
+            Command::PricingAdmin(args) => {
+                assert_eq!(args.instrument, "BTC");
+                assert!(matches!(
+                    args.source,
+                    crate::commands::OracleSourceArg::Bulk
+                ));
+            }
+            _ => panic!("expected pricing-admin"),
         }
     }
 }
