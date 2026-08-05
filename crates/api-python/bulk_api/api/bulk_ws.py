@@ -145,7 +145,7 @@ class BulkWebSocketClient:
                 ping_interval=20,
                 ping_timeout=10,
                 close_timeout=10,
-                max_size=2**24,    # 16MB max receive size
+                max_size=2**26,    # 64 MiB max receive size
                 write_limit=2**24,
                 compression=None
             )
