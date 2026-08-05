@@ -23,6 +23,8 @@ WebSocket handshake before returning a handle.
 | `symbols` | `Vec<String>` | `[]` | Symbols to auto-subscribe tickers for |
 | `signer` | `Option<TransactionSigner>` | `None` | Required for any trading operation |
 | `signature_domain` | `Option<SignatureDomain>` | `None` | Required when `signer` is set; selects mainnet, testnet, or devnet |
+| `max_message_size` | `Option<usize>` | 64 MiB | Maximum complete inbound WebSocket message; `None` disables the limit |
+| `max_frame_size` | `Option<usize>` | 64 MiB | Maximum single inbound WebSocket frame; `None` disables the limit |
 | `track_account` | `bool` | `true` | Auto-subscribe to account stream if signer present |
 | `track_ticker` | `bool` | `true` | Auto-subscribe to tickers for `symbols` |
 | `default_timeout` | `Duration` | 5 s | Timeout applied to every order response |

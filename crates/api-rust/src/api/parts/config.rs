@@ -9,6 +9,10 @@ pub struct WSConfig {
     pub signer: Option<TransactionSigner>,
     pub signature_domain: Option<SignatureDomain>,
     pub default_timeout: Duration,
+    /// Maximum size of a complete inbound WebSocket message.
+    pub max_message_size: Option<usize>,
+    /// Maximum size of a single inbound WebSocket frame.
+    pub max_frame_size: Option<usize>,
     pub track_account: bool,
     pub track_ticker: bool,
 }
@@ -30,6 +34,8 @@ impl Default for WSConfig {
             signer: None,
             signature_domain: None,
             default_timeout: Duration::from_secs(10),
+            max_message_size: Some(64 << 20),
+            max_frame_size: Some(64 << 20),
             track_ticker: true,
             track_account: true,
         }

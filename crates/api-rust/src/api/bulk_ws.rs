@@ -92,7 +92,11 @@ use solana_pubkey::Pubkey;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async_with_config,
+    tungstenite::{protocol::WebSocketConfig, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use tracing::{debug, error, info, warn};
 // ─────────────────────────────────────────────────────────────────────────────
 // Snapshot: the full state picture pushed over a single watch channel
@@ -182,7 +186,12 @@ impl BulkWsClient {
             bail!("signature domain is required when a WebSocket signer is configured");
         }
         info!("Connecting to {}", config.url);
-        let (ws_stream, _) = connect_async(&config.url).await?;
+        let ws_config = WebSocketConfig {
+            max_message_size: config.max_message_size,
+            max_frame_size: config.max_frame_size,
+            ..Default::default()
+        };
+        let (ws_stream, _) = connect_async_with_config(&config.url, Some(ws_config), false).await?;
         let (ws_write, ws_read) = ws_stream.split();
         info!("Connected to Bulk Exchange WebSocket");
 
