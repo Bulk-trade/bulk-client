@@ -1272,7 +1272,7 @@ impl Actor {
 
                 info!(
                     "Account snapshot: balance={:.2}, positions={}, orders={}",
-                    self.account_state.margin.total_balance,
+                    self.account_state.margin.total_margin,
                     self.account_state.positions.len(),
                     self.account_state.open_orders.len(),
                 );

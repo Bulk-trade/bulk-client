@@ -167,7 +167,7 @@ use std::str::FromStr;
 let pubkey = Pubkey::from_str("YOUR_PUBKEY_BASE58")?;
 let account: AccountData = client.get_account(pubkey).await?;
 
-println!("balance={:.2}", account.margin.total_balance);
+println!("margin={:.2}", account.margin.total_margin);
 for pos in &account.positions {
     println!("  {} size={} entry={}", pos.symbol, pos.signed_size, pos.entry_price);
 }

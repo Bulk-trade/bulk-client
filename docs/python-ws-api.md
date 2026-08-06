@@ -98,7 +98,7 @@ async def main():
     )
 
     await client.connect()
-    print(f"Connected. Balance: {client.margin.total_balance:.2f}")
+    print(f"Connected. Margin: {client.margin.total_margin:.2f}")
 
     await client.disconnect()
 
@@ -294,8 +294,8 @@ All reads below are synchronous — no `await` needed.
 ```python
 # Margin / collateral
 if client.margin:
-    print(f"balance={client.margin.total_balance:.2f}  "
-          f"available={client.margin.available_balance:.2f}")
+    print(f"margin={client.margin.total_margin:.2f}  "
+          f"available={client.margin.available_margin:.2f}")
 
 # Open orders — optionally filtered by symbol
 all_orders  = client.get_orders()
@@ -396,7 +396,7 @@ async def on_fill(fill):
 client.on(Topic.TICKER,   on_ticker)
 client.on(Topic.FILL,     on_fill)
 client.on(Topic.ORDER,    lambda state: print(f"[order] {state.order_id} {state.status}"))
-client.on(Topic.MARGIN,   lambda m: print(f"[margin] balance={m.total_balance:.2f}"))
+client.on(Topic.MARGIN,   lambda m: print(f"[margin] total={m.total_margin:.2f}"))
 client.on(Topic.POSITION, lambda pos: print(f"[position] {pos.symbol} size={pos.size}"))
 client.on(Topic.LEVERAGE, lambda settings: print(f"[leverage] {len(settings)} symbols updated"))
 client.on(Topic.ACCOUNT,  lambda snap: print(f"[account] {len(snap.positions)} positions"))

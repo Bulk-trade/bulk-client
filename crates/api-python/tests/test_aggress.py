@@ -97,7 +97,7 @@ async def request_faucet_funds(private_key: str, public_key: str):
         account = http_client.get_full_account(public_key)
         if account and 'fullAccount' in account:
             margin = account['fullAccount'].get('marginSummary', {})
-            balance = margin.get('totalBalance', 0)
+            balance = margin.get('totalMargin', margin.get('totalBalance', 0))
             print(f"💵 Current balance: ${balance:,.2f} USDC")
 
         return True
@@ -137,8 +137,8 @@ async def test_market_order():
     def on_account_snapshot(snapshot):
         """Handle initial account snapshot"""
         print(f"\n📊 Account Snapshot Received:")
-        print(f"   Balance: ${snapshot.margin.total_balance:,.2f}")
-        print(f"   Available: ${snapshot.margin.available_balance:,.2f}")
+        print(f"   Margin: ${snapshot.margin.total_margin:,.2f}")
+        print(f"   Available: ${snapshot.margin.available_margin:,.2f}")
         print(f"   Positions: {len(snapshot.positions)}")
         print(f"   Open Orders: {len(snapshot.open_orders)}")
 
@@ -257,8 +257,8 @@ async def test_market_order():
     # Final account state
     if ws_client.margin:
         print(f"\n💰 Final Account State:")
-        print(f"   Balance: ${ws_client.margin.total_balance:,.2f}")
-        print(f"   Available: ${ws_client.margin.available_balance:,.2f}")
+        print(f"   Margin: ${ws_client.margin.total_margin:,.2f}")
+        print(f"   Available: ${ws_client.margin.available_margin:,.2f}")
 
     if ws_client.inventory:
         print(f"\n📍 Open Positions: {ws_client.inventory.summary()}")

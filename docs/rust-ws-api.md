@@ -75,7 +75,7 @@ async fn main() -> eyre::Result<()> {
     })
     .await?;
 
-    println!("Connected. Balance: {:.2}", client.get_margin().total_balance);
+    println!("Connected. Margin: {:.2}", client.get_margin().total_margin);
 
     client.shutdown().await;
     Ok(())
@@ -289,7 +289,7 @@ inside tight loops.
 ```rust
 // Account margin / collateral
 let margin = client.get_margin();
-println!("balance={:.2}  available={:.2}", margin.total_balance, margin.available_balance);
+println!("margin={:.2}  available={:.2}", margin.total_margin, margin.available_margin);
 
 // Per-symbol position
 if let Some(pos) = client.get_position("BTC-USD") {
@@ -325,7 +325,7 @@ loop {
 
 // Block until account state changes (fills, margin updates, etc.)
 let account = client_mut.wait_account_changed().await?;
-println!("new balance: {:.2}", account.margin.total_balance);
+println!("new margin: {:.2}", account.margin.total_margin);
 ```
 
 ---
