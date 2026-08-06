@@ -56,9 +56,13 @@ class OrderState:
 @dataclass
 class Margin:
     """Account-level margin information"""
-    total_balance: float
-    available_balance: float
+    total_margin: float
+    available_margin: float
+    execution_impact: float
+    transferable_balance: float
     margin_used: float
+    margin_buffer_rate: float
+    buffered_margin: float
     notional: float
     realized_pnl: float
     unrealized_pnl: float
@@ -68,9 +72,13 @@ class Margin:
     @classmethod
     def from_api(cls, data: Dict) -> 'Margin':
         return cls(
-            total_balance=data.get('totalBalance', 0.0),
-            available_balance=data.get('availableBalance', 0.0),
+            total_margin=data.get('totalMargin', data.get('totalBalance', 0.0)),
+            available_margin=data.get('availableMargin', data.get('availableBalance', 0.0)),
+            execution_impact=data.get('executionImpact', 0.0),
+            transferable_balance=data.get('transferableBalance', 0.0),
             margin_used=data.get('marginUsed', 0.0),
+            margin_buffer_rate=data.get('marginBufferRate', 0.0),
+            buffered_margin=data.get('bufferedMargin', 0.0),
             notional=data.get('notional', 0.0),
             realized_pnl=data.get('realizedPnl', 0.0),
             unrealized_pnl=data.get('unrealizedPnl', 0.0),
@@ -193,9 +201,13 @@ class AccountSnapshot:
 @dataclass
 class MarginUpdate:
     """Real-time margin update"""
-    total_balance: float
-    available_balance: float
+    total_margin: float
+    available_margin: float
+    execution_impact: float
+    transferable_balance: float
     margin_used: float
+    margin_buffer_rate: float
+    buffered_margin: float
     notional: float
     realized_pnl: float
     unrealized_pnl: float
@@ -205,9 +217,13 @@ class MarginUpdate:
     @classmethod
     def from_api(cls, data: Dict) -> 'MarginUpdate':
         return cls(
-            total_balance=data.get('totalBalance', 0.0),
-            available_balance=data.get('availableBalance', 0.0),
+            total_margin=data.get('totalMargin', data.get('totalBalance', 0.0)),
+            available_margin=data.get('availableMargin', data.get('availableBalance', 0.0)),
+            execution_impact=data.get('executionImpact', 0.0),
+            transferable_balance=data.get('transferableBalance', 0.0),
             margin_used=data.get('marginUsed', 0.0),
+            margin_buffer_rate=data.get('marginBufferRate', 0.0),
+            buffered_margin=data.get('bufferedMargin', 0.0),
             notional=data.get('notional', 0.0),
             realized_pnl=data.get('realizedPnl', 0.0),
             unrealized_pnl=data.get('unrealizedPnl', 0.0),

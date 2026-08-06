@@ -911,7 +911,7 @@ class BulkWebSocketClient:
 
         self.logger.info(
             f"Account Snapshot: "
-            f"Balance={snapshot.margin.total_balance:.2f} "
+            f"Margin={snapshot.margin.total_margin:.2f} "
             f"Positions={len(snapshot.positions)} "
             f"Orders={len(snapshot.open_orders)}"
         )
@@ -931,8 +931,9 @@ class BulkWebSocketClient:
         await self._emit_event(Topic.MARGIN, margin_update)
 
         self.logger.debug(
-            f"Margin: Balance={margin_update.total_balance:.2f} "
-            f"Available={margin_update.available_balance:.2f}"
+            f"Margin: Total={margin_update.total_margin:.2f} "
+            f"Available={margin_update.available_margin:.2f} "
+            f"Transferable={margin_update.transferable_balance:.2f}"
         )
 
     async def _handle_position_update(self, data: Dict):

@@ -95,12 +95,20 @@ pub struct UpdateUserSettings {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[allow(unused)]
 pub struct Margin {
-    #[serde(rename = "totalBalance")]
-    pub total_balance: f64,
-    #[serde(rename = "availableBalance")]
-    pub available_balance: f64,
+    #[serde(rename = "totalMargin", alias = "totalBalance")]
+    pub total_margin: f64,
+    #[serde(rename = "availableMargin", alias = "availableBalance")]
+    pub available_margin: f64,
+    #[serde(rename = "executionImpact", default)]
+    pub execution_impact: f64,
+    #[serde(rename = "transferableBalance", default)]
+    pub transferable_balance: f64,
     #[serde(rename = "marginUsed")]
     pub margin_used: f64,
+    #[serde(rename = "marginBufferRate", default)]
+    pub margin_buffer_rate: f64,
+    #[serde(rename = "bufferedMargin", default)]
+    pub buffered_margin: f64,
     pub notional: f64,
     #[serde(rename = "realizedPnl")]
     pub realized_pnl: f64,
@@ -330,5 +338,55 @@ mod tests {
         // status helpers
         assert!(order.status.is_terminal());
         assert!(order.status.is_rejected());
+    }
+
+    #[test]
+    fn margin_deserializes_new_api_fields() {
+        let margin: Margin = serde_json::from_str(
+            r#"{
+                "totalMargin": 771.15,
+                "availableMargin": 230.22,
+                "executionImpact": -179.22,
+                "transferableBalance": 0.0,
+                "marginUsed": 540.93,
+                "marginBufferRate": 0.05,
+                "bufferedMargin": 567.98,
+                "notional": 21260.96,
+                "realizedPnl": -179.90,
+                "unrealizedPnl": -23.72,
+                "fees": -42.43,
+                "funding": -6.52
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(margin.total_margin, 771.15);
+        assert_eq!(margin.available_margin, 230.22);
+        assert_eq!(margin.execution_impact, -179.22);
+        assert_eq!(margin.transferable_balance, 0.0);
+        assert_eq!(margin.margin_buffer_rate, 0.05);
+        assert_eq!(margin.buffered_margin, 567.98);
+    }
+
+    #[test]
+    fn margin_accepts_legacy_balance_names() {
+        let margin: Margin = serde_json::from_str(
+            r#"{
+                "totalBalance": 100.0,
+                "availableBalance": 90.0,
+                "marginUsed": 10.0,
+                "notional": 0.0,
+                "realizedPnl": 0.0,
+                "unrealizedPnl": 0.0,
+                "fees": 0.0,
+                "funding": 0.0
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(margin.total_margin, 100.0);
+        assert_eq!(margin.available_margin, 90.0);
+        assert_eq!(margin.execution_impact, 0.0);
+        assert_eq!(margin.transferable_balance, 0.0);
     }
 }
