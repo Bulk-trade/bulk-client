@@ -312,7 +312,7 @@ pub struct ModifyOrder {
     pub order_id: Hash,
     #[serde(rename = "c")]
     pub symbol: String,
-    #[serde(rename = "sz")]
+    #[serde(rename = "sz", with = "crate::msgs::fixed_point")]
     pub amount: f64,
 
     #[serde(skip)]

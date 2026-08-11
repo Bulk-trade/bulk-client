@@ -46,5 +46,16 @@ pub async fn submit_actions(
 
     let results = api.place_tx(actions, None, Some(nonce)).await?;
     eprintln!("results: {:?}", results);
+    if let Some(rejection) = results.iter().find(|response| response.is_error()) {
+        return Err(eyre::eyre!(
+            "transaction rejected: status={}{}",
+            rejection.status,
+            rejection
+                .message
+                .as_deref()
+                .map(|message| format!(" message={message}"))
+                .unwrap_or_default(),
+        ));
+    }
     Ok(())
 }
