@@ -428,7 +428,7 @@ mod tests {
     use crate::common::tif::TimeInForce;
     use crate::msgs::conditional::StopOrTP;
     use crate::msgs::liquidator::LiqConfig;
-    use crate::msgs::{CancelAll, Faucet, LimitOrder};
+    use crate::msgs::{CancelAll, Faucet, LimitOrder, ModifyOrder};
     use crate::transaction::ActionMeta;
     use std::sync::Arc;
 
@@ -438,6 +438,24 @@ mod tests {
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
     const TEST_PRIVATE_KEY1: &str = "1111111111111111111111111111111111111111111";
     const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
+
+    #[test]
+    fn modify_order_signing_uses_fixed_point_amount() {
+        let signable = Transaction::raw_signable_bytes(
+            SignatureDomain::Testnet,
+            Pubkey::default(),
+            7,
+            &[Action::ModifyOrder(ModifyOrder {
+                order_id: solana_hash::Hash::default(),
+                symbol: "BTC".to_string(),
+                amount: 1.25,
+                meta: ActionMeta::default(),
+            })],
+        )
+        .expect("serialize modify");
+
+        assert_eq!(&signable[55..63], &125_000_000_u64.to_le_bytes());
+    }
 
     fn bytes_hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
