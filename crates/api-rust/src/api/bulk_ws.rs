@@ -980,7 +980,7 @@ struct Actor {
     tickers: HashMap<String, Ticker>,
     prices: HashMap<String, f64>,
     account_state: AccountState,
-    pending: HashMap<u64, oneshot::Sender<eyre::Result<Vec<Response>>>>,
+    pending: HashMap<u64, (String, oneshot::Sender<eyre::Result<Vec<Response>>>)>,
 
     // Subscription log (for reconnection replay)
     subscriptions: Vec<SubscriptionRequest>,
@@ -1047,11 +1047,13 @@ impl Actor {
                         }
 
                         Some(Command::Tx { request_id, json, respond }) => {
-                            self.pending.insert(request_id, respond);
+                            self.pending.insert(request_id, (json.clone(), respond));
                             if let Err(e) = self.ws_send_text(&json).await {
                                 error!("Order send error: {e}");
-                                if let Some(tx) = self.pending.remove(&request_id) {
-                                    let _ = tx.send(Err(e));
+                                if let Some((request, tx)) = self.pending.remove(&request_id) {
+                                    let _ = tx.send(Err(eyre::eyre!(
+                                        "request failed: {e}; request: {request}"
+                                    )));
                                 }
                             }
                         }
@@ -1107,8 +1109,8 @@ impl Actor {
 
         // 2. Fail every pending order response.
         let err_msg = format!("disconnected: {reason}");
-        for (_, tx) in self.pending.drain() {
-            let _ = tx.send(Err(eyre::eyre!("{}", err_msg)));
+        for (_, (request, tx)) in self.pending.drain() {
+            let _ = tx.send(Err(eyre::eyre!("{err_msg}; request: {request}")));
         }
 
         // 3. Emit the Disconnected event to registered handlers.
@@ -1365,7 +1367,7 @@ impl Actor {
         let request_id = data["id"].as_u64().unwrap_or(0);
         let inner = &data["data"];
         let rtype = inner["type"].as_str().unwrap_or("");
-        let sender = self.pending.remove(&request_id);
+        let pending = self.pending.remove(&request_id);
 
         match rtype {
             "action" => {
@@ -1373,14 +1375,18 @@ impl Actor {
                 let status = payload["status"].as_str().unwrap_or("");
 
                 if status != "ok" {
-                    error!("Order request {request_id} failed: {status}");
-                    if let Some(tx) = sender {
-                        let _ = tx.send(Err(eyre::eyre!("order request failed: {}", data)));
+                    error!("Request {request_id} failed: {status}");
+                    if let Some((request, tx)) = pending {
+                        let _ = tx.send(Err(eyre::eyre!(
+                            "request failed; request: {}; response: {}",
+                            request,
+                            data
+                        )));
                     }
                     self.emit(Topic::Error, &Event::Error(data.clone()));
                 } else {
                     let responses = Response::parse_responses(data);
-                    if let Some(tx) = sender {
+                    if let Some((_, tx)) = pending {
                         let _ = tx.send(Ok(responses));
                     }
                 }
@@ -1403,7 +1409,7 @@ impl Actor {
                         raw: inner.clone(),
                     }
                 };
-                if let Some(tx) = sender {
+                if let Some((_, tx)) = pending {
                     let _ = tx.send(Ok(vec![response]));
                 }
             }
