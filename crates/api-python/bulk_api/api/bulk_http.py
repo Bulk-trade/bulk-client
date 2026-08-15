@@ -524,7 +524,7 @@ class BulkHttpClient:
                     "m": leverage_settings
                 },
             }],
-            "nonce": f"{int(time.time_ns() / 100000)}",
+            "nonce": f"{time.time_ns()}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -576,7 +576,7 @@ class BulkHttpClient:
                     "d": delete
                 }
             }],
-            "nonce": f"{int(time.time_ns() / 1000000)}",
+            "nonce": f"{time.time_ns()}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -632,9 +632,9 @@ class BulkHttpClient:
         if not self.signer:
             raise ValueError("Private key required for admin operations")
 
-        # Use current time in milliseconds if nonce not provided
+        # Use current time in nanoseconds if nonce not provided
         if nonce is None:
-            nonce = int(time.time_ns() / 1000000)
+            nonce = time.time_ns()
 
         # Build transaction
         transaction = {
@@ -687,9 +687,9 @@ class BulkHttpClient:
 
         target_user = user or self.signer.public_key
 
-        # Use current time in milliseconds if nonce not provided
+        # Use current time in nanoseconds if nonce not provided
         if nonce is None:
-            nonce = int(time.time_ns() / 1000000)
+            nonce = time.time_ns()
 
         # Build transaction
         if amount is None:
