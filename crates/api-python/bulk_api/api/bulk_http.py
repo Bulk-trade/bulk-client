@@ -757,7 +757,7 @@ class BulkHttpClient:
         if not 200 <= response.status_code < 300:
             raise HistoryHttpError(
                 response.status_code,
-                _history_error_envelope(response.status_code, response.content),
+                self._history_error_envelope(response.status_code, response.content),
             )
         return HistoryPage.from_api(response.json(), row_type)
 
