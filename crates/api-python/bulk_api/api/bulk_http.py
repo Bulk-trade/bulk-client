@@ -524,7 +524,7 @@ class BulkHttpClient:
                     "m": leverage_settings
                 },
             }],
-            "nonce": f"{int(time.time_ns() / 100000)}",
+            "nonce": f"{int(time.time_ns())}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -576,7 +576,7 @@ class BulkHttpClient:
                     "d": delete
                 }
             }],
-            "nonce": f"{int(time.time_ns() / 1000000)}",
+            "nonce": f"{int(time.time_ns())}",
             "account": self.signer.public_key,
             "signer": self.signer.public_key
         }
@@ -634,7 +634,7 @@ class BulkHttpClient:
 
         # Use current time in milliseconds if nonce not provided
         if nonce is None:
-            nonce = int(time.time_ns() / 1000000)
+            nonce = int(time.time_ns())
 
         # Build transaction
         transaction = {
@@ -689,7 +689,7 @@ class BulkHttpClient:
 
         # Use current time in milliseconds if nonce not provided
         if nonce is None:
-            nonce = int(time.time_ns() / 1000000)
+            nonce = int(time.time_ns())
 
         # Build transaction
         if amount is None:
