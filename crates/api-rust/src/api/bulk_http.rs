@@ -374,39 +374,6 @@ impl BulkHttpClient {
         self.get_history_page(user, "riskHistory", query).await
     }
 
-    async fn get_history_page<T: DeserializeOwned>(
-        &self,
-        user: &str,
-        request_type: &'static str,
-        query: &HistoryQuery,
-    ) -> Result<HistoryPage<T>, HistoryHttpError> {
-        #[derive(serde::Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct AccountHistoryRequest<'a> {
-            #[serde(rename = "type")]
-            request_type: &'static str,
-            user: &'a str,
-            #[serde(flatten)]
-            query: &'a HistoryQuery,
-        }
-
-        let response = self
-            .client
-            .post(format!("{}/account", self.config.base_url))
-            .json(&AccountHistoryRequest {
-                request_type,
-                user,
-                query,
-            })
-            .send()
-            .await?;
-        if response.status().is_success() {
-            Ok(response.json().await?)
-        } else {
-            Err(history_api_error(response).await)
-        }
-    }
-
     // =====================================================================
     // Trading (SIGNED)
     // =====================================================================
@@ -886,9 +853,40 @@ impl BulkHttpClient {
         Ok(results[0].clone())
     }
 
-    // =====================================================================
-    // Internal helpers
-    // =====================================================================
+    // ───── Internal Request Helpers ─────────────────────────────────────────────────────────
+
+    async fn get_history_page<T: DeserializeOwned>(
+        &self,
+        user: &str,
+        request_type: &'static str,
+        query: &HistoryQuery,
+    ) -> Result<HistoryPage<T>, HistoryHttpError> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct AccountHistoryRequest<'a> {
+            #[serde(rename = "type")]
+            request_type: &'static str,
+            user: &'a str,
+            #[serde(flatten)]
+            query: &'a HistoryQuery,
+        }
+
+        let response = self
+            .client
+            .post(format!("{}/account", self.config.base_url))
+            .json(&AccountHistoryRequest {
+                request_type,
+                user,
+                query,
+            })
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(response.json().await?)
+        } else {
+            Err(history_api_error(response).await)
+        }
+    }
 
     /// determine if is localhost URL
     fn is_localhost(url_str: &str) -> bool {

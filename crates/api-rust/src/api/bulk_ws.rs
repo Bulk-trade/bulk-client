@@ -272,21 +272,6 @@ impl BulkWsClient {
         })
     }
 
-    /// Shut down the actor and close the WebSocket.
-    pub async fn shutdown(&self) {
-        let _ = self.cmd_tx.send(Command::Shutdown).await;
-        if let Some(h) = self.actor_handle.lock().await.take() {
-            let _ = h.await;
-        }
-    }
-
-    /// Wait for the actor to exit (e.g. on disconnect / error).
-    pub async fn closed(&self) {
-        if let Some(h) = self.actor_handle.lock().await.take() {
-            let _ = h.await;
-        }
-    }
-
     /// Returns `true` if the WebSocket actor is still running.
     ///
     /// This is a cheap, lock-free check — safe to call in hot loops.
@@ -364,6 +349,23 @@ impl BulkWsClient {
             .leverage_settings
             .get(symbol)
             .map(|l| l.leverage)
+    }
+
+    // ───── Connection Lifecycle ─────────────────────────────────────────────────────────────
+
+    /// Shut down the actor and close the WebSocket.
+    pub async fn shutdown(&self) {
+        let _ = self.cmd_tx.send(Command::Shutdown).await;
+        if let Some(h) = self.actor_handle.lock().await.take() {
+            let _ = h.await;
+        }
+    }
+
+    /// Wait for the actor to exit (e.g. on disconnect / error).
+    pub async fn closed(&self) {
+        if let Some(h) = self.actor_handle.lock().await.take() {
+            let _ = h.await;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -924,18 +926,6 @@ impl BulkWsClient {
         .await
     }
 
-    /// Subscribe list of subscription requests
-    ///
-    /// # Arguments
-    /// - `subs`: subscription list
-    async fn subscribe(&self, subs: Vec<SubscriptionRequest>) -> eyre::Result<()> {
-        self.cmd_tx
-            .send(Command::Subscribe(subs))
-            .await
-            .map_err(|_| eyre::eyre!("actor gone"))?;
-        Ok(())
-    }
-
     // ─────────────────────────────────────────────────────────────────────
     // Event handlers
     // ─────────────────────────────────────────────────────────────────────
@@ -953,6 +943,20 @@ impl BulkWsClient {
             .entry(topic)
             .or_default()
             .push(Box::new(handler));
+    }
+
+    // ───── Internal Subscription Helpers ────────────────────────────────────────────────────
+
+    /// Subscribe list of subscription requests
+    ///
+    /// # Arguments
+    /// - `subs`: subscription list
+    async fn subscribe(&self, subs: Vec<SubscriptionRequest>) -> eyre::Result<()> {
+        self.cmd_tx
+            .send(Command::Subscribe(subs))
+            .await
+            .map_err(|_| eyre::eyre!("actor gone"))?;
+        Ok(())
     }
 }
 
@@ -1123,17 +1127,6 @@ impl Actor {
         let _ = self.ws_write.close().await;
 
         info!("Actor stopped: {reason}");
-    }
-
-    /// WS send
-    async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
-        let len = text.len();
-        debug!("sending msg len: {}", len);
-        self.ws_write
-            .send(Message::Text(text.into()))
-            .await
-            .map_err(|e| eyre::eyre!("ws write: {e}"))?;
-        Ok(())
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1429,6 +1422,19 @@ impl Actor {
     /// Fire all handlers registered for `topic`.
     fn emit(&self, topic: Topic, data: &Event) {
         let _ = self.event_tx.try_send((topic, data.clone()));
+    }
+
+    // ───── WebSocket Transport ──────────────────────────────────────────────────────────────
+
+    /// WS send
+    async fn ws_send_text(&mut self, text: &str) -> eyre::Result<()> {
+        let len = text.len();
+        debug!("sending msg len: {}", len);
+        self.ws_write
+            .send(Message::Text(text.into()))
+            .await
+            .map_err(|e| eyre::eyre!("ws write: {e}"))?;
+        Ok(())
     }
 
     /// Send a JSON value over the WebSocket.

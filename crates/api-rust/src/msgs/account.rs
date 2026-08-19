@@ -4,8 +4,36 @@ use crate::common::side::Side;
 use crate::common::tif::TimeInForce;
 use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
+use solana_hash::Hash;
 use solana_pubkey::Pubkey;
 use std::collections::HashMap;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FROST Withdrawal Start
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Consensus-injected FROST session start after a committed withdrawal lock.
+///
+/// - Identifies the withdrawal and destination token accounts.
+/// - Carries the exact amount that validators must authorize.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FrostWithdrawStart {
+    #[serde(with = "crate::msgs::serde_hash", rename = "b")]
+    pub hash: Hash,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "r")]
+    pub recipient_token_account: Pubkey,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "v")]
+    pub vault: Pubkey,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "va")]
+    pub vault_token_account: Pubkey,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "m")]
+    pub mint: Pubkey,
+    #[serde(rename = "a")]
+    pub amount: u64,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Faucet Request

@@ -418,6 +418,12 @@ impl Serialize for RawSignableAction<'_> {
             Action::PricingAdmin(action) => {
                 serializer.serialize_newtype_variant("Action", 58, "PricingAdmin", action)
             }
+            Action::FrostWithdrawStart(action) => {
+                serializer.serialize_newtype_variant("Action", 59, "FrostWithdrawStart", action)
+            }
+            Action::AdminOp(action) => {
+                serializer.serialize_newtype_variant("Action", 60, "AdminOp", action)
+            }
         }
     }
 }
