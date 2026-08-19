@@ -53,17 +53,10 @@ pub async fn submit_actions(
 
 /// Wraps protected CLI actions in administrative multisig operations.
 ///
-/// - Batches an all-admin submission into one atomic proposal.
-/// - Wraps protected actions individually when mixed with ordinary actions.
+/// - Wraps every protected action in its own single-action proposal.
+/// - Preserves the original ordering of administrative and ordinary actions.
 /// - Leaves existing `AdminOp` and non-admin actions unchanged.
 fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
-    if !actions.is_empty() && actions.iter().all(Action::is_admin_multisig_action) {
-        return vec![Action::AdminOp(AdminOp {
-            actions,
-            meta: ActionMeta::default(),
-        })];
-    }
-
     actions
         .into_iter()
         .map(|action| {
@@ -85,20 +78,31 @@ mod tests {
     use bulk_client::msgs::{AddMarket, CancelAll};
 
     #[test]
-    fn wraps_admin_batches_once() {
-        let wrapped = wrap_admin_actions(vec![Action::AddMarket(AddMarket {
-            symbol: "BTC-USD".into(),
-            meta: ActionMeta::default(),
-        })]);
+    fn wraps_each_admin_action_once() {
+        let wrapped = wrap_admin_actions(vec![
+            Action::AddMarket(AddMarket {
+                symbol: "BTC-USD".into(),
+                meta: ActionMeta::default(),
+            }),
+            Action::AddMarket(AddMarket {
+                symbol: "ETH-USD".into(),
+                meta: ActionMeta::default(),
+            }),
+        ]);
 
-        let [Action::AdminOp(admin)] = wrapped.as_slice() else {
-            panic!("admin action must be wrapped");
+        let [Action::AdminOp(first), Action::AdminOp(second)] = wrapped.as_slice() else {
+            panic!("each admin action must be wrapped separately");
         };
-        assert_eq!(admin.actions.len(), 1);
-        assert!(matches!(admin.actions[0], Action::AddMarket(_)));
+        assert_eq!(first.actions.len(), 1);
+        assert_eq!(second.actions.len(), 1);
+        assert!(matches!(first.actions[0], Action::AddMarket(_)));
+        assert!(matches!(second.actions[0], Action::AddMarket(_)));
 
         let wrapped_again = wrap_admin_actions(wrapped);
-        assert!(matches!(wrapped_again.as_slice(), [Action::AdminOp(_)]));
+        assert!(matches!(
+            wrapped_again.as_slice(),
+            [Action::AdminOp(_), Action::AdminOp(_)]
+        ));
     }
 
     #[test]
