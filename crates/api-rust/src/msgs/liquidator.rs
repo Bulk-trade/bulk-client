@@ -1,17 +1,17 @@
-use std::collections::HashMap;
+use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
-use crate::transaction::ActionMeta;
+use std::collections::HashMap;
 
 /// Per instrument liquidation strategy config
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LiqConfigByInstrument {
     /// maximum notional exposure we are willing to take on
     pub max_exposure: f64,
-    /// minimum premium above mid
-    pub premium_min: f64,
-    /// fee (bps) applied to computed liquidation price
-    pub fee: f64,
+    /// Minimum liquidation reserve above mid, in basis points
+    pub reserve: f64,
+    /// Additional execution-impact reserve factor
+    pub rfactor: f64,
 
     /// maximum ADL absorption
     pub max_adl_notional: f64,

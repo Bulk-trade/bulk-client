@@ -1,7 +1,6 @@
 use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
 
-
 /// Risk configuration
 /// - target maximum dollar loss
 /// - minimum eloss bps
@@ -9,9 +8,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// We determine the E[loss] threshold as:
 /// ```
-///    let eloss_notional = max_loss / notional * 1e4;
-///    let eloss_max = (4.0 * max_loss) / notional * 1e4;
-///    let eloss_target = f64::max(eloss_notional, eloss_floor).min(eloss_max)
+/// let max_loss = 15_000.0;
+/// let notional = 1_000_000.0;
+/// let eloss_floor = 500.0;
+/// let eloss_notional = max_loss / notional * 1e4;
+/// let eloss_max = (4.0 * max_loss) / notional * 1e4;
+/// let eloss_target = f64::max(eloss_notional, eloss_floor).min(eloss_max);
+/// assert_eq!(eloss_target, 500.0);
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RiskConfigChange {
