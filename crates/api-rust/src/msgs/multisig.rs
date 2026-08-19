@@ -2,9 +2,9 @@ use crate::transaction::{Action, ActionMeta};
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 
-/// Administrative action batch submitted to the configured protocol multisig.
+/// Single administrative action submitted to the configured protocol multisig.
 ///
-/// - Contains one or more protected administrative actions.
+/// - Uses a vector on the wire for compatibility, but must contain exactly one protected action.
 /// - Uses the outer transaction signer as the proposal's initial approver.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
