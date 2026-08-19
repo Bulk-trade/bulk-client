@@ -17,6 +17,7 @@ pub use account::*;
 pub use history::*;
 pub use md::*;
 pub use meta::*;
+pub use multisig::*;
 pub use oracle::*;
 pub use order::*;
 pub use responses::*;

@@ -192,6 +192,16 @@ fn action_line(action: &Action) -> String {
             )
         }
         Action::UpdateMultisigPolicy(action) => update_multisig(action),
+        Action::AdminOp(action) => format!(
+            "AdminOp actions={} [{}]",
+            action.actions.len(),
+            action
+                .actions
+                .iter()
+                .map(action_line)
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ),
         Action::WhitelistFaucet(action) => {
             format!(
                 "WhitelistFaucet target={} whitelist={}",
@@ -208,6 +218,10 @@ fn action_line(action: &Action) -> String {
         Action::PricingAdmin(action) => {
             format!("PricingAdmin {} {:?}", action.instrument, action.source)
         }
+        Action::FrostWithdrawStart(action) => format!(
+            "FrostWithdrawStart hash={} recipient={} vault={} amount={}",
+            action.hash, action.recipient_token_account, action.vault, action.amount
+        ),
         Action::RewardSettlement(action) => format!(
             "RewardSettlement epoch={} validators={}",
             action.epoch,
