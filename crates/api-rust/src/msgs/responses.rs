@@ -26,6 +26,9 @@ impl Response {
                 | "rejectedInvalid"
                 | "rejectedDuplicate"
                 | "rejectedCrossing"
+                | "multisigCreatedFailed"
+                | "proposalFailed"
+                | "proposalRejected"
         )
     }
 
@@ -48,38 +51,72 @@ impl Response {
 
         arr.iter()
             .map(|entry| {
-                if let Some(body) = entry.get("error") {
-                    Response {
-                        order_id: None,
-                        status: "error".into(),
-                        message: body["message"].as_str().map(Into::into),
-                        raw: body.clone(),
-                    }
-                } else {
-                    // First key is the status string
-                    let status_key = entry
-                        .as_object()
-                        .and_then(|m| m.keys().next())
-                        .unwrap_or(&String::new())
-                        .clone();
-                    let body = &entry[&status_key];
-                    if let Some(oid) = body.get("oid") {
-                        Response {
-                            order_id: body["oid"].as_str().map(Into::into),
-                            status: status_key,
-                            message: None,
-                            raw: body.clone(),
-                        }
-                    } else {
-                        Response {
-                            order_id: None,
-                            status: status_key,
-                            message: None,
-                            raw: body.clone(),
-                        }
-                    }
+                // Each entry is an externally tagged status such as
+                // {"resting": {...}} or {"proposalFailed": {...}}.
+                let status_key = entry
+                    .as_object()
+                    .and_then(|map| map.keys().next())
+                    .cloned()
+                    .unwrap_or_default();
+                let body = &entry[&status_key];
+                Response {
+                    order_id: body["oid"].as_str().map(Into::into),
+                    status: status_key,
+                    message: body["message"].as_str().map(Into::into),
+                    raw: body.clone(),
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parses_proposal_failure_message_as_error() {
+        let data = json!({
+            "response": {
+                "data": {
+                    "statuses": [{
+                        "proposalFailed": {
+                            "proposalId": 7,
+                            "status": "failed",
+                            "message": "embedded action failed"
+                        }
+                    }]
+                }
+            }
+        });
+
+        let responses = Response::parse_responses(&data);
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].status, "proposalFailed");
+        assert_eq!(
+            responses[0].message.as_deref(),
+            Some("embedded action failed")
+        );
+        assert!(responses[0].is_error());
+    }
+
+    #[test]
+    fn preserves_placement_parsing_without_message() {
+        let data = json!({
+            "response": {
+                "data": {
+                    "statuses": [{"resting": {"oid": "order-id"}}]
+                }
+            }
+        });
+
+        let responses = Response::parse_responses(&data);
+
+        assert_eq!(responses[0].status, "resting");
+        assert_eq!(responses[0].order_id.as_deref(), Some("order-id"));
+        assert_eq!(responses[0].message, None);
+        assert!(responses[0].is_placement());
     }
 }
