@@ -21,7 +21,7 @@ bulk_admin_parse_common_args "$@"
 set -- ${BULK_ADMIN_ARGS[@]+"${BULK_ADMIN_ARGS[@]}"}
 
 if (( $# != 1 )); then
-  echo "error: admin-approve requires exactly one proposal ID" >&2
+  echo "error: multisig-approve requires exactly one proposal ID" >&2
   usage
   exit 2
 fi

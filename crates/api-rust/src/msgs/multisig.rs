@@ -26,6 +26,9 @@ pub struct MultisigPropose {
     pub multisig: Pubkey,
     #[serde(rename = "a", default)]
     pub actions: Vec<Action>,
+    /// Optional proposal lifetime in seconds, bounded by the multisig policy maximum.
+    #[serde(default, rename = "l")]
+    pub proposal_lifetime_secs: Option<u32>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -108,4 +111,30 @@ fn default_signers() -> Vec<Pubkey> {
 }
 fn default_proposal_lifetime_secs() -> u32 {
     7 * 24 * 3600
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multisig_proposal_lifetime_uses_sdk_wire_field() {
+        let proposal = MultisigPropose {
+            multisig: Pubkey::default(),
+            actions: Vec::new(),
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        };
+
+        let value = serde_json::to_value(&proposal).expect("serialize proposal");
+        assert_eq!(value.get("l"), Some(&serde_json::Value::Null));
+
+        let without_lifetime = serde_json::json!({
+            "m": Pubkey::default().to_string(),
+            "a": []
+        });
+        let decoded: MultisigPropose =
+            serde_json::from_value(without_lifetime).expect("deserialize proposal");
+        assert_eq!(decoded.proposal_lifetime_secs, None);
+    }
 }
