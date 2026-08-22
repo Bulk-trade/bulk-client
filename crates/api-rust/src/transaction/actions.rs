@@ -1,7 +1,7 @@
 use crate::msgs::conditional::{OnFill, Range, StopOrTP, Trailing, Trigger};
 use crate::msgs::liquidator::LiqConfig;
 use crate::msgs::multisig::{
-    AdminOp, CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose,
+    CreateMultisig, MultisigApprove, MultisigCancel, MultisigExecute, MultisigPropose,
     MultisigReject, UpdateMultisigPolicy,
 };
 use crate::msgs::risk::RiskConfigChange;
@@ -10,10 +10,10 @@ use crate::msgs::{
     AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon, CancelAll, CancelOrder,
     ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1, Faucet, FrostWithdrawStart,
     InitializeVault, Join, LimitOrder, MarketAdmin, MarketOrder, Matrix, ModifyOrder,
-    NonceCommitment, OpaqueAction, PartialSignature, Price, PricingAdmin, PythOracle,
-    RevokeCommissionFee, RewardSettlement, SolanaBlockAnchor, UpdateFrostGroup, UpdateUserSettings,
-    UpdateValidatorSet, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
-    WithdrawSubmitted,
+    NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price, PricingAdmin,
+    PythOracle, RevokeCommissionFee, RewardSettlement, SolanaBlockAnchor, UpdateAccountPolicy,
+    UpdateFrostGroup, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet, Withdraw,
+    WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -212,9 +212,12 @@ pub enum Action {
     // FrostWithdrawStart = ordinal(59)
     #[serde(rename = "frostWithdrawStart")]
     FrostWithdrawStart(FrostWithdrawStart),
-    // AdminOp = ordinal(60)
-    #[serde(rename = "adminOp")]
-    AdminOp(AdminOp),
+    // PreDepositCredit = ordinal(60)
+    #[serde(rename = "preDepositCredit")]
+    PreDepositCredit(PreDepositCredit),
+    // UpdateAccountPolicy = ordinal(61)
+    #[serde(rename = "accountPolicy", alias = "updateAccountPolicy")]
+    UpdateAccountPolicy(UpdateAccountPolicy),
 }
 
 macro_rules! dispatch {
@@ -286,7 +289,8 @@ macro_rules! dispatch {
             Action::MarketAdmin($x) => $body,
             Action::PricingAdmin($x) => $body,
             Action::FrostWithdrawStart($x) => $body,
-            Action::AdminOp($x) => $body,
+            Action::PreDepositCredit($x) => $body,
+            Action::UpdateAccountPolicy($x) => $body,
         }
     };
 }
@@ -295,7 +299,6 @@ impl Action {
     /// Returns whether this action requires the configured administrative multisig.
     ///
     /// - Matches market, pricing, risk-model, security, and fee administration.
-    /// - Excludes an existing [`AdminOp`] so automatic wrapping is idempotent.
     pub fn is_admin_multisig_action(&self) -> bool {
         matches!(
             self,
@@ -310,6 +313,8 @@ impl Action {
                 | Action::ConfigRisk(_)
                 | Action::ConfigFeePolicy(_)
                 | Action::ConfigMakerRebateTier(_)
+                | Action::UpdateRiskConfig(_)
+                | Action::UpdateAccountPolicy(_)
         )
     }
 
@@ -541,7 +546,8 @@ impl_action_from!(SolanaBlockAnchor, SolanaBlockAnchor);
 impl_action_from!(ConfigMakerRebateTier, ConfigMakerRebateTier);
 impl_action_from!(PricingAdmin, PricingAdmin);
 impl_action_from!(FrostWithdrawStart, FrostWithdrawStart);
-impl_action_from!(AdminOp, AdminOp);
+impl_action_from!(PreDepositCredit, PreDepositCredit);
+impl_action_from!(UpdateAccountPolicy, UpdateAccountPolicy);
 
 #[cfg(test)]
 mod tests {
@@ -594,34 +600,6 @@ mod tests {
                 "pricingAdmin": {
                     "instrument": "BTC",
                     "source": "bulk"
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn admin_op_uses_wire_ordinal_60_and_compact_action_field() {
-        let action = Action::AdminOp(AdminOp {
-            actions: vec![Action::PricingAdmin(PricingAdmin {
-                instrument: Arc::from("BTC"),
-                source: OracleSource::Bulk,
-                meta: ActionMeta::default(),
-            })],
-            meta: ActionMeta::default(),
-        });
-
-        let encoded = bincode::serialize(&action).expect("serialize admin operation");
-        assert_eq!(&encoded[..4], &60_u32.to_le_bytes());
-        assert_eq!(
-            serde_json::to_value(action).expect("serialize admin operation JSON"),
-            serde_json::json!({
-                "adminOp": {
-                    "a": [{
-                        "pricingAdmin": {
-                            "instrument": "BTC",
-                            "source": "bulk"
-                        }
-                    }]
                 }
             })
         );

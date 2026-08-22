@@ -3,8 +3,8 @@ pub mod common;
 pub mod handlers;
 
 use crate::commands::{
-    AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs, ConfigCommand,
-    CorrsArgs, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs,
+    AccountPolicyArgs, AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs,
+    ConfigCommand, CorrsArgs, CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs,
     LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
     PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
     TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
@@ -27,7 +27,7 @@ use crate::handlers::multisig::{
     handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy,
 };
 use crate::handlers::orders::{handle_modify, handle_place};
-use crate::handlers::risk::{handle_liquidator_config, handle_risk_config};
+use crate::handlers::risk::{handle_account_policy, handle_liquidator_config, handle_risk_config};
 use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::{SignatureDomain, TransactionSigner};
 use bulk_client::BulkHttpClient;
@@ -231,6 +231,13 @@ enum Command {
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
 
+    /// Update account funding policy (JSON or file path).
+    ///
+    /// Example: bulk account-policy '{withdrawFeeUsd:2,minWithdrawUsd:7}'
+    /// Example: bulk account-policy account-policy.json5
+    #[command(name = "account-policy")]
+    AccountPolicy(AccountPolicyArgs),
+
     /// Update liquidator configuration (JSON or file path).
     ///
     /// Example: bulk liq-config '{"max_loss":15000,...}'
@@ -417,6 +424,7 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigCancel(args) => handle_multisig_cancel(&mut api, args, &submit).await,
         Command::MultisigExecute(args) => handle_multisig_execute(&mut api, args, &submit).await,
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
+        Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
         Command::LiqConfig(args) => handle_liquidator_config(&mut api, args, &submit).await,
         Command::Corrs(args) => handle_corrs(&mut api, args, &submit).await,
         Command::AddMarket(args) => handle_add_market(&mut api, args, &submit).await,
@@ -492,10 +500,30 @@ mod tests {
         match cli.command {
             Command::MarketAdmin(args) => {
                 assert_eq!(args.symbol, "BTC-USD");
-                assert!(matches!(args.action, crate::commands::MarketActionArg::Close));
+                assert!(matches!(
+                    args.action,
+                    crate::commands::MarketActionArg::Close
+                ));
                 assert_eq!(args.price, Some(100_000.0));
             }
             _ => panic!("expected market-admin"),
+        }
+    }
+
+    #[test]
+    fn parse_account_policy_json() {
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "account-policy",
+            "{withdrawFeeUsd:2,minWithdrawUsd:7}",
+        ])
+        .expect("should parse account-policy");
+
+        match cli.command {
+            Command::AccountPolicy(args) => {
+                assert_eq!(args.json, "{withdrawFeeUsd:2,minWithdrawUsd:7}");
+            }
+            _ => panic!("expected account-policy"),
         }
     }
 

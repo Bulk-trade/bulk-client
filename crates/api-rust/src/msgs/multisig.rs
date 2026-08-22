@@ -2,20 +2,6 @@ use crate::transaction::{Action, ActionMeta};
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 
-/// Single administrative action submitted to the configured protocol multisig.
-///
-/// - Uses a vector on the wire for compatibility, but must contain exactly one protected action.
-/// - Uses the outer transaction signer as the proposal's initial approver.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AdminOp {
-    #[serde(rename = "a", default)]
-    pub actions: Vec<Action>,
-
-    #[serde(skip)]
-    pub meta: ActionMeta,
-}
-
 /// Create multi-sig account
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

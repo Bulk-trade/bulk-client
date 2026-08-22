@@ -1,7 +1,8 @@
-use crate::commands::risk::{LiquidatorConfigArgs, RiskConfigArgs};
+use crate::commands::risk::{AccountPolicyArgs, LiquidatorConfigArgs, RiskConfigArgs};
 use crate::common::submit::{submit_actions, SubmitOptions};
 use bulk_client::msgs::liquidator::LiqConfig;
 use bulk_client::msgs::risk::RiskConfigChange;
+use bulk_client::msgs::UpdateAccountPolicy;
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
 use std::path::Path;
@@ -26,6 +27,34 @@ pub async fn handle_risk_config(
     submit_actions(api, submit, vec![action]).await
 }
 
+/// Submits an account funding policy update through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - HTTP client used to submit the proposal transaction.
+/// * `args` - JSON text or a path containing the optional policy fields.
+/// * `submit` - Preview and confirmation behavior for the submission.
+///
+/// # Returns
+/// An error when the input cannot be read, parsed, or submitted.
+pub async fn handle_account_policy(
+    api: &mut BulkHttpClient,
+    args: AccountPolicyArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let raw = if Path::new(&args.json).exists() {
+        std::fs::read_to_string(&args.json)
+            .map_err(|e| eyre::eyre!("failed to read '{}': {e}", args.json))?
+    } else {
+        args.json.clone()
+    };
+
+    let policy: UpdateAccountPolicy =
+        json5::from_str(&raw).map_err(|e| eyre::eyre!("invalid account policy: {e}"))?;
+
+    eprintln!("Placing account policy update");
+    submit_actions(api, submit, vec![Action::UpdateAccountPolicy(policy)]).await
+}
+
 pub async fn handle_liquidator_config(
     api: &mut BulkHttpClient,
     args: LiquidatorConfigArgs,
@@ -38,8 +67,8 @@ pub async fn handle_liquidator_config(
         args.json.clone()
     };
 
-    let config: LiqConfig = json5::from_str(&raw)
-        .map_err(|e| eyre::eyre!("invalid liquidator config: {e}"))?;
+    let config: LiqConfig =
+        json5::from_str(&raw).map_err(|e| eyre::eyre!("invalid liquidator config: {e}"))?;
 
     eprintln!("Placing liquidator config update");
     let action = Action::UpdateLiquidatorConfig(config);

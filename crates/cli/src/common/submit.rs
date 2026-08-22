@@ -1,8 +1,12 @@
-use bulk_client::msgs::AdminOp;
+use bulk_client::msgs::MultisigPropose;
 use bulk_client::parts::make_nonce;
 use bulk_client::transaction::canonical_message;
 use bulk_client::transaction::{Action, ActionMeta};
 use bulk_client::BulkHttpClient;
+use solana_pubkey::Pubkey;
+use std::str::FromStr;
+
+const ADMIN_MULTISIG: &str = "ADM1N11111111111111111111111111111111111113D";
 
 #[derive(Clone, Debug)]
 pub struct SubmitOptions {
@@ -51,17 +55,19 @@ pub async fn submit_actions(
     Ok(())
 }
 
-/// Wraps protected CLI actions in administrative multisig operations.
+/// Wraps protected CLI actions in proposals to the protocol administrative multisig.
 ///
 /// - Wraps every protected action in its own single-action proposal.
 /// - Preserves the original ordering of administrative and ordinary actions.
-/// - Leaves existing `AdminOp` and non-admin actions unchanged.
+/// - Leaves existing multisig proposals and non-admin actions unchanged.
 fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
+    let admin_multisig = Pubkey::from_str(ADMIN_MULTISIG).expect("valid admin multisig pubkey");
     actions
         .into_iter()
         .map(|action| {
             if action.is_admin_multisig_action() {
-                Action::AdminOp(AdminOp {
+                Action::MultisigPropose(MultisigPropose {
+                    multisig: admin_multisig,
                     actions: vec![action],
                     meta: ActionMeta::default(),
                 })
@@ -90,9 +96,13 @@ mod tests {
             }),
         ]);
 
-        let [Action::AdminOp(first), Action::AdminOp(second)] = wrapped.as_slice() else {
+        let [Action::MultisigPropose(first), Action::MultisigPropose(second)] = wrapped.as_slice()
+        else {
             panic!("each admin action must be wrapped separately");
         };
+        let expected_multisig = Pubkey::from_str(ADMIN_MULTISIG).unwrap();
+        assert_eq!(first.multisig, expected_multisig);
+        assert_eq!(second.multisig, expected_multisig);
         assert_eq!(first.actions.len(), 1);
         assert_eq!(second.actions.len(), 1);
         assert!(matches!(first.actions[0], Action::AddMarket(_)));
@@ -101,7 +111,7 @@ mod tests {
         let wrapped_again = wrap_admin_actions(wrapped);
         assert!(matches!(
             wrapped_again.as_slice(),
-            [Action::AdminOp(_), Action::AdminOp(_)]
+            [Action::MultisigPropose(_), Action::MultisigPropose(_)]
         ));
     }
 
