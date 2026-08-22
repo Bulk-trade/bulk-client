@@ -1,8 +1,15 @@
-use bulk_client::msgs::{AddMarket, MarketAction, MarketAdmin, Matrix, PricingAdmin};
+use bulk_client::msgs::{
+    AddMarket, ConfigMakerRebateTier, MarketAction, MarketAdmin, Matrix, OpaqueAction, PricingAdmin,
+};
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
+use bulk_sdk_core::securities::Security;
+use std::path::Path;
 
-use crate::commands::{AddMarketArgs, CorrsArgs, MarketAdminArgs, PricingAdminArgs};
+use crate::commands::{
+    AddMarketArgs, ConfigFeesArgs, ConfigMakerArgs, ConfigSecurityArgs, CorrsArgs, FeePolicyUpdate,
+    MarketAdminArgs, PricingAdminArgs,
+};
 use crate::common::submit::{submit_actions, SubmitOptions};
 
 fn read_json5<T: serde::de::DeserializeOwned>(path: &str, label: &str) -> eyre::Result<T> {
@@ -11,6 +18,19 @@ fn read_json5<T: serde::de::DeserializeOwned>(path: &str, label: &str) -> eyre::
             .map_err(|error| eyre::eyre!("failed to read '{path}': {error}"))?,
     )
     .map_err(|error| eyre::eyre!("invalid {label} '{path}': {error}"))
+}
+
+fn read_json5_or_inline<T: serde::de::DeserializeOwned>(
+    json_or_path: &str,
+    label: &str,
+) -> eyre::Result<T> {
+    let raw = if Path::new(json_or_path).exists() {
+        std::fs::read_to_string(json_or_path)
+            .map_err(|error| eyre::eyre!("failed to read '{json_or_path}': {error}"))?
+    } else {
+        json_or_path.to_owned()
+    };
+    json5::from_str(&raw).map_err(|error| eyre::eyre!("invalid {label}: {error}"))
 }
 
 pub async fn handle_corrs(
@@ -44,6 +64,105 @@ pub async fn handle_add_market(
         })],
     )
     .await
+}
+
+/// Submits a complete security definition through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - Authenticated Bulk HTTP client.
+/// * `args` - Inline JSON/JSON5 or a path containing one security definition.
+/// * `submit` - Transaction preview and confirmation options.
+///
+/// # Returns
+/// An error when the definition cannot be read, parsed, serialized, or submitted.
+pub async fn handle_config_security(
+    api: &mut BulkHttpClient,
+    args: ConfigSecurityArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let raw = if Path::new(&args.json).exists() {
+        std::fs::read_to_string(&args.json)
+            .map_err(|error| eyre::eyre!("failed to read '{}': {error}", args.json))?
+    } else {
+        args.json
+    };
+    let security: Security =
+        json5::from_str(&raw).map_err(|error| eyre::eyre!("invalid security config: {error}"))?;
+    let payload = bincode::serialize(&security)
+        .map_err(|error| eyre::eyre!("failed to serialize security config: {error}"))?;
+
+    eprintln!("Placing security configuration update");
+    submit_actions(
+        api,
+        submit,
+        vec![Action::ConfigSecurity(OpaqueAction {
+            payload,
+            meta: Default::default(),
+        })],
+    )
+    .await
+}
+
+/// Submits a fee-policy update through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - Authenticated Bulk HTTP client.
+/// * `args` - Inline JSON/JSON5 or a path containing a fee-policy update.
+/// * `submit` - Transaction preview and confirmation options.
+///
+/// # Returns
+/// An error when the update cannot be parsed, encoded, or submitted.
+pub async fn handle_config_fees(
+    api: &mut BulkHttpClient,
+    args: ConfigFeesArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    const FEE_POLICY_PAYLOAD_MAGIC: &[u8; 4] = b"FEE2";
+    const FEE_POLICY_PAYLOAD_VERSION: u8 = 1;
+
+    let update: FeePolicyUpdate = read_json5_or_inline(&args.json, "fee policy update")?;
+    let encoded = bincode::serialize(&update)
+        .map_err(|error| eyre::eyre!("failed to encode fee policy update: {error}"))?;
+    let mut payload = Vec::with_capacity(FEE_POLICY_PAYLOAD_MAGIC.len() + 1 + encoded.len());
+    payload.extend_from_slice(FEE_POLICY_PAYLOAD_MAGIC);
+    payload.push(FEE_POLICY_PAYLOAD_VERSION);
+    payload.extend_from_slice(&encoded);
+
+    eprintln!("Placing fee policy configuration update");
+    submit_actions(
+        api,
+        submit,
+        vec![Action::ConfigFeePolicy(OpaqueAction {
+            payload,
+            meta: Default::default(),
+        })],
+    )
+    .await
+}
+
+/// Submits a maker rebate tier override through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - Authenticated Bulk HTTP client.
+/// * `args` - Inline JSON/JSON5 or a path containing the maker override.
+/// * `submit` - Transaction preview and confirmation options.
+///
+/// # Returns
+/// An error when the override cannot be parsed or submitted.
+pub async fn handle_config_maker(
+    api: &mut BulkHttpClient,
+    args: ConfigMakerArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let mut config: ConfigMakerRebateTier =
+        read_json5_or_inline(&args.json, "maker rebate tier override")?;
+    config.meta = Default::default();
+
+    eprintln!(
+        "Configuring maker rebate tier for {} on {}",
+        config.maker, config.instrument
+    );
+    submit_actions(api, submit, vec![Action::ConfigMakerRebateTier(config)]).await
 }
 
 /// Applies an administrative market-state transition.
@@ -114,4 +233,63 @@ pub async fn handle_pricing_admin(
         })],
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn security_payload_roundtrips_through_executor_decoder() {
+        let security: Security = json5::from_str(
+            r#"{
+                type: "Currency",
+                name: "BTC",
+                dollarQuoted: true,
+                dollarEquivalent: false,
+                sid: 100,
+                pyth: 1,
+                aliases: ["WBTC"],
+                decimals: 8,
+                address: {
+                    Solana: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
+                }
+            }"#,
+        )
+        .expect("parse BTC security");
+
+        let payload = bincode::serialize(&security).expect("serialize security payload");
+        let decoded: Security =
+            bincode::deserialize(&payload).expect("executor-compatible security payload");
+
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            serde_json::to_value(security).unwrap()
+        );
+    }
+
+    #[test]
+    fn fee_policy_payload_uses_versioned_executor_envelope() {
+        let update: FeePolicyUpdate = json5::from_str(
+            r#"{
+                effectiveSlot: null,
+                clearScheduled: false,
+                disable: false,
+                policy: {
+                    windowDays: 14,
+                    tiers: [{ thresholdVolume: 0, makerBps: 2, takerBps: 5 }]
+                }
+            }"#,
+        )
+        .expect("parse fee policy update");
+        let encoded = bincode::serialize(&update).expect("encode fee policy update");
+
+        let mut payload = b"FEE2\x01".to_vec();
+        payload.extend_from_slice(&encoded);
+
+        assert_eq!(&payload[..5], b"FEE2\x01");
+        let decoded: FeePolicyUpdate =
+            bincode::deserialize(&payload[5..]).expect("decode fee policy update");
+        assert_eq!(decoded.policy.unwrap().tiers.len(), 1);
+    }
 }

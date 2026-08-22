@@ -69,6 +69,7 @@ fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
                 Action::MultisigPropose(MultisigPropose {
                     multisig: admin_multisig,
                     actions: vec![action],
+                    proposal_lifetime_secs: None,
                     meta: ActionMeta::default(),
                 })
             } else {
@@ -105,6 +106,8 @@ mod tests {
         assert_eq!(second.multisig, expected_multisig);
         assert_eq!(first.actions.len(), 1);
         assert_eq!(second.actions.len(), 1);
+        assert_eq!(first.proposal_lifetime_secs, None);
+        assert_eq!(second.proposal_lifetime_secs, None);
         assert!(matches!(first.actions[0], Action::AddMarket(_)));
         assert!(matches!(second.actions[0], Action::AddMarket(_)));
 

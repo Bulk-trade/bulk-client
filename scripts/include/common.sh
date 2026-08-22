@@ -5,8 +5,10 @@
 
 bulk_admin_parse_common_args() {
   BULK_ADMIN_API_URL="${BULK_API_URL:-}"
-  BULK_ADMIN_NETWORK="${BULK_SIGNATURE_DOMAIN:-testnet}"
+  BULK_ADMIN_NETWORK="${BULK_SIGNATURE_DOMAIN:-devnet}"
   BULK_ADMIN_ARGS=()
+  local network_was_set=false
+  local url_was_set=false
 
   while (( $# > 0 )); do
     case "$1" in
@@ -16,6 +18,7 @@ bulk_admin_parse_common_args() {
           return 2
         fi
         BULK_ADMIN_API_URL="$2"
+        url_was_set=true
         shift 2
         ;;
       -net)
@@ -24,6 +27,7 @@ bulk_admin_parse_common_args() {
           return 2
         fi
         BULK_ADMIN_NETWORK="$2"
+        network_was_set=true
         shift 2
         ;;
       -h|--help)
@@ -45,13 +49,18 @@ bulk_admin_parse_common_args() {
       ;;
   esac
 
+  # An explicit network selects its canonical URL unless -url was also supplied.
+  if [[ "${network_was_set}" == true && "${url_was_set}" == false ]]; then
+    BULK_ADMIN_API_URL=""
+  fi
+
   if [[ -z "${BULK_ADMIN_API_URL}" ]]; then
     case "${BULK_ADMIN_NETWORK}" in
       testnet)
         BULK_ADMIN_API_URL="https://exchange-api.bulk.trade/api/v1"
         ;;
       devnet)
-        BULK_ADMIN_API_URL="http://localhost:12000"
+        BULK_ADMIN_API_URL="http://localhost:12000/api/v1"
         ;;
       mainnet)
         echo "error: mainnet requires -url or BULK_API_URL" >&2

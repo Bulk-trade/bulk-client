@@ -21,7 +21,7 @@ bulk_admin_parse_common_args "$@"
 set -- ${BULK_ADMIN_ARGS[@]+"${BULK_ADMIN_ARGS[@]}"}
 
 if (( $# != 1 )); then
-  echo "error: admin-deny requires exactly one proposal ID" >&2
+  echo "error: multisig-deny requires exactly one proposal ID" >&2
   usage
   exit 2
 fi

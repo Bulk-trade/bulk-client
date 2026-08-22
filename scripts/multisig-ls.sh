@@ -18,6 +18,7 @@ The multisig address defaults to:
 
 Examples:
   $0
+  $0 -net testnet
   $0 23
   $0 -msig <multisig-address>
   $0 23 -msig <multisig-address>
