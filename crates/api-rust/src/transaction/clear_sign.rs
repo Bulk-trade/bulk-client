@@ -192,16 +192,6 @@ fn action_line(action: &Action) -> String {
             )
         }
         Action::UpdateMultisigPolicy(action) => update_multisig(action),
-        Action::AdminOp(action) => format!(
-            "AdminOp actions={} [{}]",
-            action.actions.len(),
-            action
-                .actions
-                .iter()
-                .map(action_line)
-                .collect::<Vec<_>>()
-                .join(" | ")
-        ),
         Action::WhitelistFaucet(action) => {
             format!(
                 "WhitelistFaucet target={} whitelist={}",
@@ -221,6 +211,14 @@ fn action_line(action: &Action) -> String {
         Action::FrostWithdrawStart(action) => format!(
             "FrostWithdrawStart hash={} recipient={} vault={} amount={}",
             action.hash, action.recipient_token_account, action.vault, action.amount
+        ),
+        Action::PreDepositCredit(action) => format!(
+            "PreDepositCredit user={} vault={} amount={} migration_slot={} entry_index={}",
+            action.user,
+            action.vault,
+            action.amount,
+            action.migration_slot,
+            action.entry_index
         ),
         Action::RewardSettlement(action) => format!(
             "RewardSettlement epoch={} validators={}",
@@ -311,6 +309,12 @@ fn action_line(action: &Action) -> String {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!("UpdateRiskConfig {:?}", action),
+        Action::UpdateAccountPolicy(action) => format!(
+            "UpdateAccountPolicy withdraw_fee_usd={:?} min_withdraw_usd={:?} min_external_transfer_usd={:?}",
+            action.withdraw_fee_usd,
+            action.min_withdraw_usd,
+            action.min_external_transfer_usd
+        ),
         Action::ApproveCommissionFee(action) => {
             format!(
                 "ApproveBuilderCode to={} fee={}bps",

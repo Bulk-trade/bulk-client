@@ -185,6 +185,25 @@ pub struct SolanaBlockAnchor {
     pub meta: ActionMeta,
 }
 
+/// One-time migration credit from an on-chain pre-deposit PDA snapshot.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PreDepositCredit {
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "u")]
+    pub user: Pubkey,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "v")]
+    pub vault: Pubkey,
+    #[serde(rename = "a")]
+    pub amount: u64,
+    #[serde(rename = "ms")]
+    pub migration_slot: u64,
+    #[serde(with = "crate::msgs::serde_pubkey", rename = "pda")]
+    pub pre_deposit_pda: Pubkey,
+    #[serde(rename = "ei")]
+    pub entry_index: u8,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
 /// Configures a market-specific maker rebate tier override.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,6 +213,23 @@ pub struct ConfigMakerRebateTier {
     pub maker: Pubkey,
     pub minimum_tier: Option<u8>,
     pub expires_slot: Option<u64>,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+/// Optional account funding policy changes applied atomically by protocol administration.
+///
+/// `None` preserves the current value. Monetary values are denominated in USD.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAccountPolicy {
+    /// Fixed bridge-withdraw fee credited to the protocol fee account.
+    pub withdraw_fee_usd: Option<f64>,
+    /// Minimum amount that may be requested for a bridge withdrawal.
+    pub min_withdraw_usd: Option<f64>,
+    /// Minimum amount permitted for an external account transfer.
+    pub min_external_transfer_usd: Option<f64>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }

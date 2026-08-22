@@ -421,8 +421,11 @@ impl Serialize for RawSignableAction<'_> {
             Action::FrostWithdrawStart(action) => {
                 serializer.serialize_newtype_variant("Action", 59, "FrostWithdrawStart", action)
             }
-            Action::AdminOp(action) => {
-                serializer.serialize_newtype_variant("Action", 60, "AdminOp", action)
+            Action::PreDepositCredit(action) => {
+                serializer.serialize_newtype_variant("Action", 60, "PreDepositCredit", action)
+            }
+            Action::UpdateAccountPolicy(action) => {
+                serializer.serialize_newtype_variant("Action", 61, "UpdateAccountPolicy", action)
             }
         }
     }
@@ -593,6 +596,39 @@ mod tests {
         .expect("signable bytes");
 
         assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 57);
+    }
+
+    #[test]
+    fn update_account_policy_uses_sdk_ordinal_61() {
+        let signable = Transaction::raw_signable_bytes(
+            SignatureDomain::Devnet,
+            Pubkey::default(),
+            0,
+            &[Action::UpdateAccountPolicy(
+                crate::msgs::UpdateAccountPolicy {
+                    withdraw_fee_usd: Some(2.0),
+                    min_withdraw_usd: Some(7.0),
+                    min_external_transfer_usd: Some(3.0),
+                    meta: ActionMeta::default(),
+                },
+            )],
+        )
+        .expect("signable bytes");
+
+        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 61);
+    }
+
+    #[test]
+    fn account_policy_roundtrips_after_pre_deposit_ordinal() {
+        let action = Action::UpdateAccountPolicy(crate::msgs::UpdateAccountPolicy {
+            withdraw_fee_usd: Some(2.0),
+            min_withdraw_usd: None,
+            min_external_transfer_usd: Some(3.0),
+            meta: ActionMeta::default(),
+        });
+        let encoded = bincode::serialize(&action).expect("serialize account policy");
+        let decoded: Action = bincode::deserialize(&encoded).expect("deserialize account policy");
+        assert!(matches!(decoded, Action::UpdateAccountPolicy(_)));
     }
 
     #[test]
