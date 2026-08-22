@@ -3,6 +3,7 @@
     "eloss_floor": 500.0,
     "max_pliq": 1.0,
     "margin_buffer": 0.05,
+    "cascade_factor": 0.25,
 
     "vault": {
         "owner": "9J8TUdEWrrcADK913r1Cs7DdqX63VdVU88imfDzT1ypt",

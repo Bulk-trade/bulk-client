@@ -18,19 +18,26 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RiskConfigChange {
-    // Settlement currency
+    /// Settlement currency used for collateral and risk calculations.
     pub settle_ccy: String,
-    // Maximum expected dollar loss below collateral allowed (for example 15k$)
+    /// Maximum expected dollar loss below collateral allowed (for example $15k).
     pub max_loss: f64,
-    // Expected loss floor in bps (for example 500bps)
+    /// Expected-loss floor in basis points (for example 500 bps).
     pub eloss_floor: f64,
-    // Maximum p(liquidation) allowed (for example 90%)
+    /// Maximum permitted probability of liquidation (for example 90%).
     pub max_pliq: f64,
-    // margin buffer (5% = 0.05)
+    /// Collateral margin buffer, where `0.05` is 5%.
     pub margin_buffer: f64,
-    // correlation discount [0-1], lower value reduces portfolio correlations -> higher risk
+    /// Correlation discount in `[0, 1]`; lower values increase portfolio risk.
     pub corr_discount: f64,
+    /// Fraction of positive incremental cascade premium included above raw sweep cost.
+    #[serde(default = "default_cascade_factor")]
+    pub cascade_factor: f64,
 
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+fn default_cascade_factor() -> f64 {
+    0.25
 }
