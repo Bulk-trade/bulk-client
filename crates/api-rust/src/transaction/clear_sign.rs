@@ -325,6 +325,23 @@ fn action_line(action: &Action) -> String {
             format!("RevokeBuilderCode to={}", action.to)
         }
         Action::UpdateLiquidatorConfig(action) => format!("UpdateLiquidatorConfig({:?}", action),
+        Action::ActivateProtocolVersion(action) => {
+            format!("ActivateProtocolVersion version={}", action.version)
+        }
+        Action::RevokePendingActivation(action) => {
+            format!("RevokePendingActivation version={}", action.version)
+        }
+        Action::ConfigFunding(action) => format!(
+            "ConfigFunding symbol={} rate={} deviationCap={} fundingCap={} premiumHorizon={} notional={} samplePeriod={} meanWindow={}",
+            action.symbol,
+            action.rate,
+            action.deviation_cap,
+            action.funding_cap,
+            action.premium_horizon,
+            action.notional,
+            action.sample_period,
+            action.mean_window,
+        ),
     }
 }
 

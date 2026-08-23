@@ -233,3 +233,35 @@ pub struct UpdateAccountPolicy {
     #[serde(skip)]
     pub meta: ActionMeta,
 }
+
+/// Instrument-specific funding model configuration applied by the admin multisig.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigFunding {
+    pub symbol: String,
+    pub rate: f64,
+    pub deviation_cap: f64,
+    pub funding_cap: f64,
+    pub premium_horizon: f64,
+    pub notional: f64,
+    pub sample_period: u64,
+    pub mean_window: usize,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+/// Wire-compatible protocol activation placeholder.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActivateProtocolVersion {
+    pub version: u32,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
+/// Wire-compatible pending-activation revocation placeholder.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RevokePendingActivation {
+    pub version: u32,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}

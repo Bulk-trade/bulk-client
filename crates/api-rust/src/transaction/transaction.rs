@@ -427,6 +427,21 @@ impl Serialize for RawSignableAction<'_> {
             Action::UpdateAccountPolicy(action) => {
                 serializer.serialize_newtype_variant("Action", 61, "UpdateAccountPolicy", action)
             }
+            Action::ActivateProtocolVersion(action) => serializer.serialize_newtype_variant(
+                "Action",
+                62,
+                "ActivateProtocolVersion",
+                action,
+            ),
+            Action::RevokePendingActivation(action) => serializer.serialize_newtype_variant(
+                "Action",
+                63,
+                "RevokePendingActivation",
+                action,
+            ),
+            Action::ConfigFunding(action) => {
+                serializer.serialize_newtype_variant("Action", 64, "ConfigFunding", action)
+            }
         }
     }
 }
