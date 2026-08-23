@@ -10,6 +10,14 @@ pub struct CorrsArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct ConfigRiskArgs {
+    /// Coin whose complete risk surface will be replaced, for example BTC.
+    pub coin: String,
+    /// Path to the risk-surface CSV file.
+    pub csv: String,
+}
+
+#[derive(Args, Debug)]
 pub struct AddMarketArgs {
     /// Market symbol, for example MINIMAX-USD.
     pub symbol: String,

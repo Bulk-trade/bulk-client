@@ -8,19 +8,19 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <json-or-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <coin> <csv-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
-Updates the exchange risk configuration from inline JSON or a JSON file.
+Replaces one coin's complete risk matrix from a risk-surface CSV file.
 EOF
 }
 
 bulk_admin_parse_common_args "$@"
 set -- ${BULK_ADMIN_ARGS[@]+"${BULK_ADMIN_ARGS[@]}"}
 
-if (( $# != 1 )); then
-  echo "error: risk-config requires exactly one JSON value or file path" >&2
+if (( $# != 2 )); then
+  echo "error: config-risk-matrix requires exactly one coin and one CSV file path" >&2
   usage
   exit 2
 fi
 
-bulk_admin_run risk-config "$1"
+bulk_admin_run config-risk-matrix "$1" "$2"

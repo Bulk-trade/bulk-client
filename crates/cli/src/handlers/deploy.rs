@@ -4,11 +4,12 @@ use bulk_client::msgs::{
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
 use bulk_sdk_core::securities::Security;
+use bulk_sdk_core::{markets::MktId, models::margin::RiskMatrix, time_epoch_ns};
 use std::path::Path;
 
 use crate::commands::{
-    AddMarketArgs, ConfigFeesArgs, ConfigMakerArgs, ConfigSecurityArgs, CorrsArgs, FeePolicyUpdate,
-    MarketAdminArgs, PricingAdminArgs,
+    AddMarketArgs, ConfigFeesArgs, ConfigMakerArgs, ConfigRiskArgs, ConfigSecurityArgs, CorrsArgs,
+    FeePolicyUpdate, MarketAdminArgs, PricingAdminArgs,
 };
 use crate::common::submit::{submit_actions, SubmitOptions};
 
@@ -47,6 +48,40 @@ pub async fn handle_corrs(
         matrix.index.len()
     );
     submit_actions(api, submit, vec![Action::Corrs(matrix)]).await
+}
+
+/// Replaces one coin's complete risk surface through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - Authenticated Bulk HTTP client.
+/// * `args` - Coin name and path to its risk-surface CSV.
+/// * `submit` - Transaction preview and confirmation options.
+///
+/// # Returns
+/// An error when the coin is invalid, the CSV cannot be parsed, or submission fails.
+pub async fn handle_config_risk(
+    api: &mut BulkHttpClient,
+    args: ConfigRiskArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    Security::initialize();
+    let instrument = MktId::from_str(&args.coin)
+        .ok_or_else(|| eyre::eyre!("invalid risk-surface coin '{}'", args.coin))?;
+    let matrix = RiskMatrix::from_csv(time_epoch_ns(), instrument, &args.csv)
+        .map_err(|error| eyre::eyre!("invalid risk-surface CSV '{}': {error}", args.csv))?;
+    let payload = bincode::serialize(&matrix)
+        .map_err(|error| eyre::eyre!("failed to serialize risk surface: {error}"))?;
+
+    eprintln!("Placing risk-surface replacement for {}", args.coin);
+    submit_actions(
+        api,
+        submit,
+        vec![Action::ConfigRisk(OpaqueAction {
+            payload,
+            meta: Default::default(),
+        })],
+    )
+    .await
 }
 
 pub async fn handle_add_market(
@@ -238,6 +273,13 @@ pub async fn handle_pricing_admin(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initialized_security_registry_resolves_risk_matrix_coin() {
+        Security::initialize();
+
+        assert!(MktId::from_str("BTC").is_some());
+    }
 
     #[test]
     fn security_payload_roundtrips_through_executor_decoder() {
