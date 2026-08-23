@@ -1,7 +1,10 @@
-use crate::commands::risk::{AccountPolicyArgs, LiquidatorConfigArgs, RiskConfigArgs};
+use crate::commands::risk::{
+    AccountPolicyArgs, FundingConfigArgs, LiquidatorConfigArgs, RiskConfigArgs,
+};
 use crate::common::submit::{submit_actions, SubmitOptions};
 use bulk_client::msgs::liquidator::LiqConfig;
 use bulk_client::msgs::risk::RiskConfigChange;
+use bulk_client::msgs::ConfigFunding;
 use bulk_client::msgs::UpdateAccountPolicy;
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
@@ -25,6 +28,34 @@ pub async fn handle_risk_config(
     eprintln!("Placing risk config update");
     let action = Action::UpdateRiskConfig(config);
     submit_actions(api, submit, vec![action]).await
+}
+
+/// Submits an instrument funding configuration through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - HTTP client used to submit the proposal transaction.
+/// * `args` - JSON text or a path containing the complete instrument funding config.
+/// * `submit` - Preview and confirmation behavior for the submission.
+///
+/// # Returns
+/// An error when the input cannot be read, parsed, or submitted.
+pub async fn handle_funding_config(
+    api: &mut BulkHttpClient,
+    args: FundingConfigArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let raw = if Path::new(&args.json).exists() {
+        std::fs::read_to_string(&args.json)
+            .map_err(|e| eyre::eyre!("failed to read '{}': {e}", args.json))?
+    } else {
+        args.json.clone()
+    };
+
+    let config: ConfigFunding =
+        json5::from_str(&raw).map_err(|e| eyre::eyre!("invalid funding config: {e}"))?;
+
+    eprintln!("Placing funding config update for {}", config.symbol);
+    submit_actions(api, submit, vec![Action::ConfigFunding(config)]).await
 }
 
 /// Submits an account funding policy update through the administrative multisig.

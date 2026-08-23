@@ -5,10 +5,10 @@ pub mod handlers;
 use crate::commands::{
     AccountPolicyArgs, AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs,
     ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, ConfigRiskArgs, ConfigSecurityArgs, CorrsArgs,
-    CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, LedgerInfoArgs, LiquidatorConfigArgs,
-    MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, PricingAdminArgs, RangeArgs,
-    RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs,
-    UpdateLeverageArgs, UpdateMultisigPolicyArgs,
+    CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs,
+    LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
+    PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
+    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -29,7 +29,9 @@ use crate::handlers::multisig::{
     handle_multisig_execute, handle_multisig_reject, handle_update_multisig_policy,
 };
 use crate::handlers::orders::{handle_modify, handle_place};
-use crate::handlers::risk::{handle_account_policy, handle_liquidator_config, handle_risk_config};
+use crate::handlers::risk::{
+    handle_account_policy, handle_funding_config, handle_liquidator_config, handle_risk_config,
+};
 use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::{SignatureDomain, TransactionSigner};
 use bulk_client::BulkHttpClient;
@@ -233,6 +235,13 @@ enum Command {
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
 
+    /// Update one instrument's funding configuration (JSON or file path).
+    ///
+    /// Example: bulk update-funding '{symbol:"BTC-USD",rate:0.125,...}'
+    /// Example: bulk update-funding funding.json5
+    #[command(name = "update-funding")]
+    UpdateFunding(FundingConfigArgs),
+
     /// Update account funding policy (JSON or file path).
     ///
     /// Example: bulk account-policy '{withdrawFeeUsd:2,minWithdrawUsd:7}'
@@ -307,6 +316,7 @@ impl Command {
                 | Command::AddMarket(_)
                 | Command::MarketAdmin(_)
                 | Command::PricingAdmin(_)
+                | Command::UpdateFunding(_)
         )
     }
 }
@@ -455,6 +465,7 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigCancel(args) => handle_multisig_cancel(&mut api, args, &submit).await,
         Command::MultisigExecute(args) => handle_multisig_execute(&mut api, args, &submit).await,
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
+        Command::UpdateFunding(args) => handle_funding_config(&mut api, args, &submit).await,
         Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
         Command::ConfigSecurity(args) => handle_config_security(&mut api, args, &submit).await,
         Command::ConfigFees(args) => handle_config_fees(&mut api, args, &submit).await,
@@ -559,6 +570,18 @@ mod tests {
                 assert_eq!(args.json, "{withdrawFeeUsd:2,minWithdrawUsd:7}");
             }
             _ => panic!("expected account-policy"),
+        }
+    }
+
+    #[test]
+    fn parse_update_funding_json() {
+        let json = "{symbol:\"BTC-USD\",rate:0.125,deviationCap:0.0005,fundingCap:0.004,premiumHorizon:3600,notional:100000,samplePeriod:1,meanWindow:3600}";
+        let cli = Cli::try_parse_from(["bulk", "update-funding", json])
+            .expect("should parse update-funding");
+
+        match cli.command {
+            Command::UpdateFunding(args) => assert_eq!(args.json, json),
+            _ => panic!("expected update-funding"),
         }
     }
 

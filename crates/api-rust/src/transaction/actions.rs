@@ -7,13 +7,14 @@ use crate::msgs::multisig::{
 use crate::msgs::risk::RiskConfigChange;
 use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAccount, Transfer};
 use crate::msgs::{
-    AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon, CancelAll, CancelOrder,
-    ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1, Faucet, FrostWithdrawStart,
-    InitializeVault, Join, LimitOrder, MarketAdmin, MarketOrder, Matrix, ModifyOrder,
-    NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price, PricingAdmin,
-    PythOracle, RevokeCommissionFee, RewardSettlement, SolanaBlockAnchor, UpdateAccountPolicy,
-    UpdateFrostGroup, UpdateUserSettings, UpdateValidatorSet, WhitelistFaucet, Withdraw,
-    WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
+    ActivateProtocolVersion, AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon,
+    CancelAll, CancelOrder, ConfigFunding, ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1,
+    Faucet, FrostWithdrawStart, InitializeVault, Join, LimitOrder, MarketAdmin, MarketOrder,
+    Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price,
+    PricingAdmin, PythOracle, RevokeCommissionFee, RevokePendingActivation, RewardSettlement,
+    SolanaBlockAnchor, UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings,
+    UpdateValidatorSet, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
+    WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -218,6 +219,16 @@ pub enum Action {
     // UpdateAccountPolicy = ordinal(61)
     #[serde(rename = "accountPolicy", alias = "updateAccountPolicy")]
     UpdateAccountPolicy(UpdateAccountPolicy),
+
+    // ActivateProtocolVersion = ordinal(62)
+    #[serde(rename = "activateProtocolVersion")]
+    ActivateProtocolVersion(ActivateProtocolVersion),
+    // RevokePendingActivation = ordinal(63)
+    #[serde(rename = "revokePendingActivation")]
+    RevokePendingActivation(RevokePendingActivation),
+    // ConfigFunding = ordinal(64)
+    #[serde(rename = "configFunding")]
+    ConfigFunding(ConfigFunding),
 }
 
 macro_rules! dispatch {
@@ -291,6 +302,9 @@ macro_rules! dispatch {
             Action::FrostWithdrawStart($x) => $body,
             Action::PreDepositCredit($x) => $body,
             Action::UpdateAccountPolicy($x) => $body,
+            Action::ActivateProtocolVersion($x) => $body,
+            Action::RevokePendingActivation($x) => $body,
+            Action::ConfigFunding($x) => $body,
         }
     };
 }
@@ -313,6 +327,7 @@ impl Action {
                 | Action::ConfigRisk(_)
                 | Action::UpdateRiskConfig(_)
                 | Action::UpdateAccountPolicy(_)
+                | Action::ConfigFunding(_)
         )
     }
 
@@ -554,6 +569,9 @@ impl_action_from!(PricingAdmin, PricingAdmin);
 impl_action_from!(FrostWithdrawStart, FrostWithdrawStart);
 impl_action_from!(PreDepositCredit, PreDepositCredit);
 impl_action_from!(UpdateAccountPolicy, UpdateAccountPolicy);
+impl_action_from!(ActivateProtocolVersion, ActivateProtocolVersion);
+impl_action_from!(RevokePendingActivation, RevokePendingActivation);
+impl_action_from!(ConfigFunding, ConfigFunding);
 
 #[cfg(test)]
 mod tests {
@@ -680,5 +698,25 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn config_funding_uses_sdk_ordinal_and_admin_multisig() {
+        let action = Action::ConfigFunding(ConfigFunding {
+            symbol: "BTC-USD".to_owned(),
+            rate: 0.125,
+            deviation_cap: 0.0005,
+            funding_cap: 0.004,
+            premium_horizon: 3_600.0,
+            notional: 100_000.0,
+            sample_period: 1,
+            mean_window: 3_600,
+            meta: ActionMeta::default(),
+        });
+
+        let bytes = bincode::serialize(&action).expect("funding config should serialize");
+
+        assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 64);
+        assert!(action.is_admin_multisig_action());
     }
 }

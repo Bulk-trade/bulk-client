@@ -9,6 +9,16 @@ pub struct RiskConfigArgs {
 }
 
 // ---------------------------------------------------------------------------
+// Update funding
+// ---------------------------------------------------------------------------
+
+#[derive(clap::Args, Debug)]
+pub struct FundingConfigArgs {
+    // JSON or filename containing an instrument funding config.
+    pub(crate) json: String,
+}
+
+// ---------------------------------------------------------------------------
 // Update account policy
 // ---------------------------------------------------------------------------
 
