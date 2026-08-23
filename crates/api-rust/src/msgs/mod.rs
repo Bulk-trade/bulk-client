@@ -125,6 +125,11 @@ pub(crate) mod fixed_point {
     const SCALE: f64 = 1e8;
 
     pub fn serialize<S: Serializer>(val: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        if !val.is_finite() || *val < 0.0 || *val > (u64::MAX as f64 / SCALE) {
+            return Err(serde::ser::Error::custom(
+                "fixed-point value must be finite, non-negative, and fit in u64",
+            ));
+        }
         if serializer.is_human_readable() {
             serializer.serialize_f64(*val)
         } else {
@@ -143,7 +148,24 @@ pub(crate) mod fixed_point {
     }
 }
 
+#[cfg(test)]
+mod fixed_point_tests {
+    use super::fixed_point;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct FixedPointValue(#[serde(with = "fixed_point")] f64);
+
+    #[test]
+    fn rejects_invalid_fixed_point_values() {
+        for value in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(serde_json::to_vec(&FixedPointValue(value)).is_err());
+        }
+    }
+}
+
 pub(crate) mod opt_fixed_point {
+
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serializer};
     use std::fmt;
@@ -154,6 +176,11 @@ pub(crate) mod opt_fixed_point {
         match val {
             None => serializer.serialize_none(),
             Some(v) => {
+                if !v.is_finite() || *v < 0.0 || *v > (u64::MAX as f64 / SCALE) {
+                    return Err(serde::ser::Error::custom(
+                        "fixed-point value must be finite, non-negative, and fit in u64",
+                    ));
+                }
                 if serializer.is_human_readable() {
                     serializer.serialize_str(&v.to_string())
                 } else {

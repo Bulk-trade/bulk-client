@@ -1,7 +1,9 @@
 from typing import Dict, List, Tuple, Optional, Union
 from enum import IntEnum
+from typing import Dict, List, Optional, Union
 
 from nacl.exceptions import BadSignatureError
+
 from nacl.signing import SigningKey, VerifyKey
 import struct
 import base58
@@ -33,17 +35,18 @@ class TransactionSigner:
     def __init__(self, private_key: str):
         """
         Initialize signer with base58 encoded private key
-        
+
         Args:
             private_key: Base58 encoded private key
         """
         private_key_bytes = base58.b58decode(private_key)
         self.signing_key = SigningKey(private_key_bytes[:32])
         self.public_key = base58.b58encode(bytes(self.signing_key.verify_key)).decode()
-        self.private_key = private_key
+
         self.nonce = 0
-        
-    def sign_transaction(self, tx: Dict, signature_domain: SignatureDomain) -> str:
+
+    def sign_transaction(self, tx: Dict, signature_domain: SignatureDomain) -> Dict:
+
         """
         Sign a transaction with Ed25519
 
@@ -58,12 +61,12 @@ class TransactionSigner:
         nonce = tx.get("nonce", int(time.time_ns() / 1000))
         account = tx.get("account", self.public_key)
         signer = tx.get("signer", self.public_key)
-        
+
         message = self.serialize_transaction(action, nonce, account, signature_domain)
         signed = self.signing_key.sign(message)
-        
+
         sig = base58.b58encode(signed.signature).decode()
-        
+
         tx["signature"] = sig
         return tx
 
@@ -107,7 +110,8 @@ class TransactionSigner:
         and is not a recommended way to generate accounts).
 
         Returns:
-            tuple: (private_key_b58, public_key_b58)
+            TransactionSigner: A signer initialized with a fresh Ed25519 keypair.
+
         """
         # Generate a new random signing key
         signing_key = SigningKey.generate()
@@ -118,7 +122,7 @@ class TransactionSigner:
         # Encode both to base58
         private_key_b58 = base58.b58encode(private_key_bytes).decode()
         return TransactionSigner(private_key_b58)
-        
+
     @staticmethod
     def serialize_transaction(
         actions: List[Dict],
@@ -357,7 +361,7 @@ class TransactionSigner:
                 ])
             case _:
                 raise Exception("Unknown tx type")
-        
+
 
     @staticmethod
     def round_half_away_from_zero(value: float) -> int:
@@ -372,22 +376,36 @@ class TransactionSigner:
         return struct.pack("<Q", value)
 
     @staticmethod
+    def fixedpoint_to_u64(value: float) -> int:
+        """Convert a finite, non-negative fixed-point value to an unsigned integer."""
+        numeric = float(value)
+        scaled_limit = ((1 << 64) - 1) / 1e8
+        if not math.isfinite(numeric) or numeric < 0.0 or numeric > scaled_limit:
+            raise ValueError(
+                "fixed-point value must be finite, non-negative, and fit in u64"
+            )
+
+        fixed = TransactionSigner.round_half_away_from_zero(numeric * 1e8)
+        if fixed < 0 or fixed > (1 << 64) - 1:
+            raise ValueError(
+                "fixed-point value must be finite, non-negative, and fit in u64"
+            )
+        return fixed
+
+    @staticmethod
     def write_fixedpoint(value: float) -> bytes:
-        """Write fixed point little-endian format"""
-        value = TransactionSigner.round_half_away_from_zero(float(value) * 1e8)
-        return struct.pack("<Q", value)
+        """Write a validated fixed-point value in little-endian format."""
+        return struct.pack("<Q", TransactionSigner.fixedpoint_to_u64(value))
 
     @staticmethod
     def write_optional_fixedpoint(value: Optional[float]) -> bytes:
-        """Write fixed point little-endian format"""
-        if value is not None:
-            value = TransactionSigner.round_half_away_from_zero(float(value) * 1e8)
-            return b''.join([
-                bytes([0x01]),
-                struct.pack("<Q", value)
-            ])
-        else:
+        """Write an optional validated fixed-point value in little-endian format."""
+        if value is None:
             return bytes([0x00])
+        return b''.join([
+            bytes([0x01]),
+            struct.pack("<Q", TransactionSigner.fixedpoint_to_u64(value)),
+        ])
 
     @staticmethod
     def write_i16(value: int) -> bytes:
@@ -445,7 +463,7 @@ class TransactionSigner:
     def decode_and_validate_32_bytes(key: str) -> bytes:
         """Decode a base58 32-byte value (pubkey/hash raw bytes)."""
         key_bytes = base58.b58decode(key)
-        
+
         if len(key_bytes) != 32:
             raise ValueError(f"Key must be 32 bytes, got {len(key_bytes)}")
         return key_bytes
@@ -511,7 +529,7 @@ def _test_trailing():
 
 def _generate_keypair():
     pair = TransactionSigner.generate_account()
-    print("private: {}, public: {}", pair.private_key, pair.public_key)
+    print("public: {}".format(pair.public_key))
 
 def _test_orders():
     orders = {
