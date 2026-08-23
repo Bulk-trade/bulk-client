@@ -9,6 +9,7 @@ use std::fmt::Write as _;
 use std::str::FromStr;
 
 const ADMIN_MULTISIG: &str = "ADM1N11111111111111111111111111111111111113D";
+const FEE_ADMIN_MULTISIG: &str = "FEEADM1N11111111111111111111111111111111113F";
 
 #[derive(Clone, Debug)]
 pub struct SubmitOptions {
@@ -206,12 +207,21 @@ fn humanize_status(status: &str) -> String {
 /// - Leaves existing multisig proposals and non-admin actions unchanged.
 fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
     let admin_multisig = Pubkey::from_str(ADMIN_MULTISIG).expect("valid admin multisig pubkey");
+    let fee_admin_multisig =
+        Pubkey::from_str(FEE_ADMIN_MULTISIG).expect("valid fee admin multisig pubkey");
     actions
         .into_iter()
         .map(|action| {
-            if action.is_admin_multisig_action() {
+            let multisig = if action.is_fee_admin_multisig_action() {
+                Some(fee_admin_multisig)
+            } else if action.is_admin_multisig_action() {
+                Some(admin_multisig)
+            } else {
+                None
+            };
+            if let Some(multisig) = multisig {
                 Action::MultisigPropose(MultisigPropose {
-                    multisig: admin_multisig,
+                    multisig,
                     actions: vec![action],
                     proposal_lifetime_secs: None,
                     meta: ActionMeta::default(),
@@ -226,7 +236,7 @@ fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bulk_client::msgs::{AddMarket, CancelAll};
+    use bulk_client::msgs::{AddMarket, CancelAll, ConfigMakerRebateTier, OpaqueAction};
 
     #[test]
     fn wraps_each_admin_action_once() {
@@ -270,6 +280,36 @@ mod tests {
         })]);
 
         assert!(matches!(wrapped.as_slice(), [Action::CancelAll(_)]));
+    }
+
+    #[test]
+    fn wraps_fee_actions_with_fee_admin_multisig() {
+        let wrapped = wrap_admin_actions(vec![
+            Action::ConfigFeePolicy(OpaqueAction {
+                payload: vec![1, 2, 3],
+                meta: ActionMeta::default(),
+            }),
+            Action::ConfigMakerRebateTier(ConfigMakerRebateTier {
+                instrument: "BTC-USD".into(),
+                maker: Pubkey::new_unique(),
+                minimum_tier: Some(1),
+                expires_slot: None,
+                meta: ActionMeta::default(),
+            }),
+        ]);
+
+        let expected = Pubkey::from_str(FEE_ADMIN_MULTISIG).unwrap();
+        assert!(!expected.is_on_curve());
+        assert_ne!(expected.to_bytes()[31] & 0x80, 0);
+        for action in wrapped {
+            let Action::MultisigPropose(proposal) = action else {
+                panic!("fee action must be wrapped in a proposal");
+            };
+            assert_eq!(proposal.multisig, expected);
+            assert_eq!(proposal.actions.len(), 1);
+            assert!(proposal.actions[0].is_fee_admin_multisig_action());
+            assert!(!proposal.actions[0].is_admin_multisig_action());
+        }
     }
 
     #[test]

@@ -298,7 +298,7 @@ macro_rules! dispatch {
 impl Action {
     /// Returns whether this action requires the configured administrative multisig.
     ///
-    /// - Matches market, pricing, risk-model, security, and fee administration.
+    /// - Matches market, pricing, risk-model, and security administration.
     pub fn is_admin_multisig_action(&self) -> bool {
         matches!(
             self,
@@ -311,10 +311,16 @@ impl Action {
                 | Action::ConfigFairPrice(_)
                 | Action::ConfigVolatility(_)
                 | Action::ConfigRisk(_)
-                | Action::ConfigFeePolicy(_)
-                | Action::ConfigMakerRebateTier(_)
                 | Action::UpdateRiskConfig(_)
                 | Action::UpdateAccountPolicy(_)
+        )
+    }
+
+    /// Returns whether this action requires the configured fee-administration multisig.
+    pub fn is_fee_admin_multisig_action(&self) -> bool {
+        matches!(
+            self,
+            Action::ConfigFeePolicy(_) | Action::ConfigMakerRebateTier(_)
         )
     }
 
