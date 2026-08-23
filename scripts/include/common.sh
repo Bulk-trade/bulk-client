@@ -100,6 +100,7 @@ bulk_admin_run() {
   echo "Verify the signer, account, nonce, and action in the preview before confirming." >&2
 
   cargo run \
+    --release \
     --manifest-path "${PROJECT_ROOT}/Cargo.toml" \
     --package bulk-cli \
     --bin bulk \
