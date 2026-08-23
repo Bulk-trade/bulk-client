@@ -10,7 +10,8 @@ use bulk_client::api::parts::HttpConfig;
 use bulk_client::api::BulkHttpClient;
 use bulk_client::common::tif::TimeInForce;
 use bulk_client::msgs::LimitOrder;
-use bulk_client::parts::make_nonce;
+use bulk_client::api::parts::make_nonce;
+
 use bulk_client::transaction::{Action, ActionMeta, SignatureDomain, TransactionSigner};
 use clap::Parser;
 use std::sync::Arc;

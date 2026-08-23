@@ -8,7 +8,9 @@ Provides complete HTTP REST API access to the Bulk Labs exchange:
 - Private endpoints (signed - faucet, etc.)
 """
 
+import base58
 import json
+import os
 import time
 
 import requests
@@ -469,9 +471,9 @@ class BulkHttpClient:
         }
         
         transaction = self.signer.sign_transaction(transaction, self.signature_domain)
-        ser = json.dumps(transaction)
-        
+
         # Send request
+
         response = requests.post(
             f"{self.base_url}/order",
             json=transaction,
@@ -719,9 +721,8 @@ class BulkHttpClient:
         # Sign transaction
         tx = self.signer.sign_transaction(transaction, self.signature_domain)
         
-        print(f"Sending tx: {tx}")
-        
         # Send request
+
         response = requests.post(
             f"{self.base_url}/order",
             json=tx,
@@ -805,16 +806,19 @@ def load_or_create_keys(key_file: str = "/tmp/bulk_keys") -> tuple[str, str]:
     """
     if os.path.exists(key_file):
         # Load existing keys
-        with open(key_file, 'r') as f:
+        with open(key_file, 'r', encoding='utf-8') as f:
             keys = json.load(f)
             private_key = keys['private_key']
             public_key = keys['public_key']
+            os.chmod(key_file, 0o600)
             print(f"Loaded existing keys from {key_file}")
             print(f"Public key: {public_key}")
             return private_key, public_key
     else:
-        # Generate new keys and save them
-        private_key, public_key = TransactionSigner.generate_account()
+        # Generate new keys and save them.
+        generated_signer = TransactionSigner.generate_account()
+        private_key = base58.b58encode(bytes(generated_signer.signing_key)).decode()
+        public_key = generated_signer.public_key
         keys = {
             'private_key': private_key,
             'public_key': public_key
@@ -836,15 +840,23 @@ def load_or_create_keys(key_file: str = "/tmp/bulk_keys") -> tuple[str, str]:
         # Ensure directory exists
         os.makedirs(os.path.dirname(key_file) if os.path.dirname(key_file) else '.', exist_ok=True)
 
-        with open(key_file, 'w') as f:
+        file_descriptor = os.open(
+            key_file,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(file_descriptor, 'w', encoding='utf-8') as f:
             json.dump(keys, f, indent=2)
+        os.chmod(key_file, 0o600)
+
         print(f"Generated new keys and saved to {key_file}")
         print(f"Public key: {public_key}")
 
         return private_key, public_key
 
 if __name__ == "__main__":
-    import os
+
+
 
     private_key, pub_key = load_or_create_keys()
 

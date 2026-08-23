@@ -61,8 +61,7 @@ impl TransactionSigner {
                 .map_err(|e| eyre::eyre!("failed to create keypair from seed: {e}"))?
         } else {
             bail!(
-                "private key {} is wrong size (got {} bytes)",
-                key_b58,
+                "private key has an invalid length (got {} bytes; expected a 32-byte seed or 64-byte keypair)",
                 key_bytes.len()
             );
         };
@@ -262,7 +261,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn invalid_private_key_errors_do_not_echo_secret_material() {
+        let secret = "not-a-valid-private-key";
+        let error = match TransactionSigner::from_private_key(secret) {
+            Ok(_) => panic!("the key is invalid"),
+            Err(error) => error,
+        };
+        assert!(!error.to_string().contains(secret));
+    }
+
+    #[test]
     fn generic_signature_is_bound_to_one_domain() {
+
         let signer =
             TransactionSigner::from_private_key("1111111111111111111111111111111111111111111")
                 .expect("test signer");
