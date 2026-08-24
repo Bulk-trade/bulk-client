@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <instrument> <both|pyth|bulk> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <instrument> <both|pyth|bulk> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Configures the accepted oracle publisher source for an instrument.
 EOF

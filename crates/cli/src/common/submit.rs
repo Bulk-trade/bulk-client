@@ -1,8 +1,7 @@
 use bulk_client::msgs::MultisigPropose;
 use bulk_client::msgs::Response;
 use bulk_client::parts::make_nonce;
-use bulk_client::transaction::canonical_message;
-use bulk_client::transaction::{Action, ActionMeta};
+use bulk_client::transaction::{Action, ActionMeta, ClearSignMessage};
 use bulk_client::BulkHttpClient;
 use solana_pubkey::Pubkey;
 use std::fmt::Write as _;
@@ -32,7 +31,7 @@ pub async fn submit_actions(
     let account = signer.public_key();
 
     if options.preview {
-        let preview = canonical_message(
+        let preview = ClearSignMessage::canonical_message(
             cfg.signature_domain
                 .ok_or_else(|| eyre::eyre!("signature domain required"))?,
             account,
@@ -148,7 +147,11 @@ fn format_approval_result(approval: Option<&Response>, outcome: Option<&Response
         let _ = writeln!(output, "  Progress: {approvals} / {threshold} approvals");
     }
     write_json_field(&mut output, "Rejections", &details.raw, "rejections");
-    write_json_field(&mut output, "Approved by", &details.raw, "signer");
+    let rejected = outcome
+        .or(approval)
+        .is_some_and(|response| response.status == "proposalRejected");
+    let signer_label = if rejected { "Signer" } else { "Approved by" };
+    write_json_field(&mut output, signer_label, &details.raw, "signer");
 
     output.push_str("\nOutcome\n");
     output.push_str("────────────────────────────────────────\n");

@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <json-or-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <json-or-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Updates the liquidator configuration from inline JSON or a JSON file.
 EOF

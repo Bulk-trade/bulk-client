@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <coin> <csv-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <coin> <csv-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Replaces one coin's complete risk matrix from a risk-surface CSV file.
 EOF

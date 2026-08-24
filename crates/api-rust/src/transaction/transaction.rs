@@ -94,7 +94,7 @@ impl Transaction {
 
         match signer.tx_signature_mode() {
             TxSignatureMode::Offchain => {
-                let clear_text = crate::transaction::clear_sign::canonical_message(
+                let clear_text = crate::transaction::ClearSignMessage::canonical_message(
                     signature_domain,
                     self.account,
                     self.nonce,
