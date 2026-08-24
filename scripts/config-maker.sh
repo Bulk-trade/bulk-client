@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <json-or-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <json-or-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Sets or clears a market-specific maker rebate tier override from inline JSON/JSON5 or a file.
 EOF

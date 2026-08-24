@@ -10,7 +10,7 @@ DEFAULT_MULTISIG="ADM1N11111111111111111111111111111111111113D"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <proposal-id> [-msig <multisig-address>] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <proposal-id> [-msig <multisig-address>] [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Approves a proposal. The multisig address defaults to:
   ${DEFAULT_MULTISIG}

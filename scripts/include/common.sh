@@ -6,6 +6,7 @@
 bulk_admin_parse_common_args() {
   BULK_ADMIN_API_URL="${BULK_API_URL:-}"
   BULK_ADMIN_NETWORK="${BULK_SIGNATURE_DOMAIN:-devnet}"
+  BULK_ADMIN_USE_LEDGER=false
   BULK_ADMIN_ARGS=()
   local network_was_set=false
   local url_was_set=false
@@ -29,6 +30,10 @@ bulk_admin_parse_common_args() {
         BULK_ADMIN_NETWORK="$2"
         network_was_set=true
         shift 2
+        ;;
+      -ledger)
+        BULK_ADMIN_USE_LEDGER=true
+        shift
         ;;
       -h|--help)
         usage
@@ -74,6 +79,7 @@ bulk_admin_parse_common_args() {
 
 bulk_admin_run() {
   local command="$1"
+  local signer_args=()
   shift
 
   if ! command -v cargo >/dev/null 2>&1; then
@@ -81,15 +87,19 @@ bulk_admin_run() {
     return 1
   fi
 
-  if [[ -z "${BULK_PRIVATE_KEY:-}" ]]; then
-    read -r -s -p "Bulk private key (base58): " BULK_PRIVATE_KEY
-    echo >&2
-    export BULK_PRIVATE_KEY
-  fi
+  if [[ "${BULK_ADMIN_USE_LEDGER}" == true ]]; then
+    signer_args=(--ledger --ledger-derivation-path 0/0)
+  else
+    if [[ -z "${BULK_PRIVATE_KEY:-}" ]]; then
+      read -r -s -p "Bulk private key (base58): " BULK_PRIVATE_KEY
+      echo >&2
+      export BULK_PRIVATE_KEY
+    fi
 
-  if [[ -z "${BULK_PRIVATE_KEY}" ]]; then
-    echo "error: private key cannot be empty" >&2
-    return 1
+    if [[ -z "${BULK_PRIVATE_KEY}" ]]; then
+      echo "error: private key cannot be empty" >&2
+      return 1
+    fi
   fi
 
   export BULK_SIGNATURE_DOMAIN="${BULK_ADMIN_NETWORK}"
@@ -106,6 +116,7 @@ bulk_admin_run() {
     --bin bulk \
     -- \
     --api-url "${BULK_API_URL}" \
+    "${signer_args[@]}" \
     "${command}" \
     "$@"
 }

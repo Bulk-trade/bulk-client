@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <symbol> <open|suspend|close> [--price <price>] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <symbol> <open|suspend|close> [--price <price>] [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Changes an existing market's administrative state. --price is valid only with close.
 EOF

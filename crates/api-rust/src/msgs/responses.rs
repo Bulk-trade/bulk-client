@@ -62,7 +62,11 @@ impl Response {
                 Response {
                     order_id: body["oid"].as_str().map(Into::into),
                     status: status_key,
-                    message: body["message"].as_str().map(Into::into),
+                    message: body["message"]
+                        .as_str()
+                        .or_else(|| body["error"].as_str())
+                        .or_else(|| body["reason"].as_str())
+                        .map(Into::into),
                     raw: body.clone(),
                 }
             })
@@ -118,5 +122,43 @@ mod tests {
         assert_eq!(responses[0].order_id.as_deref(), Some("order-id"));
         assert_eq!(responses[0].message, None);
         assert!(responses[0].is_placement());
+    }
+
+    #[test]
+    fn parses_multisig_rejection_error() {
+        let data = json!({
+            "response": {
+                "data": {
+                    "statuses": [{
+                        "proposalRejected": {
+                            "proposalId": 0,
+                            "error": "multisig policy does not match configured admin policy"
+                        }
+                    }]
+                }
+            }
+        });
+
+        let responses = Response::parse_responses(&data);
+
+        assert_eq!(
+            responses[0].message.as_deref(),
+            Some("multisig policy does not match configured admin policy")
+        );
+    }
+
+    #[test]
+    fn parses_transaction_rejection_reason() {
+        let data = json!({
+            "response": {
+                "data": {
+                    "statuses": [{"transactionRejected": {"reason": "expired"}}]
+                }
+            }
+        });
+
+        let responses = Response::parse_responses(&data);
+
+        assert_eq!(responses[0].message.as_deref(), Some("expired"));
     }
 }

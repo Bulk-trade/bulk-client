@@ -8,9 +8,10 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Options:
+  -ledger         Sign with a Ledger using derivation path 0/0.
   -url <api-url>  Override the exchange API base URL.
   -net <network>  Signature domain and API network (default: testnet).
   -h, --help      Show this help.

@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <json5-file> [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <json5-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Submits a full correlation matrix from a JSON5 file.
 EOF
