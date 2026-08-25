@@ -94,9 +94,18 @@ impl ClearSignMessage {
         );
         }
         for (index, action) in actions.iter().enumerate() {
-            let _ = writeln!(message, "[{}] {}", index, Self::action_line(action));
+            Self::render_action(&mut message, action, index.to_string());
         }
         message
+    }
+
+    fn render_action(message: &mut String, action: &Action, path: String) {
+        let _ = writeln!(message, "[{path}] {}", Self::action_line(action));
+        if let Action::MultisigPropose(proposal) = action {
+            for (index, nested_action) in proposal.actions.iter().enumerate() {
+                Self::render_action(message, nested_action, format!("{path}.{index}"));
+            }
+        }
     }
 
     fn sha256_hex(payload: &[u8]) -> String {
@@ -700,6 +709,53 @@ mod tests {
             ClearSignTest::signable_hash_line(&message),
             ClearSignTest::signable_hash_line(&without_builder)
         );
+    }
+
+    #[test]
+    fn message_displays_multisig_proposal_actions_recursively() {
+        use crate::msgs::MultisigPropose;
+
+        let account = Pubkey::new_unique();
+        let multisig = Pubkey::new_unique();
+        let nested_multisig = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let actions = [Action::MultisigPropose(MultisigPropose {
+            multisig,
+            actions: vec![
+                Action::Faucet(Faucet {
+                    user: recipient,
+                    amount: Some(2.0),
+                    meta: ActionMeta::default(),
+                }),
+                Action::MultisigPropose(MultisigPropose {
+                    multisig: nested_multisig,
+                    actions: vec![Action::Faucet(Faucet {
+                        user: recipient,
+                        amount: Some(3.0),
+                        meta: ActionMeta::default(),
+                    })],
+                    proposal_lifetime_secs: Some(60),
+                    meta: ActionMeta::default(),
+                }),
+            ],
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        })];
+
+        let message =
+            ClearSignMessage::canonical_message(SignatureDomain::Devnet, account, 42, &actions)
+                .expect("build message");
+
+        assert!(message.contains(&format!(
+            "[0] MultisigPropose {multisig} nested=2 life=None"
+        )));
+        assert!(message.contains(&format!("[0.0] Faucet user={recipient} amount=2.00000000")));
+        assert!(message.contains(&format!(
+            "[0.1] MultisigPropose {nested_multisig} nested=1 life=Some(60)"
+        )));
+        assert!(message.contains(&format!(
+            "[0.1.0] Faucet user={recipient} amount=3.00000000"
+        )));
     }
 
     #[test]
