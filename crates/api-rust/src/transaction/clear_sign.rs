@@ -321,6 +321,10 @@ impl ClearSignMessage {
             action.min_withdraw_usd,
             action.min_external_transfer_usd
         ),
+        Action::UserAdmin(action) => format!(
+            "UserAdmin pubkey={} maxorders={:?} globalMaxorders={:?}",
+            action.pubkey, action.maxorders, action.global_maxorders
+        ),
         Action::ApproveCommissionFee(action) => {
             format!(
                 "ApproveCommissionFee to={} max_fee={}",

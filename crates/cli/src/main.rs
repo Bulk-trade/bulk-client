@@ -8,7 +8,7 @@ use crate::commands::{
     CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs,
     LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
     PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
-    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
+    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs, UserAdminArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -31,6 +31,7 @@ use crate::handlers::multisig::{
 use crate::handlers::orders::{handle_modify, handle_place};
 use crate::handlers::risk::{
     handle_account_policy, handle_funding_config, handle_liquidator_config, handle_risk_config,
+    handle_user_admin,
 };
 use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::{SignatureDomain, TransactionSigner};
@@ -249,6 +250,13 @@ enum Command {
     #[command(name = "account-policy")]
     AccountPolicy(AccountPolicyArgs),
 
+    /// Set or clear an account open-order override and optionally update the global fallback.
+    ///
+    /// Example: bulk user-admin <pubkey> --maxorders 500
+    /// Example: bulk user-admin <pubkey> --use-global --global-maxorders 10000
+    #[command(name = "user-admin")]
+    UserAdmin(UserAdminArgs),
+
     /// Replace one complete security or currency definition.
     ///
     /// Example: bulk config-security btc.json5
@@ -317,6 +325,7 @@ impl Command {
                 | Command::MarketAdmin(_)
                 | Command::PricingAdmin(_)
                 | Command::UpdateFunding(_)
+                | Command::UserAdmin(_)
         )
     }
 }
@@ -467,6 +476,7 @@ async fn main() -> eyre::Result<()> {
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
         Command::UpdateFunding(args) => handle_funding_config(&mut api, args, &submit).await,
         Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
+        Command::UserAdmin(args) => handle_user_admin(&mut api, args, &submit).await,
         Command::ConfigSecurity(args) => handle_config_security(&mut api, args, &submit).await,
         Command::ConfigFees(args) => handle_config_fees(&mut api, args, &submit).await,
         Command::ConfigMaker(args) => handle_config_maker(&mut api, args, &submit).await,
@@ -571,6 +581,49 @@ mod tests {
             }
             _ => panic!("expected account-policy"),
         }
+    }
+
+    #[test]
+    fn parse_user_admin_account_and_global_limits() {
+        let pubkey = "11111111111111111111111111111111";
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "user-admin",
+            pubkey,
+            "--maxorders",
+            "500",
+            "--global-maxorders",
+            "10000",
+        ])
+        .expect("should parse user-admin limits");
+
+        match cli.command {
+            Command::UserAdmin(args) => {
+                assert_eq!(args.pubkey, pubkey.parse().unwrap());
+                assert_eq!(args.maxorders, Some(500));
+                assert!(!args.use_global);
+                assert_eq!(args.global_maxorders, Some(10_000));
+            }
+            _ => panic!("expected user-admin"),
+        }
+    }
+
+    #[test]
+    fn parse_user_admin_clear_override() {
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "user-admin",
+            "11111111111111111111111111111111",
+            "--use-global",
+        ])
+        .expect("should parse user-admin override reset");
+
+        let Command::UserAdmin(args) = cli.command else {
+            panic!("expected user-admin");
+        };
+        assert_eq!(args.maxorders, None);
+        assert!(args.use_global);
+        assert_eq!(args.global_maxorders, None);
     }
 
     #[test]

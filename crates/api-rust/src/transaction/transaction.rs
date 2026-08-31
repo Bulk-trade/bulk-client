@@ -442,6 +442,9 @@ impl Serialize for RawSignableAction<'_> {
             Action::ConfigFunding(action) => {
                 serializer.serialize_newtype_variant("Action", 64, "ConfigFunding", action)
             }
+            Action::UserAdmin(action) => {
+                serializer.serialize_newtype_variant("Action", 65, "UserAdmin", action)
+            }
         }
     }
 }

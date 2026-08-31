@@ -1,11 +1,12 @@
 use crate::commands::risk::{
-    AccountPolicyArgs, FundingConfigArgs, LiquidatorConfigArgs, RiskConfigArgs,
+    AccountPolicyArgs, FundingConfigArgs, LiquidatorConfigArgs, RiskConfigArgs, UserAdminArgs,
 };
 use crate::common::submit::{submit_actions, SubmitOptions};
 use bulk_client::msgs::liquidator::LiqConfig;
 use bulk_client::msgs::risk::RiskConfigChange;
 use bulk_client::msgs::ConfigFunding;
 use bulk_client::msgs::UpdateAccountPolicy;
+use bulk_client::msgs::UserAdmin;
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
 use std::path::Path;
@@ -84,6 +85,42 @@ pub async fn handle_account_policy(
 
     eprintln!("Placing account policy update");
     submit_actions(api, submit, vec![Action::UpdateAccountPolicy(policy)]).await
+}
+
+/// Submits account and optional global open-order limits through the admin multisig.
+///
+/// # Arguments
+/// * `api` - HTTP client used to submit the proposal transaction.
+/// * `args` - Target account, account override behavior, and optional global fallback.
+/// * `submit` - Preview and confirmation behavior for the submission.
+///
+/// # Returns
+/// An error when the action cannot be submitted.
+pub async fn handle_user_admin(
+    api: &mut BulkHttpClient,
+    args: UserAdminArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let maxorders = if args.use_global {
+        None
+    } else {
+        args.maxorders
+    };
+    eprintln!(
+        "Updating open-order limits for {}: account={:?}, global={:?}",
+        args.pubkey, maxorders, args.global_maxorders
+    );
+    submit_actions(
+        api,
+        submit,
+        vec![Action::UserAdmin(UserAdmin {
+            pubkey: args.pubkey,
+            maxorders,
+            global_maxorders: args.global_maxorders,
+            meta: Default::default(),
+        })],
+    )
+    .await
 }
 
 pub async fn handle_liquidator_config(
