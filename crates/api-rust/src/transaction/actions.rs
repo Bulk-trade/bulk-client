@@ -13,7 +13,7 @@ use crate::msgs::{
     Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price,
     PricingAdmin, PythOracle, RevokeCommissionFee, RevokePendingActivation, RewardSettlement,
     SolanaBlockAnchor, UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings,
-    UpdateValidatorSet, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
+    UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
     WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
@@ -229,6 +229,10 @@ pub enum Action {
     // ConfigFunding = ordinal(64)
     #[serde(rename = "configFunding")]
     ConfigFunding(ConfigFunding),
+
+    // UserAdmin = ordinal(65)
+    #[serde(rename = "userAdmin")]
+    UserAdmin(UserAdmin),
 }
 
 macro_rules! dispatch {
@@ -305,6 +309,7 @@ macro_rules! dispatch {
             Action::ActivateProtocolVersion($x) => $body,
             Action::RevokePendingActivation($x) => $body,
             Action::ConfigFunding($x) => $body,
+            Action::UserAdmin($x) => $body,
         }
     };
 }
@@ -328,6 +333,7 @@ impl Action {
                 | Action::UpdateRiskConfig(_)
                 | Action::UpdateAccountPolicy(_)
                 | Action::ConfigFunding(_)
+                | Action::UserAdmin(_)
         )
     }
 
@@ -572,6 +578,7 @@ impl_action_from!(UpdateAccountPolicy, UpdateAccountPolicy);
 impl_action_from!(ActivateProtocolVersion, ActivateProtocolVersion);
 impl_action_from!(RevokePendingActivation, RevokePendingActivation);
 impl_action_from!(ConfigFunding, ConfigFunding);
+impl_action_from!(UserAdmin, UserAdmin);
 
 #[cfg(test)]
 mod tests {

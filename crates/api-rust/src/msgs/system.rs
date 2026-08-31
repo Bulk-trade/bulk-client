@@ -234,6 +234,22 @@ pub struct UpdateAccountPolicy {
     pub meta: ActionMeta,
 }
 
+/// Per-user and executor-wide open-order limits applied by the admin multisig.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAdmin {
+    /// Logical account whose override is updated.
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    pub pubkey: Pubkey,
+    /// Account override, or `None` to restore the global fallback for this account.
+    pub maxorders: Option<usize>,
+    /// New global fallback, or `None` to leave the current global value unchanged.
+    pub global_maxorders: Option<usize>,
+
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
 /// Instrument-specific funding model configuration applied by the admin multisig.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

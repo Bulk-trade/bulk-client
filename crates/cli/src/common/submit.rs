@@ -239,7 +239,7 @@ fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bulk_client::msgs::{AddMarket, CancelAll, ConfigMakerRebateTier, OpaqueAction};
+    use bulk_client::msgs::{AddMarket, CancelAll, ConfigMakerRebateTier, OpaqueAction, UserAdmin};
 
     #[test]
     fn wraps_each_admin_action_once() {
@@ -313,6 +313,26 @@ mod tests {
             assert!(proposal.actions[0].is_fee_admin_multisig_action());
             assert!(!proposal.actions[0].is_admin_multisig_action());
         }
+    }
+
+    #[test]
+    fn wraps_user_admin_with_protocol_admin_multisig() {
+        let target = Pubkey::new_unique();
+        let wrapped = wrap_admin_actions(vec![Action::UserAdmin(UserAdmin {
+            pubkey: target,
+            maxorders: Some(500),
+            global_maxorders: Some(10_000),
+            meta: ActionMeta::default(),
+        })]);
+
+        let [Action::MultisigPropose(proposal)] = wrapped.as_slice() else {
+            panic!("user admin action must be wrapped in an admin proposal");
+        };
+        assert_eq!(proposal.multisig, Pubkey::from_str(ADMIN_MULTISIG).unwrap());
+        assert!(matches!(
+            proposal.actions.as_slice(),
+            [Action::UserAdmin(_)]
+        ));
     }
 
     #[test]
