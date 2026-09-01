@@ -68,8 +68,7 @@ bulk_admin_parse_common_args() {
         BULK_ADMIN_API_URL="http://localhost:12000/api/v1"
         ;;
       mainnet)
-        echo "error: mainnet requires -url or BULK_API_URL" >&2
-        return 2
+        BULK_ADMIN_API_URL="https://mainnet-api1.bulk.trade/api/v1"
         ;;
     esac
   fi
@@ -116,7 +115,7 @@ bulk_admin_run() {
     --bin bulk \
     -- \
     --api-url "${BULK_API_URL}" \
-    "${signer_args[@]}" \
+    ${signer_args[@]+"${signer_args[@]}"} \
     "${command}" \
     "$@"
 }
