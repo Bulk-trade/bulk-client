@@ -6,6 +6,7 @@ pub mod deploy;
 pub mod multisig;
 pub mod orders;
 pub mod risk;
+pub mod solana;
 
 pub use account::*;
 pub use cancel::*;
@@ -15,3 +16,4 @@ pub use deploy::*;
 pub use multisig::*;
 pub use orders::*;
 pub use risk::*;
+pub use solana::*;

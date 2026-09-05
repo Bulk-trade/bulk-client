@@ -13,8 +13,7 @@ name = "bulk"
 path = "src/main.rs"
 
 [dependencies]
-bulk-client = { version = "0.1.2", path = "../api-rust", features = ["ledger"] }
-bulk-sdk-core = { path = "../../../bulk-sdk/core" }
+bulk-client = { version = "0.1.2", path = "../api-rust", features = ["ledger", "with-sdk"] }
 bincode = "1.3.3"
 
 eyre = "0.6"
@@ -25,10 +24,15 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.5.58", features = ["derive"] }
 sha2 = "0.10.9"
+base64 = "0.22"
+bs58 = "0.5"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 solana-hash = { version = "3.0.1", features = ["serde"] }
 solana-signature = { version = "3.0.1", features = ["serde"] }
 solana-signer = "3.0.0"
-solana-pubkey = { version = "3.0.0", features = ["serde"] }
+solana-pubkey = { version = "3.0.0", features = ["serde", "curve25519"] }
 solana-keypair = "=3.1.2"
+solana-instruction = { version = "3.0", features = ["std"] }
+solana-transaction = { version = "3.0", features = ["bincode", "serde"] }
 json5 = "1.3.1"
