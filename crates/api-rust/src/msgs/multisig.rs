@@ -94,21 +94,19 @@ pub struct MultisigExecute {
 pub struct UpdateMultisigPolicy {
     #[serde(with = "crate::msgs::serde_pubkey", rename = "m")]
     pub multisig: Pubkey,
-    #[serde(default = "default_signers")]
-    pub signers: Vec<Pubkey>,
-    pub threshold: u32,
     #[serde(default)]
-    pub time_lock_secs: u32,
-    #[serde(default = "default_proposal_lifetime_secs")]
-    pub proposal_lifetime_secs: u32,
+    pub signers: Option<Vec<Pubkey>>,
+    #[serde(default)]
+    pub threshold: Option<u32>,
+    #[serde(default)]
+    pub time_lock_secs: Option<u32>,
+    #[serde(default)]
+    pub proposal_lifetime_secs: Option<u32>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
 }
 
-fn default_signers() -> Vec<Pubkey> {
-    Vec::new()
-}
 fn default_proposal_lifetime_secs() -> u32 {
     7 * 24 * 3600
 }
@@ -136,5 +134,20 @@ mod tests {
         let decoded: MultisigPropose =
             serde_json::from_value(without_lifetime).expect("deserialize proposal");
         assert_eq!(decoded.proposal_lifetime_secs, None);
+    }
+
+    #[test]
+    fn update_multisig_policy_defaults_omitted_changes_to_none() {
+        let multisig = Pubkey::new_unique();
+        let update: UpdateMultisigPolicy = serde_json::from_value(serde_json::json!({
+            "m": multisig.to_string()
+        }))
+        .expect("partial multisig update should parse");
+
+        assert_eq!(update.multisig, multisig);
+        assert_eq!(update.signers, None);
+        assert_eq!(update.threshold, None);
+        assert_eq!(update.time_lock_secs, None);
+        assert_eq!(update.proposal_lifetime_secs, None);
     }
 }

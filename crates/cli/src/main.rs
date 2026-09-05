@@ -200,7 +200,7 @@ enum Command {
 
     /// Update the policy (signers / threshold / lock) of an existing multisig.
     ///
-    /// Example: bulk update-multisig <multisig> <pk1>,<pk2>,<pk3> --threshold 2
+    /// Example: bulk update-multisig <multisig> --signers <pk1>,<pk2>,<pk3>
     #[command(name = "update-multisig")]
     UpdateMultisig(UpdateMultisigPolicyArgs),
 
@@ -538,6 +538,33 @@ mod tests {
                 assert_eq!(url, "https://exchange-api.bulk.trade/api/v1");
             }
             _ => panic!("expected config set-api-url"),
+        }
+    }
+
+    #[test]
+    fn parse_partial_multisig_signer_update() {
+        let first = solana_pubkey::Pubkey::new_unique();
+        let second = solana_pubkey::Pubkey::new_unique();
+        let multisig = solana_pubkey::Pubkey::new_unique();
+        let signers = format!("{first},{second}");
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "update-multisig",
+            &multisig.to_string(),
+            "--signers",
+            &signers,
+        ])
+        .expect("should parse a signer-only multisig update");
+
+        match cli.command {
+            Command::UpdateMultisig(args) => {
+                assert_eq!(args.multisig, multisig);
+                assert_eq!(args.signers, Some(vec![first, second]));
+                assert_eq!(args.threshold, None);
+                assert_eq!(args.lock, None);
+                assert_eq!(args.lifetime, None);
+            }
+            _ => panic!("expected update-multisig"),
         }
     }
 
