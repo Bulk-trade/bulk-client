@@ -3,13 +3,11 @@ use bulk_client::msgs::{
 };
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
-use bulk_sdk_core::securities::Security;
-use bulk_sdk_core::{markets::MktId, models::margin::RiskMatrix, time_epoch_ns};
 use std::path::Path;
 
 use crate::commands::{
-    AddMarketArgs, ConfigFeesArgs, ConfigMakerArgs, ConfigRiskArgs, ConfigSecurityArgs, CorrsArgs,
-    FeePolicyUpdate, MarketAdminArgs, PricingAdminArgs,
+    AddMarketArgs, ConfigFeesArgs, ConfigMakerArgs, CorrsArgs, FeePolicyUpdate, MarketAdminArgs,
+    PricingAdminArgs,
 };
 use crate::common::submit::{submit_actions, SubmitOptions};
 
@@ -50,40 +48,6 @@ pub async fn handle_corrs(
     submit_actions(api, submit, vec![Action::Corrs(matrix)]).await
 }
 
-/// Replaces one coin's complete risk surface through the administrative multisig.
-///
-/// # Arguments
-/// * `api` - Authenticated Bulk HTTP client.
-/// * `args` - Coin name and path to its risk-surface CSV.
-/// * `submit` - Transaction preview and confirmation options.
-///
-/// # Returns
-/// An error when the coin is invalid, the CSV cannot be parsed, or submission fails.
-pub async fn handle_config_risk(
-    api: &mut BulkHttpClient,
-    args: ConfigRiskArgs,
-    submit: &SubmitOptions,
-) -> eyre::Result<()> {
-    Security::initialize();
-    let instrument = MktId::from_str(&args.coin)
-        .ok_or_else(|| eyre::eyre!("invalid risk-surface coin '{}'", args.coin))?;
-    let matrix = RiskMatrix::from_csv(time_epoch_ns(), instrument, &args.csv)
-        .map_err(|error| eyre::eyre!("invalid risk-surface CSV '{}': {error}", args.csv))?;
-    let payload = bincode::serialize(&matrix)
-        .map_err(|error| eyre::eyre!("failed to serialize risk surface: {error}"))?;
-
-    eprintln!("Placing risk-surface replacement for {}", args.coin);
-    submit_actions(
-        api,
-        submit,
-        vec![Action::ConfigRisk(OpaqueAction {
-            payload,
-            meta: Default::default(),
-        })],
-    )
-    .await
-}
-
 pub async fn handle_add_market(
     api: &mut BulkHttpClient,
     args: AddMarketArgs,
@@ -95,43 +59,6 @@ pub async fn handle_add_market(
         submit,
         vec![Action::AddMarket(AddMarket {
             symbol: args.symbol.into(),
-            meta: Default::default(),
-        })],
-    )
-    .await
-}
-
-/// Submits a complete security definition through the administrative multisig.
-///
-/// # Arguments
-/// * `api` - Authenticated Bulk HTTP client.
-/// * `args` - Inline JSON/JSON5 or a path containing one security definition.
-/// * `submit` - Transaction preview and confirmation options.
-///
-/// # Returns
-/// An error when the definition cannot be read, parsed, serialized, or submitted.
-pub async fn handle_config_security(
-    api: &mut BulkHttpClient,
-    args: ConfigSecurityArgs,
-    submit: &SubmitOptions,
-) -> eyre::Result<()> {
-    let raw = if Path::new(&args.json).exists() {
-        std::fs::read_to_string(&args.json)
-            .map_err(|error| eyre::eyre!("failed to read '{}': {error}", args.json))?
-    } else {
-        args.json
-    };
-    let security: Security =
-        json5::from_str(&raw).map_err(|error| eyre::eyre!("invalid security config: {error}"))?;
-    let payload = bincode::serialize(&security)
-        .map_err(|error| eyre::eyre!("failed to serialize security config: {error}"))?;
-
-    eprintln!("Placing security configuration update");
-    submit_actions(
-        api,
-        submit,
-        vec![Action::ConfigSecurity(OpaqueAction {
-            payload,
             meta: Default::default(),
         })],
     )
@@ -273,42 +200,6 @@ pub async fn handle_pricing_admin(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn initialized_security_registry_resolves_risk_matrix_coin() {
-        Security::initialize();
-
-        assert!(MktId::from_str("BTC").is_some());
-    }
-
-    #[test]
-    fn security_payload_roundtrips_through_executor_decoder() {
-        let security: Security = json5::from_str(
-            r#"{
-                type: "Currency",
-                name: "BTC",
-                dollarQuoted: true,
-                dollarEquivalent: false,
-                sid: 100,
-                pyth: 1,
-                aliases: ["WBTC"],
-                decimals: 8,
-                address: {
-                    Solana: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
-                }
-            }"#,
-        )
-        .expect("parse BTC security");
-
-        let payload = bincode::serialize(&security).expect("serialize security payload");
-        let decoded: Security =
-            bincode::deserialize(&payload).expect("executor-compatible security payload");
-
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap(),
-            serde_json::to_value(security).unwrap()
-        );
-    }
 
     #[test]
     fn fee_policy_payload_uses_versioned_executor_envelope() {

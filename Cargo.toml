@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/api-rust", "crates/api-python", "crates/cli"]
+exclude = ["crates/cli-sdk"]
 
 [workspace.package]
 authors = ["Bulk"]

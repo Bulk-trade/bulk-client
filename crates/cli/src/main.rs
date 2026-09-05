@@ -4,11 +4,11 @@ pub mod handlers;
 
 use crate::commands::{
     AccountPolicyArgs, AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs,
-    ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, ConfigRiskArgs, ConfigSecurityArgs, CorrsArgs,
-    CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs,
-    LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
-    PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
-    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs, UserAdminArgs,
+    ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, CorrsArgs, CreateMultisigArgs,
+    CreateSubAccountArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs, LiquidatorConfigArgs,
+    MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs, PricingAdminArgs, RangeArgs,
+    RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs,
+    UpdateLeverageArgs, UpdateMultisigPolicyArgs, UserAdminArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -21,8 +21,8 @@ use crate::handlers::conditional::{
     handle_range, handle_stop, handle_take_profit, handle_trailing,
 };
 use crate::handlers::deploy::{
-    handle_add_market, handle_config_fees, handle_config_maker, handle_config_risk,
-    handle_config_security, handle_corrs, handle_market_admin, handle_pricing_admin,
+    handle_add_market, handle_config_fees, handle_config_maker, handle_corrs, handle_market_admin,
+    handle_pricing_admin,
 };
 use crate::handlers::multisig::{
     handle_create_multisig, handle_multisig_approve, handle_multisig_cancel,
@@ -257,13 +257,6 @@ enum Command {
     #[command(name = "user-admin")]
     UserAdmin(UserAdminArgs),
 
-    /// Replace one complete security or currency definition.
-    ///
-    /// Example: bulk config-security btc.json5
-    /// Example: bulk config-security '{type:"Currency",name:"BTC",...}'
-    #[command(name = "config-security")]
-    ConfigSecurity(ConfigSecurityArgs),
-
     /// Configure global or per-market rolling-volume trading fees.
     ///
     /// Example: bulk config-fees fee-policy.json5
@@ -286,12 +279,6 @@ enum Command {
     /// Submit a full correlation matrix.
     #[command(name = "corrs")]
     Corrs(CorrsArgs),
-
-    /// Replace one coin's complete risk surface from a CSV file.
-    ///
-    /// Example: bulk config-risk-matrix BTC btc-risk.csv
-    #[command(name = "config-risk-matrix")]
-    ConfigRisk(ConfigRiskArgs),
 
     /// Create a market book after configs are in place.
     #[command(name = "add-market")]
@@ -317,10 +304,8 @@ impl Command {
         matches!(
             self,
             Command::Corrs(_)
-                | Command::ConfigRisk(_)
                 | Command::ConfigFees(_)
                 | Command::ConfigMaker(_)
-                | Command::ConfigSecurity(_)
                 | Command::AddMarket(_)
                 | Command::MarketAdmin(_)
                 | Command::PricingAdmin(_)
@@ -477,12 +462,10 @@ async fn main() -> eyre::Result<()> {
         Command::UpdateFunding(args) => handle_funding_config(&mut api, args, &submit).await,
         Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
         Command::UserAdmin(args) => handle_user_admin(&mut api, args, &submit).await,
-        Command::ConfigSecurity(args) => handle_config_security(&mut api, args, &submit).await,
         Command::ConfigFees(args) => handle_config_fees(&mut api, args, &submit).await,
         Command::ConfigMaker(args) => handle_config_maker(&mut api, args, &submit).await,
         Command::LiqConfig(args) => handle_liquidator_config(&mut api, args, &submit).await,
         Command::Corrs(args) => handle_corrs(&mut api, args, &submit).await,
-        Command::ConfigRisk(args) => handle_config_risk(&mut api, args, &submit).await,
         Command::AddMarket(args) => handle_add_market(&mut api, args, &submit).await,
         Command::MarketAdmin(args) => handle_market_admin(&mut api, args, &submit).await,
         Command::PricingAdmin(args) => handle_pricing_admin(&mut api, args, &submit).await,
@@ -666,17 +649,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_config_security_file() {
-        let cli = Cli::try_parse_from(["bulk", "config-security", "btc.json5"])
-            .expect("should parse config-security");
-
-        match cli.command {
-            Command::ConfigSecurity(args) => assert_eq!(args.json, "btc.json5"),
-            _ => panic!("expected config-security"),
-        }
-    }
-
-    #[test]
     fn parse_config_fees_file() {
         let cli = Cli::try_parse_from(["bulk", "config-fees", "fees.json5"])
             .expect("should parse config-fees");
@@ -695,20 +667,6 @@ mod tests {
         match cli.command {
             Command::ConfigMaker(args) => assert_eq!(args.json, "maker.json5"),
             _ => panic!("expected config-maker"),
-        }
-    }
-
-    #[test]
-    fn parse_config_risk_matrix_coin_and_csv() {
-        let cli = Cli::try_parse_from(["bulk", "config-risk-matrix", "BTC", "btc-risk.csv"])
-            .expect("should parse config-risk-matrix");
-
-        match cli.command {
-            Command::ConfigRisk(args) => {
-                assert_eq!(args.coin, "BTC");
-                assert_eq!(args.csv, "btc-risk.csv");
-            }
-            _ => panic!("expected config-risk-matrix"),
         }
     }
 
