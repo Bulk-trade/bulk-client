@@ -296,6 +296,10 @@ bulk transfer <from> <to> USDC 500
 
 # Multisig
 bulk create-multisig <pk1>,<pk2> --threshold 2 --lock 120
+
+# Solana vault (on-chain; uses BULK_PRIVATE_KEY, not --signature-domain)
+bulk deposit --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 1000000 --dry-run
+bulk withdraw-intent --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 1000000
 ```
 
 Set your key via environment variable or flag:
@@ -307,12 +311,15 @@ export BULK_API_URL="https://exchange-api.bulk.trade/api/v1"
 
 ## Documentation
 
+- Solana
+  - [Deposit & withdraw intent](docs/solana-deposit-withdraw-intent.md)
 - Rust API
   - [WebSocket](docs/rust-ws-api.md)
   - [HTTP](docs/rust-http-api.md)
 - Python API
   - [WebSocket](docs/python-ws-api.md)
   - [HTTP](docs/python-http-api.md)
+- [Clear sign v1](docs/clear-sign-v1.md)
 
 ## License
 

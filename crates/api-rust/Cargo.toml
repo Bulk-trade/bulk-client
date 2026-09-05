@@ -57,9 +57,10 @@ parking_lot = { version = "0.12.5", optional = true }
 solana-hash = { version = "3.0.1", features = ["serde"] }
 solana-signature = { version = "3.0.1", features = ["serde"] }
 solana-signer = "3.0.0"
-solana-pubkey = { version = "3.0.0", features = ["serde"] }
+solana-pubkey = { version = "3.0.0", features = ["serde", "curve25519"] }
 solana-keypair = "=3.1.2"
 solana-offchain-message = "3.0.0"
+solana-instruction = { version = "3.0", features = ["std"] }
 
 tracing = "0.1.44"
 clap = { version = "4.5.58", features = ["derive", "env"] }
