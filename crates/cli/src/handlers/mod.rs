@@ -5,3 +5,4 @@ pub mod deploy;
 pub mod multisig;
 pub mod orders;
 pub mod risk;
+pub mod solana;
