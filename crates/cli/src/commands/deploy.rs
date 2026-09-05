@@ -1,5 +1,5 @@
 use bulk_client::msgs::{MarketAction, OracleSource};
-use bulk_sdk_core::markets::MktId;
+use bulk_client::sdk::MktId;
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize};
 
