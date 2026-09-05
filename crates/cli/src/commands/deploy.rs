@@ -1,5 +1,5 @@
+use bulk_client::common::WireMktId;
 use bulk_client::msgs::{MarketAction, OracleSource};
-use bulk_sdk_core::markets::MktId;
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize};
 
@@ -10,23 +10,9 @@ pub struct CorrsArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct ConfigRiskArgs {
-    /// Coin whose complete risk surface will be replaced, for example BTC.
-    pub coin: String,
-    /// Path to the risk-surface CSV file.
-    pub csv: String,
-}
-
-#[derive(Args, Debug)]
 pub struct AddMarketArgs {
     /// Market symbol, for example MINIMAX-USD.
     pub symbol: String,
-}
-
-#[derive(Args, Debug)]
-pub struct ConfigSecurityArgs {
-    /// Inline JSON/JSON5 or a path containing one complete security definition.
-    pub json: String,
 }
 
 #[derive(Args, Debug)]
@@ -80,9 +66,9 @@ pub struct FeePolicy {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeePolicyUpdate {
-    /// Omit for the global policy or provide a market for an override.
+    /// Omit for the global policy or provide its numeric market ID for an override.
     #[serde(default)]
-    pub instrument: Option<MktId>,
+    pub instrument: Option<WireMktId>,
     /// Omit to apply immediately or provide the activation slot.
     pub effective_slot: Option<u64>,
     /// Clear all queued updates before applying this command.

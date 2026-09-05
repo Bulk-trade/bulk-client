@@ -1,0 +1,24 @@
+[package]
+name = "bulk-cli-sdk"
+version = "0.1.2"
+description = "Private SDK-backed action builders for the Bulk CLI"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "bulk-sdk"
+path = "src/main.rs"
+
+[workspace]
+
+[dependencies]
+bincode = "1.3.3"
+bulk-client = { path = "../api-rust" }
+bulk-sdk-core = { path = "../../../bulk-sdk/core" }
+clap = { version = "4.5.58", features = ["derive", "env"] }
+eyre = "0.6"
+json5 = "1.3.1"
+serde = "1"
+solana-pubkey = "3.0.0"
+tokio = { version = "1", features = ["full"] }
