@@ -5,10 +5,11 @@ pub mod handlers;
 use crate::commands::{
     AccountPolicyArgs, AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs,
     ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, ConfigRiskArgs, ConfigSecurityArgs, CorrsArgs,
-    CreateMultisigArgs, CreateSubAccountArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs,
-    LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
-    PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
-    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs, UserAdminArgs,
+    CreateMultisigArgs, CreateSubAccountArgs, DepositArgs, FaucetArgs, FundingConfigArgs,
+    LedgerInfoArgs, LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs,
+    PlaceArgs, PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs,
+    TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs,
+    UserAdminArgs, WithdrawIntentArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -33,10 +34,12 @@ use crate::handlers::risk::{
     handle_account_policy, handle_funding_config, handle_liquidator_config, handle_risk_config,
     handle_user_admin,
 };
+use crate::handlers::solana::{handle_deposit, handle_withdraw_intent};
 use bulk_client::parts::HttpConfig;
 use bulk_client::transaction::{SignatureDomain, TransactionSigner};
 use bulk_client::BulkHttpClient;
 use clap::{Parser, Subcommand};
+use solana_keypair::Keypair;
 use std::time::Duration;
 // ---------------------------------------------------------------------------
 // Top-level CLI
@@ -190,6 +193,18 @@ enum Command {
     ///
     /// Example: bulk transfer <from> <to> USDC 500
     Transfer(TransferArgs),
+
+    // ── Solana vault ─────────────────────────────────────────────────────────
+    /// Deposit tokens into a Bulk vault (on-chain opcode 2).
+    ///
+    /// Example: bulk deposit --mint EPjF... --amount 1000000
+    Deposit(DepositArgs),
+
+    /// Signal a withdraw intent (on-chain opcode 4; no token transfer).
+    ///
+    /// Example: bulk withdraw-intent --mint EPjF... --amount 1000000
+    #[command(name = "withdraw-intent")]
+    WithdrawIntent(WithdrawIntentArgs),
 
     // ── Multisig ─────────────────────────────────────────────────────────────
     /// Create a multisig account.
@@ -413,6 +428,25 @@ async fn main() -> eyre::Result<()> {
     if let Command::Config(args) = &cli.command {
         return handle_config(args, &mut stored_config);
     }
+
+    if matches!(&cli.command, Command::Deposit(_) | Command::WithdrawIntent(_)) {
+        if cli.ledger {
+            return Err(eyre::eyre!(
+                "deposit / withdraw-intent require --private-key (Ledger not supported for on-chain Solana txs yet)"
+            ));
+        }
+        let key = cli
+            .private_key
+            .as_deref()
+            .ok_or_else(|| eyre::eyre!("--private-key is required for deposit / withdraw-intent"))?;
+        let keypair = keypair_from_private_key(key)?;
+        return match cli.command {
+            Command::Deposit(args) => handle_deposit(&keypair, args, &submit).await,
+            Command::WithdrawIntent(args) => handle_withdraw_intent(&keypair, args, &submit).await,
+            _ => unreachable!(),
+        };
+    }
+
     let signer = if cli.ledger {
         TransactionSigner::from_ledger_with_options(
             &cli.ledger_locator,
@@ -488,7 +522,17 @@ async fn main() -> eyre::Result<()> {
         Command::PricingAdmin(args) => handle_pricing_admin(&mut api, args, &submit).await,
         Command::LedgerInfo(_) => unreachable!("handled before API setup"),
         Command::Config(_) => unreachable!("handled before API setup"),
+        Command::Deposit(_) | Command::WithdrawIntent(_) => {
+            unreachable!("handled before API setup")
+        }
     }
+}
+
+fn keypair_from_private_key(key_b58: &str) -> eyre::Result<Keypair> {
+    let key_bytes = bs58::decode(key_b58.trim())
+        .into_vec()
+        .map_err(|e| eyre::eyre!("decode private key: {e}"))?;
+    Keypair::try_from(key_bytes.as_slice()).map_err(|e| eyre::eyre!("invalid keypair: {e}"))
 }
 
 //
@@ -726,6 +770,54 @@ mod tests {
                 ));
             }
             _ => panic!("expected pricing-admin"),
+        }
+    }
+
+    #[test]
+    fn parse_deposit_dry_run() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "deposit",
+            "--mint",
+            mint,
+            "--amount",
+            "1000000",
+            "--dry-run",
+        ])
+        .expect("should parse deposit");
+
+        match cli.command {
+            Command::Deposit(args) => {
+                assert_eq!(args.mint.to_string(), mint);
+                assert_eq!(args.amount, 1_000_000);
+                assert!(args.dry_run);
+                assert!(args.user_token_account.is_none());
+            }
+            _ => panic!("expected deposit"),
+        }
+    }
+
+    #[test]
+    fn parse_withdraw_intent() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "withdraw-intent",
+            "--mint",
+            mint,
+            "--amount",
+            "500",
+        ])
+        .expect("should parse withdraw-intent");
+
+        match cli.command {
+            Command::WithdrawIntent(args) => {
+                assert_eq!(args.mint.to_string(), mint);
+                assert_eq!(args.amount, 500);
+                assert!(!args.dry_run);
+            }
+            _ => panic!("expected withdraw-intent"),
         }
     }
 }

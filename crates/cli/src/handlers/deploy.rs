@@ -1,10 +1,9 @@
 use bulk_client::msgs::{
     AddMarket, ConfigMakerRebateTier, MarketAction, MarketAdmin, Matrix, OpaqueAction, PricingAdmin,
 };
+use bulk_client::sdk::{time_epoch_ns, MktId, RiskMatrix, Security};
 use bulk_client::transaction::Action;
 use bulk_client::BulkHttpClient;
-use bulk_sdk_core::securities::Security;
-use bulk_sdk_core::{markets::MktId, models::margin::RiskMatrix, time_epoch_ns};
 use std::path::Path;
 
 use crate::commands::{

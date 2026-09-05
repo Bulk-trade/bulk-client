@@ -5,5 +5,12 @@ Preferred import path is `bulk_client` to match the PyPI package name.
 """
 
 from bulk_api import BulkHttpClient, BulkWebSocketClient, FastOrderBook, Topic
+from bulk_client import solana as solana
 
-__all__ = ["BulkHttpClient", "BulkWebSocketClient", "FastOrderBook", "Topic"]
+__all__ = [
+    "BulkHttpClient",
+    "BulkWebSocketClient",
+    "FastOrderBook",
+    "Topic",
+    "solana",
+]
