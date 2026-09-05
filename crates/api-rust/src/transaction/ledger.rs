@@ -1,17 +1,20 @@
 use crate::transaction::SignatureDomain;
-use eyre::bail;
+use eyre::{bail, WrapErr};
 use hidapi::HidApi;
 use solana_derivation_path::DerivationPath;
 use solana_pubkey::Pubkey;
 use solana_remote_wallet::{
     ledger::{is_valid_ledger, LedgerWallet},
     locator::Locator,
-    remote_wallet::{RemoteWallet, RemoteWalletError},
+    remote_wallet::RemoteWallet,
 };
 use solana_signature::Signature;
+use std::{thread, time::Duration};
 
 const HID_GLOBAL_USAGE_PAGE: u16 = 0xFF00;
 const HID_USB_DEVICE_CLASS: i32 = 0;
+const LEDGER_DISCOVERY_ATTEMPTS: usize = 4;
+const LEDGER_DISCOVERY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const OFFCHAIN_SIGNING_DOMAIN: &[u8; 16] = b"\xffsolana offchain";
 
 /// Describes a connected Ledger device.
@@ -211,12 +214,35 @@ impl LedgerSigner {
         confirm_key: bool,
         _keypair_name: &str,
     ) -> eyre::Result<ResolvedLedgerWallet> {
-        let locator = Locator::new_from_path(locator)?;
-        let target_pubkey = locator.pubkey;
+        let target_pubkey = Locator::new_from_path(locator)?.pubkey;
+        let mut last_error = None;
+
+        for attempt in 1..=LEDGER_DISCOVERY_ATTEMPTS {
+            match Self::resolve_wallet_once(target_pubkey, derivation_path, confirm_key) {
+                Ok(wallet) => return Ok(wallet),
+                Err(error) => last_error = Some(error),
+            }
+            if attempt < LEDGER_DISCOVERY_ATTEMPTS {
+                thread::sleep(LEDGER_DISCOVERY_RETRY_DELAY);
+            }
+        }
+
+        let last_error = last_error.expect("Ledger discovery always makes at least one attempt");
+        let context = Self::ledger_discovery_error_context(&format!("{last_error:#}"));
+        Err(last_error).wrap_err(context)
+    }
+
+    fn resolve_wallet_once(
+        target_pubkey: Option<Pubkey>,
+        derivation_path: &DerivationPath,
+        confirm_key: bool,
+    ) -> eyre::Result<ResolvedLedgerWallet> {
         let mut hid = HidApi::new()?;
         hid.refresh_devices()?;
         let mut strict_seen = false;
         let mut fallback_match = None;
+        let mut candidates = 0;
+        let mut failures = Vec::new();
 
         for info in hid.device_list() {
             let strict = is_valid_ledger(info.vendor_id(), info.product_id());
@@ -226,15 +252,37 @@ impl LedgerSigner {
             if strict {
                 strict_seen = true;
             }
-            let Ok(device) = hid.open_path(info.path()) else {
-                continue;
+            candidates += 1;
+            let device = match hid.open_path(info.path()) {
+                Ok(device) => device,
+                Err(error) => {
+                    failures.push(format!(
+                        "could not open {}: {error}",
+                        info.path().to_string_lossy()
+                    ));
+                    continue;
+                }
             };
             let mut wallet = LedgerWallet::new(device);
-            let Ok(remote_info) = wallet.read_device(info) else {
-                continue;
+            let remote_info = match wallet.read_device(info) {
+                Ok(remote_info) => remote_info,
+                Err(error) => {
+                    failures.push(format!(
+                        "could not read {}: {error}",
+                        info.path().to_string_lossy()
+                    ));
+                    continue;
+                }
             };
-            let Ok(derived_pubkey) = wallet.get_pubkey(derivation_path, confirm_key) else {
-                continue;
+            let derived_pubkey = match wallet.get_pubkey(derivation_path, confirm_key) {
+                Ok(pubkey) => pubkey,
+                Err(error) => {
+                    failures.push(format!(
+                        "could not derive a public key from {}: {error}",
+                        remote_info.host_device_path
+                    ));
+                    continue;
+                }
             };
             let candidate = ResolvedLedgerWallet {
                 wallet,
@@ -253,7 +301,40 @@ impl LedgerSigner {
             }
         }
 
-        fallback_match.ok_or_else(|| eyre::eyre!(RemoteWalletError::NoDeviceFound))
+        if let Some(wallet) = fallback_match {
+            return Ok(wallet);
+        }
+        if candidates == 0 {
+            bail!("no supported Ledger HID interfaces were found");
+        }
+        if failures.is_empty() {
+            bail!("no connected Ledger matched the requested public key");
+        }
+        bail!(
+            "found {candidates} Ledger HID interface(s), but none became usable: {}",
+            failures.join("; ")
+        )
+    }
+
+    fn ledger_discovery_error_context(error: &str) -> String {
+        if error.contains("not permitted") || error.contains("0xE00002E2") {
+            return "Ledger detected, but macOS denied access to its USB HID interface. Close Ledger Live and other wallet apps, reconnect and unlock the device, open the Solana app, and check the terminal application's Privacy & Security permissions".to_string();
+        }
+        if error.contains("could not open") {
+            return "Ledger detected, but its USB HID interface could not be opened. Close Ledger Live and other wallet apps, then reconnect and unlock the device"
+                .to_string();
+        }
+        if error.contains("could not read") || error.contains("could not derive a public key") {
+            return "Ledger detected, but the Solana app did not respond. Unlock the device, open the Solana app, and ensure blind signing is enabled if required"
+                .to_string();
+        }
+        if error.contains("matched the requested public key") {
+            return "Ledger connected, but it does not match the requested signer. Verify the device and derivation path"
+                .to_string();
+        }
+        format!(
+            "Ledger was not available after {LEDGER_DISCOVERY_ATTEMPTS} attempts. Reconnect and unlock the device, then open the Solana app"
+        )
     }
 
     fn enumerate_devices() -> eyre::Result<Vec<EnumeratedLedger>> {
@@ -362,5 +443,23 @@ mod tests {
 
         assert_eq!(envelope[17], SignatureDomain::Testnet as u8);
         assert_eq!(&envelope[18..49], &[0; 31]);
+    }
+
+    #[test]
+    fn ledger_discovery_error_identifies_macos_permission_denial() {
+        let context = LedgerSigner::ledger_discovery_error_context(
+            "hid_open_path failed: (0xE00002E2) not permitted",
+        );
+
+        assert!(context.starts_with("Ledger detected, but macOS denied access"));
+    }
+
+    #[test]
+    fn ledger_discovery_error_identifies_unresponsive_solana_app() {
+        let context = LedgerSigner::ledger_discovery_error_context(
+            "found device, but could not derive a public key",
+        );
+
+        assert!(context.starts_with("Ledger detected, but the Solana app did not respond"));
     }
 }
