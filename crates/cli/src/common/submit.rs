@@ -206,6 +206,7 @@ fn humanize_status(status: &str) -> String {
 /// Wraps protected CLI actions in proposals to the protocol administrative multisig.
 ///
 /// - Wraps every protected action in its own single-action proposal.
+/// - Wraps multisig policy updates in a proposal to the target multisig.
 /// - Preserves the original ordering of administrative and ordinary actions.
 /// - Leaves existing multisig proposals and non-admin actions unchanged.
 fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
@@ -215,7 +216,9 @@ fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
     actions
         .into_iter()
         .map(|action| {
-            let multisig = if action.is_fee_admin_multisig_action() {
+            let multisig = if let Action::UpdateMultisigPolicy(update) = &action {
+                Some(update.multisig)
+            } else if action.is_fee_admin_multisig_action() {
                 Some(fee_admin_multisig)
             } else if action.is_admin_multisig_action() {
                 Some(admin_multisig)
@@ -332,6 +335,61 @@ mod tests {
         assert!(matches!(
             proposal.actions.as_slice(),
             [Action::UserAdmin(_)]
+        ));
+    }
+
+    #[test]
+    fn wraps_multisig_policy_updates_with_their_target_multisig() {
+        let admin = Pubkey::from_str(ADMIN_MULTISIG).unwrap();
+        let fee_admin = Pubkey::from_str(FEE_ADMIN_MULTISIG).unwrap();
+        let ordinary = Pubkey::new_unique();
+
+        for target in [admin, fee_admin, ordinary] {
+            let wrapped = wrap_admin_actions(vec![Action::UpdateMultisigPolicy(
+                bulk_client::msgs::UpdateMultisigPolicy {
+                    multisig: target,
+                    signers: Some(vec![Pubkey::new_unique()]),
+                    threshold: None,
+                    time_lock_secs: None,
+                    proposal_lifetime_secs: None,
+                    meta: ActionMeta::default(),
+                },
+            )]);
+
+            let [Action::MultisigPropose(proposal)] = wrapped.as_slice() else {
+                panic!("multisig policy update must be wrapped in a proposal");
+            };
+            assert_eq!(proposal.multisig, target);
+            assert_eq!(proposal.proposal_lifetime_secs, None);
+            assert!(matches!(
+                proposal.actions.as_slice(),
+                [Action::UpdateMultisigPolicy(update)] if update.multisig == target
+            ));
+        }
+    }
+
+    #[test]
+    fn does_not_double_wrap_multisig_policy_update_proposal() {
+        let target = Pubkey::new_unique();
+        let proposal = Action::MultisigPropose(MultisigPropose {
+            multisig: target,
+            actions: vec![Action::UpdateMultisigPolicy(
+                bulk_client::msgs::UpdateMultisigPolicy {
+                    multisig: target,
+                    signers: None,
+                    threshold: Some(2),
+                    time_lock_secs: None,
+                    proposal_lifetime_secs: None,
+                    meta: ActionMeta::default(),
+                },
+            )],
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        });
+
+        assert!(matches!(
+            wrap_admin_actions(vec![proposal]).as_slice(),
+            [Action::MultisigPropose(_)]
         ));
     }
 

@@ -535,15 +535,24 @@ impl ClearSignMessage {
         format!(
             "UpdateMultisig {} thresh={} lock={} life={} signers={}",
             action.multisig,
-            action.threshold,
-            action.time_lock_secs,
-            action.proposal_lifetime_secs,
+            action
+                .threshold
+                .map_or_else(|| "unchanged".to_string(), |value| value.to_string()),
+            action
+                .time_lock_secs
+                .map_or_else(|| "unchanged".to_string(), |value| value.to_string()),
+            action
+                .proposal_lifetime_secs
+                .map_or_else(|| "unchanged".to_string(), |value| value.to_string()),
             action
                 .signers
-                .iter()
-                .map(|pubkey| pubkey.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+                .as_ref()
+                .map(|signers| signers
+                    .iter()
+                    .map(|pubkey| pubkey.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","))
+                .unwrap_or_else(|| "unchanged".to_string()),
         )
     }
 }
@@ -552,7 +561,7 @@ impl ClearSignMessage {
 mod tests {
     use super::ClearSignMessage;
     use crate::common::tif::TimeInForce;
-    use crate::msgs::{BuilderCode, Faucet, LimitOrder, OpaqueAction};
+    use crate::msgs::{BuilderCode, Faucet, LimitOrder, OpaqueAction, UpdateMultisigPolicy};
     use crate::transaction::{Action, ActionMeta, SignatureDomain};
     use solana_pubkey::Pubkey;
     use std::sync::Arc;
@@ -566,6 +575,26 @@ mod tests {
                 .find(|line| line.starts_with("Signable-Hash: "))
                 .expect("missing signable hash line")
         }
+    }
+
+    #[test]
+    fn partial_multisig_update_renders_unchanged_fields() {
+        let multisig = Pubkey::new_unique();
+        let message = ClearSignMessage::update_multisig(&UpdateMultisigPolicy {
+            multisig,
+            signers: None,
+            threshold: Some(3),
+            time_lock_secs: None,
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        });
+
+        assert_eq!(
+            message,
+            format!(
+                "UpdateMultisig {multisig} thresh=3 lock=unchanged life=unchanged signers=unchanged"
+            )
+        );
     }
 
     #[test]

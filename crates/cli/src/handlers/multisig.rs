@@ -58,24 +58,29 @@ pub async fn handle_update_multisig_policy(
     args: UpdateMultisigPolicyArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    if args.threshold == 0 {
+    if args.threshold == Some(0) {
         bail!("--threshold must be at least 1");
     }
-    if args.threshold as usize > args.signers.len() {
-        bail!(
-            "--threshold {} exceeds signer count {}",
-            args.threshold,
-            args.signers.len()
-        );
+    if let (Some(threshold), Some(signers)) = (args.threshold, args.signers.as_ref()) {
+        if threshold as usize > signers.len() {
+            bail!(
+                "--threshold {} exceeds signer count {}",
+                threshold,
+                signers.len()
+            );
+        }
+    }
+    if args.signers.is_none()
+        && args.threshold.is_none()
+        && args.lock.is_none()
+        && args.lifetime.is_none()
+    {
+        bail!("at least one policy field must be supplied");
     }
 
     println!(
-        "Updating multisig {} → {}-of-{}  lock={}s  lifetime={}s",
-        args.multisig,
-        args.threshold,
-        args.signers.len(),
-        args.lock,
-        args.lifetime,
+        "Updating multisig {}  signers={:?}  threshold={:?}  lock={:?}s  lifetime={:?}s",
+        args.multisig, args.signers, args.threshold, args.lock, args.lifetime,
     );
 
     let action = Action::UpdateMultisigPolicy(UpdateMultisigPolicy {

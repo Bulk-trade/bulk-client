@@ -34,21 +34,21 @@ pub struct UpdateMultisigPolicyArgs {
     #[arg(value_parser = parse_pubkey)]
     pub multisig: Pubkey,
 
-    /// New signer public keys (base58), space-separated.
-    #[arg(value_parser = parse_pubkey)]
-    pub signers: Vec<Pubkey>,
+    /// New signer public keys (base58), comma-separated.
+    #[arg(long, value_delimiter = ',', num_args = 1.., value_parser = parse_pubkey)]
+    pub signers: Option<Vec<Pubkey>>,
 
     /// New approval threshold.
     #[arg(long)]
-    pub threshold: u32,
+    pub threshold: Option<u32>,
 
     /// New time-lock duration in seconds.
-    #[arg(long, default_value = "0")]
-    pub lock: u32,
+    #[arg(long)]
+    pub lock: Option<u32>,
 
     /// New proposal lifetime in seconds.
-    #[arg(long, default_value = "0")]
-    pub lifetime: u32,
+    #[arg(long)]
+    pub lifetime: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
