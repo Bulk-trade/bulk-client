@@ -61,6 +61,9 @@ pub struct LiqConfig {
     /// Standard deviations above expected sweep cost allowed at normal urgency
     #[serde(default = "default_sweep_sds")]
     pub sweep_sds: f64,
+    /// Whether liquidation impact should be priced to the terminal sweep level.
+    #[serde(default = "default_price_to_sweep")]
+    pub price_to_sweep: bool,
     /// configuration per instrument
     pub instruments: Vec<LiqConfigByInstrument>,
 
@@ -74,6 +77,10 @@ fn default_urgency_size_fraction() -> f64 {
 
 fn default_sweep_sds() -> f64 {
     2.0
+}
+
+fn default_price_to_sweep() -> bool {
+    true
 }
 
 fn default_max_sweep_bps() -> f64 {
@@ -111,6 +118,7 @@ mod tests {
 
         assert_eq!(config.urgency_size_fraction, 0.25);
         assert_eq!(config.sweep_sds, 2.0);
+        assert!(config.price_to_sweep);
         assert_eq!(config.instruments[0].execution_mode, ExecutionMode::Normal);
         assert_eq!(config.instruments[0].dump_retry_secs, 60);
         assert_eq!(config.instruments[0].max_sweep_bps, 100.0);
