@@ -353,12 +353,13 @@ impl ClearSignMessage {
             )
         }
         Action::UpdateLiquidatorConfig(action) => format!(
-            "UpdateLiquidatorConfig cross_exposure={:.8} scoring_skew={:.8} toxicity={:.8} urgency_size_fraction={:.8} sweep_sds={:.8} instruments={}",
+            "UpdateLiquidatorConfig cross_exposure={:.8} scoring_skew={:.8} toxicity={:.8} urgency_size_fraction={:.8} sweep_sds={:.8} price_to_sweep={} instruments={}",
             action.cross_exposure,
             action.scoring_skew,
             action.toxicity,
             action.urgency_size_fraction,
             action.sweep_sds,
+            action.price_to_sweep,
             action.instruments.len()
         ),
         Action::Deposit(action) => format!(
