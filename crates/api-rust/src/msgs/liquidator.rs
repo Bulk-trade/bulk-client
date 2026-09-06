@@ -1,11 +1,30 @@
 use crate::transaction::ActionMeta;
 use serde::{Deserialize, Serialize};
 
+/// Per-instrument policy controlling how liquidation inventory is unwound.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    /// Work inventory through the normal participation and slice schedule.
+    #[default]
+    Normal,
+    /// Hold inventory without submitting additional execution orders.
+    Paused,
+    /// Sweep protected liquidity without waiting for the normal slice schedule.
+    Dump,
+}
+
 /// Per instrument liquidation strategy config
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LiqConfigByInstrument {
     /// which instrument
     pub symbol: String,
+    /// Policy controlling how inventory for this instrument is unwound.
+    #[serde(default)]
+    pub execution_mode: ExecutionMode,
+    /// Base delay between dump slices; the executor deterministically jitters it by ±25%.
+    #[serde(default = "default_dump_retry_secs")]
+    pub dump_retry_secs: u64,
     /// maximum notional exposure we are willing to take on
     pub max_exposure: f64,
     /// Minimum liquidation reserve above mid, in basis points
@@ -61,6 +80,11 @@ fn default_max_sweep_bps() -> f64 {
     100.0
 }
 
+/// Return the SDK-compatible default base interval between dump attempts.
+fn default_dump_retry_secs() -> u64 {
+    60
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +111,18 @@ mod tests {
 
         assert_eq!(config.urgency_size_fraction, 0.25);
         assert_eq!(config.sweep_sds, 2.0);
+        assert_eq!(config.instruments[0].execution_mode, ExecutionMode::Normal);
+        assert_eq!(config.instruments[0].dump_retry_secs, 60);
         assert_eq!(config.instruments[0].max_sweep_bps, 100.0);
+    }
+
+    #[test]
+    fn execution_modes_serialize_with_sdk_wire_names() {
+        let dump = serde_json::to_value(ExecutionMode::Dump).unwrap();
+        assert_eq!(dump, serde_json::json!("dump"));
+        assert_eq!(
+            serde_json::from_value::<ExecutionMode>(serde_json::json!("paused")).unwrap(),
+            ExecutionMode::Paused
+        );
     }
 }
