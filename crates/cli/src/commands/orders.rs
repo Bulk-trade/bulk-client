@@ -30,6 +30,10 @@ pub struct PlaceArgs {
     #[arg(long)]
     pub reduce_only: bool,
 
+    /// Maximum market-order slippage from fair price, in basis points.
+    #[arg(long)]
+    pub slippage: Option<f64>,
+
     /// Arbitrary client-supplied tag carried on the order record.
     #[arg(long)]
     pub tag: Option<String>,

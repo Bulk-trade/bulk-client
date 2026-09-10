@@ -282,6 +282,8 @@ resp = client.place_orders([
 ])
 ```
 
+Market orders default to a 100 bps fair-price slippage bound.
+
 `MarketOrder` fields:
 
 | Field | Type | Default | Description |
@@ -290,6 +292,7 @@ resp = client.place_orders([
 | `side` | `Side` | — | `Side.BUY` or `Side.SELL` |
 | `size` | `float` | — | Order quantity |
 | `reduce_only` | `bool` | `False` | If `True`, only reduces an existing position |
+| `slippage` | `float` | `100.0` | Maximum adverse execution from fair price, in basis points |
 
 #### Cancel a specific order
 

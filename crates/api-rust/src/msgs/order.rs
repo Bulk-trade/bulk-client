@@ -77,12 +77,15 @@ struct OrderHashMarketOrder<'a>(&'a MarketOrder);
 
 impl Serialize for OrderHashMarketOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(5)?;
+        let mut tuple = serializer.serialize_tuple(5 + usize::from(self.0.slippage.is_some()))?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&OrderHashSafeF64(self.0.size))?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
+        if let Some(slippage) = self.0.slippage {
+            tuple.serialize_element(&OrderHashSafeF64(slippage))?;
+        }
         tuple.end()
     }
 }
@@ -133,6 +136,9 @@ impl Serialize for OrderHashLimitAction<'_> {
 // Market Order
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Default fair-price slippage bound for market orders, in basis points.
+pub const DEFAULT_MARKET_SLIPPAGE_BPS: f64 = 100.0;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MarketOrder {
@@ -158,6 +164,17 @@ pub struct MarketOrder {
     )]
     pub builder_code: Option<BuilderCode>,
 
+    /// Maximum adverse execution from fair price, in basis points.
+    ///
+    /// Client entry points resolve an omitted value to the 100 bps default.
+    #[serde(
+        rename = "slippage",
+        with = "crate::msgs::opt_fixed_point",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub slippage: Option<f64>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -165,8 +182,10 @@ pub struct MarketOrder {
 impl Serialize for MarketOrder {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            let mut state = serializer
-                .serialize_struct("MarketOrder", 5 + usize::from(self.builder_code.is_some()))?;
+            let mut state = serializer.serialize_struct(
+                "MarketOrder",
+                5 + usize::from(self.builder_code.is_some()) + usize::from(self.slippage.is_some()),
+            )?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("b", &self.is_buy)?;
             state.serialize_field("sz", &FixedF64(self.size))?;
@@ -175,21 +194,30 @@ impl Serialize for MarketOrder {
             if let Some(commission) = &self.builder_code {
                 state.serialize_field("builderCode", commission)?;
             }
+            if let Some(slippage) = self.slippage {
+                state.serialize_field("slippage", &FixedF64(slippage))?;
+            }
             state.end()
         } else {
-            let mut tuple = serializer.serialize_tuple(6)?;
+            let mut tuple = serializer.serialize_tuple(7)?;
             tuple.serialize_element(&self.symbol)?;
             tuple.serialize_element(&self.is_buy)?;
             tuple.serialize_element(&FixedF64(self.size))?;
             tuple.serialize_element(&self.reduce_only)?;
             tuple.serialize_element(&self.iso)?;
             tuple.serialize_element(&self.builder_code)?;
+            tuple.serialize_element(&self.slippage.map(FixedF64))?;
             tuple.end()
         }
     }
 }
 
 impl MarketOrder {
+    /// Returns the explicit slippage bound or the default 100 bps bound.
+    pub fn slippage(&self) -> f64 {
+        self.slippage.unwrap_or(DEFAULT_MARKET_SLIPPAGE_BPS)
+    }
+
     /// Compute order ID
     ///
     /// # Arguments
@@ -394,19 +422,52 @@ mod tests {
 
     #[test]
     fn market_order_without_builder_code_omits_json_field() {
-        assert!(!serde_json::to_value(MarketOrder {
+        let json = serde_json::to_value(MarketOrder {
             symbol: Arc::from("BTC-USD"),
             is_buy: false,
             size: 1.0,
             reduce_only: false,
             iso: false,
             builder_code: None,
+            slippage: None,
             meta: ActionMeta::default(),
         })
-        .expect("market order should serialize")
-        .as_object()
-        .expect("market order json should be an object")
-        .contains_key("builderCode"));
+        .expect("market order should serialize");
+        let object = json
+            .as_object()
+            .expect("market order json should be an object");
+        assert!(!object.contains_key("builderCode"));
+        assert!(!object.contains_key("slippage"));
+    }
+
+    #[test]
+    fn market_order_with_slippage_includes_json_field_and_changes_order_id() {
+        let account = Pubkey::new_unique();
+        let without = MarketOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            size: 1.0,
+            reduce_only: false,
+            iso: false,
+            builder_code: None,
+            slippage: None,
+            meta: ActionMeta::default(),
+        };
+        let with = MarketOrder {
+            slippage: Some(25.5),
+            ..without.clone()
+        };
+
+        assert_eq!(without.slippage(), DEFAULT_MARKET_SLIPPAGE_BPS);
+        assert_eq!(with.slippage(), 25.5);
+        assert_eq!(
+            serde_json::to_value(&with).expect("serialize slippage market order")["slippage"],
+            25.5
+        );
+        assert_ne!(
+            without.order_id(account, 7, 3),
+            with.order_id(account, 7, 3)
+        );
     }
 
     #[test]
@@ -467,6 +528,7 @@ mod tests {
             reduce_only: false,
             iso: true,
             builder_code: None,
+            slippage: None,
             meta: ActionMeta::default(),
         };
         let market_with = MarketOrder {

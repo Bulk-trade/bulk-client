@@ -303,6 +303,55 @@ def test_python_signer_rejects_top_level_trigger_iso_only():
     })
 
 
+def test_market_order_slippage_preserves_legacy_signing_and_binds_new_value():
+    signer = load_signer()
+    legacy_action = {
+        "m": {
+            "c": "BTC-USD",
+            "b": True,
+            "sz": 1.25,
+            "r": False,
+            "i": True,
+        }
+    }
+    legacy = signer.TransactionSigner.serialize_action(legacy_action)
+    expected = b''.join([
+        struct.pack("<I", 0),
+        struct.pack("<Q", 7),
+        b"BTC-USD",
+        bytes([1]),
+        struct.pack("<Q", 125_000_000),
+        bytes([0]),
+        bytes([1]),
+    ])
+    assert legacy == expected
+
+    with_slippage = {
+        "m": {
+            **legacy_action["m"],
+            "slippage": "25.5",
+        }
+    }
+    encoded = signer.TransactionSigner.serialize_action(with_slippage)
+    assert encoded == legacy + struct.pack("<Q", 2_550_000_000)
+
+
+def test_market_order_model_defaults_to_100_bps_and_can_omit_for_legacy():
+    trade = load_trade()
+    defaulted = trade.MarketOrder("BTC-USD", trade.Side.BUY, 1.0)
+    legacy = trade.MarketOrder("BTC-USD", trade.Side.BUY, 1.0, slippage=None)
+    with_slippage = trade.MarketOrder(
+        "BTC-USD",
+        trade.Side.BUY,
+        1.0,
+        slippage=25.5,
+    )
+
+    assert defaulted.to_api()["m"]["slippage"] == "100.0"
+    assert "slippage" not in legacy.to_api()["m"]
+    assert with_slippage.to_api()["m"]["slippage"] == "25.5"
+
+
 if __name__ == "__main__":
     test_trailing_stop_uses_signer_field_name()
     test_whitelist_faucet_accepts_client_payload_shape()

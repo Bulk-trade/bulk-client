@@ -257,9 +257,12 @@ println!("placed order_id={:?}", resp.order_id);
 
 ```rust
 let resp = client
-    .place_market_order("ETH-USD", Side::Sell, 1.0, false, None, None)
+    .place_market_order("ETH-USD", Side::Sell, 1.0, false, None, None, None)
     .await?;
 ```
+
+The final `None` selects the default 100 bps fair-price slippage bound. Use
+`Some(bps)` in the final argument to provide an explicit bound.
 
 #### Cancel a specific order
 

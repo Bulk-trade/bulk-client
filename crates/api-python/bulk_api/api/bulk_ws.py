@@ -22,6 +22,7 @@ from bulk_api.messages.account import AccountSnapshot, Margin, \
     LeverageSetting, MarginUpdate, PositionUpdate, OrderState
 from bulk_api.messages.md import Ticker, Trade, L2Snapshot, L2Delta, Candle
 from bulk_api.messages.trade import ApproveBuilderCode, OrderResponse, Fill, CancelOrder, LimitOrder, CancelAll, MarketOrder, OraclePrice, RevokeBuilderCode
+from bulk_api.messages.trade import DEFAULT_MARKET_SLIPPAGE_BPS
 from bulk_api.data import OrderBook
 from bulk_api.common import Topic
 
@@ -457,6 +458,7 @@ class BulkWebSocketClient:
         reduce_only: bool = False,
         timeout: Optional[float] = None,
         nonce: Optional[int] = None,
+        slippage: Optional[float] = DEFAULT_MARKET_SLIPPAGE_BPS,
     ) -> OrderResponse:
         """
         Place a market order
@@ -466,6 +468,7 @@ class BulkWebSocketClient:
             side: buy or sell
             size: Order size
             reduce_only: Reduce-only flag
+            slippage: Maximum adverse execution from fair price, in basis points
 
         Returns:
             Order response
@@ -485,7 +488,8 @@ class BulkWebSocketClient:
             symbol=symbol,
             side=side,
             size=size,
-            reduce_only=reduce_only
+            reduce_only=reduce_only,
+            slippage=slippage if slippage is not None else DEFAULT_MARKET_SLIPPAGE_BPS,
         )
 
         # Build transaction using MarketOrder.to_tx

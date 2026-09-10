@@ -495,7 +495,19 @@ impl BulkHttpClient {
         Ok(results[0].clone())
     }
 
-    /// Place a single market order.
+    /// Places a single market order with a fair-price slippage bound.
+    ///
+    /// # Arguments
+    /// * `symbol` - Market symbol to execute.
+    /// * `side` - Buy or sell direction.
+    /// * `size` - Order quantity.
+    /// * `reduce_only` - Whether the order may only reduce the position.
+    /// * `account` - Optional trading account override.
+    /// * `nonce` - Optional transaction nonce override.
+    /// * `slippage` - Maximum adverse execution in basis points, defaulting to 100.
+    ///
+    /// # Returns
+    /// The order-placement response.
     pub async fn place_market_order(
         &self,
         symbol: &str,
@@ -504,6 +516,7 @@ impl BulkHttpClient {
         reduce_only: bool,
         account: Option<Pubkey>,
         nonce: Option<u64>,
+        slippage: Option<f64>,
     ) -> eyre::Result<Response> {
         let signer = self
             .config
@@ -526,6 +539,7 @@ impl BulkHttpClient {
             reduce_only,
             iso: false,
             builder_code: None,
+            slippage: Some(slippage.unwrap_or(DEFAULT_MARKET_SLIPPAGE_BPS)),
             meta: ActionMeta {
                 account,
                 nonce,

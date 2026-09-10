@@ -27,6 +27,7 @@ SIDE_MAP = {
 
 # 8 decimals
 DECIMALS_MULTIPLIER = 100000000.0
+DEFAULT_MARKET_SLIPPAGE_BPS = 100.0
 
 def _write_u64(value: int) -> bytes:
     """Write a u64 in little-endian format"""
@@ -262,6 +263,7 @@ class MarketOrder:
     nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
     oid: Optional[str] = None
+    slippage: Optional[float] = DEFAULT_MARKET_SLIPPAGE_BPS
 
     def order_id(self) -> Optional[str]:
         """
@@ -282,6 +284,11 @@ class MarketOrder:
             _write_u64(round(self.size * DECIMALS_MULTIPLIER)),
             _write_bool(self.reduce_only),
             _write_bool(self.iso),
+            *(
+                [_write_u64(round(self.slippage * DECIMALS_MULTIPLIER))]
+                if self.slippage is not None
+                else []
+            ),
             _write_pubkey(self.pubkey),
             _write_u64(int(self.nonce)),
         ])
@@ -304,6 +311,8 @@ class MarketOrder:
         }
         if self.builder_code is not None:
             order["m"]["builderCode"] = self.builder_code.to_api()
+        if self.slippage is not None:
+            order["m"]["slippage"] = f"{self.slippage}"
         return order
 
     def to_state(self, status: OrderStatus, price: float = 0.0) -> OrderState:
@@ -327,6 +336,8 @@ class MarketOrder:
 
         if self.reduce_only:
             parts.append("reduce_only")
+        if self.slippage is not None:
+            parts.append(f"slippage={self.slippage:.17g}bps")
         if self.oid:
             parts.append(f"oid={self.oid}")
         if self.nonce is not None:
