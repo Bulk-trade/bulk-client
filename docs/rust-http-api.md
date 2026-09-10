@@ -320,13 +320,14 @@ let resp = client
 println!("placed oid={:?}", resp.order_id);
 ```
 
-### `place_market_order(symbol, side, size, reduce_only, account, nonce)`
+### `place_market_order(symbol, side, size, reduce_only, account, nonce, slippage)`
 
-Places an aggressive market order.
+Places an aggressive market order. Pass `None` for the default 100 bps fair-price
+slippage bound, or `Some(bps)` for an explicit bound.
 
 ```rust
 let resp = client
-    .place_market_order("ETH-USD", Side::Sell, 1.0, false, None, None)
+    .place_market_order("ETH-USD", Side::Sell, 1.0, false, None, None, None)
     .await?;
 ```
 

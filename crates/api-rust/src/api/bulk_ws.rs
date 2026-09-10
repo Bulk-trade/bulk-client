@@ -81,7 +81,7 @@ use crate::common::tif::TimeInForce;
 use crate::msgs::md::{Candle, L2Snapshot, Ticker};
 use crate::msgs::{
     ApproveCommissionFee, CancelAll, CancelOrder, LimitOrder, MarketOrder, Price,
-    RevokeCommissionFee,
+    RevokeCommissionFee, DEFAULT_MARKET_SLIPPAGE_BPS,
 };
 use crate::transaction::{Action, ActionMeta, SignatureDomain, Transaction, TransactionSigner};
 use futures_util::stream::SplitSink;
@@ -628,6 +628,7 @@ impl BulkWsClient {
     /// - `side`: buy or sell
     /// - `size`: order size
     /// - `reduce_only`: true if order is reduce only
+    /// - `slippage`: maximum adverse execution in basis points, defaulting to 100
     ///
     /// # Returns
     /// - response for order placement
@@ -639,6 +640,7 @@ impl BulkWsClient {
         reduce_only: bool,
         account: Option<Pubkey>,
         nonce: Option<u64>,
+        slippage: Option<f64>,
     ) -> eyre::Result<Response> {
         let signer = self
             .signer
@@ -659,6 +661,7 @@ impl BulkWsClient {
             reduce_only,
             iso: false,
             builder_code: None,
+            slippage: Some(slippage.unwrap_or(DEFAULT_MARKET_SLIPPAGE_BPS)),
             meta: ActionMeta {
                 account,
                 nonce,

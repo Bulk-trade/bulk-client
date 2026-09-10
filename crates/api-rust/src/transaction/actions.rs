@@ -427,12 +427,15 @@ struct OrderHashMarketOrder<'a>(&'a MarketOrder);
 
 impl Serialize for OrderHashMarketOrder<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(5)?;
+        let mut tuple = serializer.serialize_tuple(5 + usize::from(self.0.slippage.is_some()))?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&OrderHashSafeF64(self.0.size))?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
+        if let Some(slippage) = self.0.slippage {
+            tuple.serialize_element(&OrderHashSafeF64(slippage))?;
+        }
         tuple.end()
     }
 }

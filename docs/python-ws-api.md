@@ -264,6 +264,7 @@ resp = await client.place_market_order(
     side=Side.SELL,
     size=1.0,
     reduce_only=False,
+    slippage=100.0,  # optional; defaults to 100 bps
 )
 ```
 

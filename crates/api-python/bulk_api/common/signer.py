@@ -155,7 +155,7 @@ class TransactionSigner:
                     raise ValueError("use builderCode")
                 if "builderCode" in order and order["builderCode"] is None:
                     raise ValueError("builderCode must be omitted or an object")
-                return b''.join([
+                parts = [
                     TransactionSigner.write_u32(0),
                     TransactionSigner.write_string(order['c']),
                     TransactionSigner.write_bool(order['b']),
@@ -163,7 +163,10 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
                     TransactionSigner.write_builder_code(order.get('builderCode')),
-                ])
+                ]
+                if order.get('slippage') is not None:
+                    parts.append(TransactionSigner.write_fixedpoint(order['slippage']))
+                return b''.join(parts)
 
             case {"l": order}:
                 if "commission" in order:

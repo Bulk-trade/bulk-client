@@ -146,8 +146,9 @@ struct RawSignableMarketOrder<'a>(&'a crate::msgs::MarketOrder);
 
 impl Serialize for RawSignableMarketOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple =
-            serializer.serialize_tuple(5 + usize::from(self.0.builder_code.is_some()))?;
+        let mut tuple = serializer.serialize_tuple(
+            5 + usize::from(self.0.builder_code.is_some()) + usize::from(self.0.slippage.is_some()),
+        )?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&RawSafeF64(self.0.size))?;
@@ -155,6 +156,9 @@ impl Serialize for RawSignableMarketOrder<'_> {
         tuple.serialize_element(&self.0.iso)?;
         if self.0.builder_code.is_some() {
             tuple.serialize_element(&self.0.builder_code)?;
+        }
+        if let Some(slippage) = self.0.slippage {
+            tuple.serialize_element(&RawSafeF64(slippage))?;
         }
         tuple.end()
     }
@@ -820,7 +824,6 @@ mod tests {
         assert!(!valid, "tampered limit order should not verify");
     }
 
-    #[cfg(any())]
     fn make_market_order_tx() -> (Transaction, TransactionSigner) {
         let signer =
             TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).expect("valid test key");
@@ -834,6 +837,7 @@ mod tests {
             reduce_only: false,
             iso: false,
             builder_code: None,
+            slippage: None,
             meta: ActionMeta {
                 account,
                 nonce: 43,
@@ -851,6 +855,56 @@ mod tests {
         };
 
         (tx, signer)
+    }
+
+    #[test]
+    fn market_order_without_slippage_keeps_legacy_signable_bytes() {
+        let (tx, _) = make_market_order_tx();
+        let current = Transaction::raw_signable_bytes(
+            SignatureDomain::Devnet,
+            tx.account,
+            tx.nonce,
+            &tx.actions,
+        )
+        .expect("serialize current market signing payload");
+
+        let mut legacy = Vec::new();
+        legacy.extend_from_slice(&1u64.to_le_bytes());
+        legacy.extend_from_slice(&0u32.to_le_bytes());
+        legacy.extend_from_slice(&7u64.to_le_bytes());
+        legacy.extend_from_slice(b"BTC-USD");
+        legacy.push(0);
+        legacy.extend_from_slice(&25_000_000u64.to_le_bytes());
+        legacy.push(0);
+        legacy.push(0);
+        legacy.extend_from_slice(&43u64.to_le_bytes());
+        legacy.extend_from_slice(tx.account.as_ref());
+        legacy.push(SignatureDomain::Devnet as u8);
+
+        assert_eq!(current, legacy);
+    }
+
+    #[test]
+    fn market_order_slippage_is_signed_and_tamper_evident() {
+        let (mut tx, signer) = make_market_order_tx();
+        let Action::MarketOrder(order) = &mut tx.actions[0] else {
+            unreachable!("expected market order");
+        };
+        order.slippage = Some(25.0);
+
+        tx.sign(&signer, SignatureDomain::Devnet)
+            .expect("sign slippage market order");
+        assert!(tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify slippage market order"));
+
+        let Action::MarketOrder(order) = &mut tx.actions[0] else {
+            unreachable!("expected market order");
+        };
+        order.slippage = Some(26.0);
+        assert!(!tx
+            .verify(SignatureDomain::Devnet)
+            .expect("verify tampered slippage market order"));
     }
 
     #[cfg(any())]

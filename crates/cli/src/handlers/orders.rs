@@ -11,14 +11,22 @@ pub async fn handle_place(
     args: PlaceArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
+    if args.qty_price.price.is_some() && args.slippage.is_some() {
+        eyre::bail!("--slippage is only valid for market orders");
+    }
+
     let order_type = if args.qty_price.price.is_some() {
         "Limit"
     } else {
         "Market"
     };
+    let market_slippage = args.qty_price.price.is_none().then(|| {
+        args.slippage
+            .unwrap_or(bulk_client::msgs::DEFAULT_MARKET_SLIPPAGE_BPS)
+    });
 
     println!(
-        "Placing {} {} {} {:?} tif={:?}{}{}",
+        "Placing {} {} {} {:?} tif={:?}{}{}{}",
         order_type,
         args.side,
         args.instrument,
@@ -26,6 +34,9 @@ pub async fn handle_place(
         args.tif,
         if args.iso { " iso" } else { "" },
         if args.reduce_only { " reduce-only" } else { "" },
+        market_slippage
+            .map(|bps| format!(" slippage={bps}bps"))
+            .unwrap_or_default(),
     );
 
     let action = if args.qty_price.price.is_some() {
@@ -48,6 +59,7 @@ pub async fn handle_place(
             reduce_only: args.reduce_only,
             iso: args.iso,
             builder_code: None,
+            slippage: market_slippage,
             meta: Default::default(),
         })
     };

@@ -126,14 +126,21 @@ impl ClearSignMessage {
 
     fn action_line(action: &Action) -> String {
         match action {
-        Action::MarketOrder(order) => format!(
-            "Market {} {} sz={:.8} ro={} iso={}",
-            order.symbol,
-            if order.is_buy { "Buy" } else { "Sell" },
-            order.size,
-            order.reduce_only,
-            order.iso,
-        ),
+        Action::MarketOrder(order) => {
+            let slippage = order
+                .slippage
+                .map(|value| format!(" slippage={value:.8}bps"))
+                .unwrap_or_default();
+            format!(
+                "Market {} {} sz={:.8} ro={} iso={}{}",
+                order.symbol,
+                if order.is_buy { "Buy" } else { "Sell" },
+                order.size,
+                order.reduce_only,
+                order.iso,
+                slippage,
+            )
+        }
         Action::LimitOrder(order) => format!(
             "Limit {} {} px={:.8} sz={:.8} tif={:?} ro={} iso={}",
             order.symbol,
@@ -562,7 +569,9 @@ impl ClearSignMessage {
 mod tests {
     use super::ClearSignMessage;
     use crate::common::tif::TimeInForce;
-    use crate::msgs::{BuilderCode, Faucet, LimitOrder, OpaqueAction, UpdateMultisigPolicy};
+    use crate::msgs::{
+        BuilderCode, Faucet, LimitOrder, MarketOrder, OpaqueAction, UpdateMultisigPolicy,
+    };
     use crate::transaction::{Action, ActionMeta, SignatureDomain};
     use solana_pubkey::Pubkey;
     use std::sync::Arc;
@@ -700,6 +709,45 @@ mod tests {
         assert!(message.contains("Sell"));
         assert!(message.contains("3500.00000000"));
         assert!(message.contains("1.50000000"));
+    }
+
+    #[test]
+    fn message_shows_and_binds_market_order_slippage() {
+        let account = Pubkey::new_unique();
+        let order = MarketOrder {
+            symbol: Arc::from("BTC-USD"),
+            is_buy: true,
+            size: 0.25,
+            reduce_only: false,
+            iso: false,
+            builder_code: None,
+            slippage: Some(25.5),
+            meta: ActionMeta::default(),
+        };
+        let message = ClearSignMessage::canonical_message(
+            SignatureDomain::Devnet,
+            account,
+            99,
+            &[Action::MarketOrder(order.clone())],
+        )
+        .expect("build slippage clear-sign message");
+        let without_slippage = ClearSignMessage::canonical_message(
+            SignatureDomain::Devnet,
+            account,
+            99,
+            &[Action::MarketOrder(MarketOrder {
+                slippage: None,
+                ..order
+            })],
+        )
+        .expect("build legacy clear-sign message");
+
+        assert!(message.contains("slippage=25.50000000bps"));
+        assert!(!without_slippage.contains("slippage="));
+        assert_ne!(
+            ClearSignTest::signable_hash_line(&message),
+            ClearSignTest::signable_hash_line(&without_slippage)
+        );
     }
 
     #[test]
