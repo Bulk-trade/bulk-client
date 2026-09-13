@@ -26,6 +26,8 @@ class AccountSnapshotSync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(full, OrderState.from_api(SHORT_ORDER))
         self.assertEqual(full.order_id, "sell-1")
         self.assertEqual(full.side, Side.SELL)
+        self.assertEqual(full.get_side(), Side.SELL)
+        self.assertEqual(full.amount_remaining(), 2.0)
         self.assertEqual(full.size, 2.0)
         self.assertEqual(full.size_done, 1.0)
         self.assertTrue(full.reduce_only)
