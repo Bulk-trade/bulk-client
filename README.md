@@ -297,10 +297,17 @@ bulk transfer <from> <to> USDC 500
 # Multisig
 bulk create-multisig <pk1>,<pk2> --threshold 2 --lock 120
 
-# Solana vault (on-chain; uses BULK_PRIVATE_KEY, not --signature-domain)
+# Solana vault (on-chain; requires an existing user token account and BULK_PRIVATE_KEY)
 bulk deposit --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 1000000 --dry-run
-bulk withdraw-intent --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 1000000
+bulk withdraw-intent --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 1000000 --dry-run
 ```
+
+Vault amounts are mint base units (`1000000` = 1 USDC). A withdrawal intent
+signals a request; it does not settle or transfer tokens. The commands default
+to mainnet, support RPC/program overrides, and currently require a local keypair
+(Ledger is unsupported). Dry-run only assembles the instruction; remove it to
+submit. See [deposit and withdrawal intent](docs/solana-deposit-withdraw-intent.md)
+for signing examples, prerequisites, and exact flags.
 
 Set your key via environment variable or flag:
 
