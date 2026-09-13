@@ -890,7 +890,18 @@ class BulkWebSocketClient:
         self.account_snapshot = snapshot
         self.margin = snapshot.margin
 
-        # Update positions
+        # A replacement snapshot is authoritative for derivative exposure.
+        # Keep cash and aggregate trading metrics owned by the shared inventory.
+        symbols = {pos.symbol for pos in snapshot.positions}
+        for symbol in list(self.inventory.positions):
+            if symbol not in symbols and symbol != self.inventory.stable:
+                position = self.inventory.positions.pop(symbol)
+                # Callers may retain a Position reference across reconnects.
+                position.quantity = position.vwap = position.fair_price = 0.0
+                position.realized_pnl = position.unrealized_pnl = 0.0
+                position.margin = position.mm = position.mmr = position.liquidation_price = 0.0
+
+        # Update retained Position objects in place.
         for pos in snapshot.positions:
             position = self.inventory.position_for(pos.symbol)
             position.quantity = pos.size
@@ -901,12 +912,14 @@ class BulkWebSocketClient:
             position.mm = pos.maintenance_margin
             position.mmr = pos.lambda_
             position.margin = pos.risk_allocation
+            position.liquidation_price = pos.liquidation_price
 
-        # Update open orders
+        # Replace maps in place so references held by consumers stay current.
+        self.open_orders.clear()
         for order in snapshot.open_orders:
             self.open_orders[order.order_id] = order
 
-        # Update leverage settings
+        self.leverage_settings.clear()
         for lev in snapshot.leverage_settings:
             self.leverage_settings[lev.symbol] = lev
 
@@ -957,6 +970,7 @@ class BulkWebSocketClient:
         position.mm = pos.maintenance_margin
         position.mmr = pos.lambda_
         position.margin = pos.risk_allocation
+        position.liquidation_price = pos.liquidation_price
 
         # Emit typed event
         await self._emit_event(Topic.POSITION, pos)

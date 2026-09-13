@@ -20,9 +20,9 @@ class OrderState:
     size_orig: float
     is_maker: bool
     error: Optional[str] = None
-    order_type: Optional[str] = None   # ← NEW: 'ot' field
-    reduce_only: bool = False          # ← NEW: 'r' field
-    tif: Optional[str] = None         # ← NEW: 'tif' field
+    order_type: Optional[str] = None
+    reduce_only: bool = False
+    tif: Optional[str] = None
 
     def get_side(self) -> Side:
         """Get the order side"""
@@ -34,22 +34,22 @@ class OrderState:
 
     @classmethod
     def from_api(cls, data: Dict) -> 'OrderState':
-        signed_sz = data.get('sz', 0.0)
+        signed_sz = data.get('sz', data.get('size', 0.0))
         return cls(
-            timestamp=data.get('ts'),                              # 'timestamp' → 'ts'
-            symbol=data.get('sym'),                                # 'symbol'    → 'sym'
-            order_id=data.get('oid'),                              # 'orderId'   → 'oid'
+            timestamp=data.get('ts', data.get('timestamp')),
+            symbol=data.get('sym', data.get('symbol')),
+            order_id=data.get('oid', data.get('orderId')),
             status=OrderStatus.from_string(data.get('status')),
             side=Side.BUY if signed_sz >= 0 else Side.SELL,        # derived from sign of 'sz'
-            price=data.get('px'),                                  # 'price'     → 'px'
+            price=data.get('px', data.get('price')),
             vwap=data.get('vwap', 0.0),
             size=abs(signed_sz),                                   # magnitude of signed 'sz'
-            size_done=data.get('fillSz', 0.0),                     # 'filledSize' → 'fillSz'
-            size_orig=data.get('origSz', abs(signed_sz)),          # 'originalSize' → 'origSz'
-            is_maker=data.get('mk', False),                        # 'maker'     → 'mk'
+            size_done=data.get('fillSz', data.get('filledSize', 0.0)),
+            size_orig=data.get('origSz', data.get('originalSize', abs(signed_sz))),
+            is_maker=data.get('mk', data.get('maker', False)),
             error=data.get('reason'),
-            order_type=data.get('ot'),
-            reduce_only=data.get('r', False),
+            order_type=data.get('ot', data.get('orderType')),
+            reduce_only=data.get('r', data.get('reduceOnly', False)),
             tif=data.get('tif'),
         )
 
