@@ -203,36 +203,35 @@ pub struct TriggerSpec {
 
 /// Resting or historical order state.
 ///
-/// Deserializes from both WebSocket and HTTP payloads:
-/// - `vwap`, `reduce_only`, `tif` are HTTP-only (default when absent).
-/// - `error` / `reason` is WS-only (default when absent).
+/// Accepts full field names from account snapshots and abbreviated field names
+/// from incremental WebSocket order updates. Rejection reasons are optional.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct OrderState {
-    #[serde(rename = "ot")]
+    #[serde(rename = "ot", alias = "orderType")]
     pub order_type: OrderType,
     pub status: OrderStatus,
-    #[serde(rename = "sym")]
+    #[serde(rename = "sym", alias = "symbol")]
     pub symbol: String,
-    #[serde(rename = "oid")]
+    #[serde(rename = "oid", alias = "orderId")]
     pub order_id: String,
-    #[serde(rename = "px")]
+    #[serde(rename = "px", alias = "price")]
     pub price: f64,
-    #[serde(rename = "origSz")]
+    #[serde(rename = "origSz", alias = "originalSize")]
     pub original_size: f64,
-    #[serde(rename = "sz")]
+    #[serde(rename = "sz", alias = "size")]
     pub signed_size: f64,
-    #[serde(rename = "fillSz")]
+    #[serde(rename = "fillSz", alias = "filledSize")]
     pub filled_size: f64,
     pub vwap: f64,
     pub tif: TimeInForce,
-    #[serde(rename = "r")]
+    #[serde(rename = "r", alias = "reduceOnly")]
     pub reduce_only: bool,
-    #[serde(rename = "mk")]
+    #[serde(rename = "mk", alias = "maker")]
     pub maker: bool,
     #[serde(default)]
     pub trigger: Option<TriggerSpec>,
-    #[serde(rename = "ts")]
+    #[serde(rename = "ts", alias = "timestamp")]
     pub timestamp: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -416,5 +415,96 @@ mod tests {
         assert_eq!(margin.available_margin, 90.0);
         assert_eq!(margin.execution_impact, 0.0);
         assert_eq!(margin.transferable_balance, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod order_state_wire_tests {
+    use super::*;
+
+    /// The account snapshot's own shape, as the server emits it.
+    ///
+    /// `OpenOrder` in `bulk-api-client-types` is `rename_all = "camelCase"`
+    /// with full field names; order *updates* use the short form. Both land in
+    /// `OrderState`, so it has to accept both — and when it did not, the
+    /// snapshot's `openOrders` failed to deserialize wholesale. The failure was
+    /// swallowed by an `if let Ok(..)`, so a client restarting with resting
+    /// orders reported zero open orders and started from an assumed-empty book.
+    const SNAPSHOT_SHAPE: &str = r#"{
+        "symbol": "SOL-USD",
+        "orderId": "5Fd1yQxKgqCxq5vXQe3ZJ8gkq9r6cJ8s2VJn1wQFvGkH",
+        "price": 200.5,
+        "originalSize": 1.5,
+        "size": 1.5,
+        "filledSize": 0.0,
+        "vwap": 0.0,
+        "maker": true,
+        "reduceOnly": false,
+        "iso": false,
+        "orderType": "limit",
+        "trigger": null,
+        "tif": "alo",
+        "status": "resting",
+        "timestamp": 1750000000
+    }"#;
+
+    /// The order-update shape.
+    const UPDATE_SHAPE: &str = r#"{
+        "sym": "SOL-USD",
+        "oid": "5Fd1yQxKgqCxq5vXQe3ZJ8gkq9r6cJ8s2VJn1wQFvGkH",
+        "px": 200.5,
+        "origSz": 1.5,
+        "sz": 1.5,
+        "fillSz": 0.0,
+        "vwap": 0.0,
+        "mk": true,
+        "r": false,
+        "ot": "limit",
+        "tif": "alo",
+        "status": "resting",
+        "ts": 1750000000
+    }"#;
+
+    #[test]
+    fn the_account_snapshot_shape_deserializes() {
+        let o: OrderState =
+            serde_json::from_str(SNAPSHOT_SHAPE).expect("snapshot openOrders must deserialize");
+        assert_eq!(o.symbol, "SOL-USD");
+        assert_eq!(o.price, 200.5);
+        assert_eq!(o.original_size, 1.5);
+        assert!(o.maker);
+        assert!(!o.reduce_only);
+        assert_eq!(o.timestamp, 1_750_000_000);
+    }
+
+    #[test]
+    fn the_order_update_shape_still_deserializes() {
+        let o: OrderState =
+            serde_json::from_str(UPDATE_SHAPE).expect("order updates must keep working");
+        assert_eq!(o.symbol, "SOL-USD");
+        assert_eq!(o.price, 200.5);
+        assert_eq!(o.filled_size, 0.0);
+    }
+
+    #[test]
+    fn both_shapes_produce_the_same_order() {
+        let a: OrderState = serde_json::from_str(SNAPSHOT_SHAPE).unwrap();
+        let b: OrderState = serde_json::from_str(UPDATE_SHAPE).unwrap();
+        assert_eq!(a.order_id, b.order_id);
+        assert_eq!(a.symbol, b.symbol);
+        assert_eq!(a.price, b.price);
+        assert_eq!(a.signed_size, b.signed_size);
+        assert_eq!(a.maker, b.maker);
+        assert_eq!(a.timestamp, b.timestamp);
+    }
+
+    #[test]
+    fn a_list_of_snapshot_orders_deserializes_as_a_whole() {
+        // The real failure mode: one bad field drops the entire vector, so the
+        // account looks flat rather than partially known.
+        let list = format!("[{SNAPSHOT_SHAPE},{SNAPSHOT_SHAPE}]");
+        let v: Vec<OrderState> =
+            serde_json::from_str(&list).expect("openOrders array must deserialize");
+        assert_eq!(v.len(), 2);
     }
 }
