@@ -384,6 +384,18 @@ impl BulkWsClient {
         Ok(self.account_rx.borrow().clone())
     }
 
+    /// Mark the current account publication seen, then wait for a later one.
+    ///
+    /// Unlike [`Self::wait_account_changed`], this skips any unread publication.
+    /// The boundary is when this future is first polled. A later publication
+    /// does not acknowledge a particular transaction; quiet accounts may not
+    /// publish again, so callers should apply a timeout when needed.
+    pub async fn wait_next_account_update(&mut self) -> eyre::Result<AccountState> {
+        self.account_rx.borrow_and_update();
+        self.account_rx.changed().await?;
+        Ok(self.account_rx.borrow().clone())
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Cold reads (round-trip through actor)
     // ─────────────────────────────────────────────────────────────────────
@@ -1222,9 +1234,14 @@ impl Actor {
 
         match update_type {
             "accountSnapshot" => {
-                if let Ok(margin) = serde_json::from_value::<Margin>(data["margin"].clone()) {
-                    self.account_state.margin = margin.clone();
-                    self.emit(Topic::Margin, &Event::Margin(margin))
+                match serde_json::from_value::<Margin>(data["margin"].clone()) {
+                    Err(e) => {
+                        error!("account snapshot: invalid margin ({e}); retaining previous margin")
+                    }
+                    Ok(margin) => {
+                        self.account_state.margin = margin.clone();
+                        self.emit(Topic::Margin, &Event::Margin(margin));
+                    }
                 }
 
                 if let Ok(positions) =
@@ -1239,16 +1256,19 @@ impl Actor {
                         .collect();
                 }
 
-                if let Ok(orders) =
-                    serde_json::from_value::<Vec<OrderState>>(data["openOrders"].clone())
-                {
-                    for order in &orders {
-                        self.emit(Topic::Order, &Event::Order(order.clone()))
+                match serde_json::from_value::<Vec<OrderState>>(data["openOrders"].clone()) {
+                    Err(e) => error!(
+                        "account snapshot: invalid openOrders ({e}); retaining previous orders"
+                    ),
+                    Ok(orders) => {
+                        for order in &orders {
+                            self.emit(Topic::Order, &Event::Order(order.clone()))
+                        }
+                        self.account_state.open_orders = orders
+                            .into_iter()
+                            .map(|o| (o.order_id.clone(), o))
+                            .collect();
                     }
-                    self.account_state.open_orders = orders
-                        .into_iter()
-                        .map(|o| (o.order_id.clone(), o))
-                        .collect();
                 }
 
                 if let Ok(leverages) =
@@ -1267,6 +1287,9 @@ impl Actor {
                 ) {
                     self.account_state.commission_approvals = approvals;
                 }
+
+                // Make the initial state available even if no later update arrives.
+                self.publish_account();
 
                 info!(
                     "Account snapshot: balance={:.2}, positions={}, orders={}",
@@ -1459,5 +1482,93 @@ impl Actor {
         self.ws_send_json(&request).await?;
         info!("Subscribed to {} topics", subs.len());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn initial_snapshot_is_published_and_next_wait_skips_unread_state() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (advance_tx, advance_rx) = oneshot::channel::<()>();
+        let server =
+            tokio::spawn(async move {
+                let mut socket =
+                    tokio_tungstenite::accept_async(listener.accept().await.unwrap().0)
+                        .await
+                        .unwrap();
+                // Full-name snapshot fields from bulk-agave's AccountSnapshot/OpenOrder.
+                socket.send(Message::Text(json!({"type": "account", "data": {
+                "type": "accountSnapshot",
+                "margin": {"totalBalance": 1000.0, "availableBalance": 900.0,
+                    "marginUsed": 100.0, "notional": 200.0, "realizedPnl": 0.0,
+                    "unrealizedPnl": 0.0, "fees": 0.0, "funding": 0.0},
+                "positions": [{"symbol": "SOL-USD", "size": 1.0, "price": 200.0}],
+                "openOrders": [{"symbol": "SOL-USD", "orderId": "resting-order",
+                    "price": 201.0, "originalSize": -2.0, "size": -1.0,
+                    "filledSize": 1.0, "vwap": 201.0, "maker": true,
+                    "reduceOnly": false, "iso": false, "orderType": "limit",
+                    "trigger": null, "tif": "gtc", "status": "resting", "timestamp": 7}],
+                "leverageSettings": [{"symbol": "SOL-USD", "leverage": 10.0}],
+                "builderCodeApprovals": []
+            }}).to_string().into())).await.unwrap();
+                advance_rx.await.unwrap();
+                socket
+                    .send(Message::Text(
+                        json!({"type": "account", "data": {
+                            "type": "marginUpdate", "totalBalance": 1100.0,
+                            "availableBalance": 1000.0, "marginUsed": 100.0, "notional": 200.0,
+                            "realizedPnl": 100.0, "unrealizedPnl": 0.0, "fees": 0.0, "funding": 0.0
+                        }})
+                        .to_string()
+                        .into(),
+                    ))
+                    .await
+                    .unwrap();
+                while let Some(message) = socket.next().await {
+                    if matches!(message, Ok(Message::Close(_)) | Err(_)) {
+                        break;
+                    }
+                }
+            });
+        let mut client = BulkWsClient::connect(WSConfig {
+            url: format!("ws://{address}"),
+            track_account: false,
+            track_ticker: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let mut unread = client.clone();
+        let snapshot = time::timeout(Duration::from_secs(2), client.wait_account_changed())
+            .await
+            .expect("initial snapshot must publish without incremental updates")
+            .unwrap();
+        assert_eq!(snapshot.margin.total_margin, 1000.0);
+        assert_eq!(snapshot.positions["SOL-USD"].size, 1.0);
+        assert_eq!(snapshot.open_orders["resting-order"].signed_size, -1.0);
+        assert_eq!(snapshot.leverage_settings["SOL-USD"].leverage, 10.0);
+        assert!(unread.account_rx.has_changed().unwrap());
+        let next = unread.wait_next_account_update();
+        tokio::pin!(next);
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+        advance_tx.send(()).unwrap();
+        assert_eq!(
+            time::timeout(Duration::from_secs(2), next)
+                .await
+                .unwrap()
+                .unwrap()
+                .margin
+                .total_margin,
+            1100.0
+        );
+        client.shutdown().await;
+        time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
