@@ -98,8 +98,9 @@ impl From<MarketActionArg> for MarketAction {
 
 #[derive(Args, Debug)]
 pub struct MarketAdminArgs {
-    /// Market symbol, for example BTC-USD.
-    pub symbol: String,
+    /// Comma-separated market symbols, for example BTC-USD,ETH-USD.
+    #[arg(required = true, value_delimiter = ',', num_args = 1)]
+    pub symbols: Vec<String>,
     /// Administrative market-state transition.
     #[arg(value_enum)]
     pub action: MarketActionArg,

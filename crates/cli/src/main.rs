@@ -299,10 +299,10 @@ enum Command {
     #[command(name = "add-market")]
     AddMarket(AddMarketArgs),
 
-    /// Open, suspend, or close an existing market.
+    /// Open, suspend, or close one or more existing markets.
     ///
     /// Example: bulk market-admin BTC-USD suspend
-    /// Example: bulk market-admin BTC-USD close --price 100000
+    /// Example: bulk market-admin BTC-USD,ETH-USD close --price 100000
     #[command(name = "market-admin")]
     MarketAdmin(MarketAdminArgs),
 
@@ -620,7 +620,7 @@ mod tests {
         let cli = Cli::try_parse_from([
             "bulk",
             "market-admin",
-            "BTC-USD",
+            "BTC-USD,ETH-USD",
             "close",
             "--price",
             "100000",
@@ -629,7 +629,7 @@ mod tests {
 
         match cli.command {
             Command::MarketAdmin(args) => {
-                assert_eq!(args.symbol, "BTC-USD");
+                assert_eq!(args.symbols, ["BTC-USD", "ETH-USD"]);
                 assert!(matches!(
                     args.action,
                     crate::commands::MarketActionArg::Close

@@ -12,9 +12,9 @@ use crate::msgs::{
     Faucet, FrostWithdrawStart, InitializeVault, Join, LimitOrder, MarketAdmin, MarketOrder,
     Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price,
     PricingAdmin, PythOracle, RevokeCommissionFee, RevokePendingActivation, RewardSettlement,
-    SolanaBlockAnchor, UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings,
-    UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
-    WithdrawSubmitted,
+    SolanaBlockAnchor, StartPreDepositDatasetMigration, UpdateAccountPolicy, UpdateFrostGroup,
+    UpdateUserSettings, UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw,
+    WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ use solana_hash::Hash;
 use solana_pubkey::Pubkey;
 
 /// Meta data for an action
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ActionMeta {
     pub account: Pubkey,
     pub nonce: u64,
@@ -233,6 +233,10 @@ pub enum Action {
     // UserAdmin = ordinal(65)
     #[serde(rename = "userAdmin")]
     UserAdmin(UserAdmin),
+
+    // StartPreDepositDatasetMigration = ordinal(66)
+    #[serde(rename = "startPreDepositDatasetMigration")]
+    StartPreDepositDatasetMigration(StartPreDepositDatasetMigration),
 }
 
 macro_rules! dispatch {
@@ -310,6 +314,7 @@ macro_rules! dispatch {
             Action::RevokePendingActivation($x) => $body,
             Action::ConfigFunding($x) => $body,
             Action::UserAdmin($x) => $body,
+            Action::StartPreDepositDatasetMigration($x) => $body,
         }
     };
 }
@@ -334,6 +339,9 @@ impl Action {
                 | Action::UpdateAccountPolicy(_)
                 | Action::ConfigFunding(_)
                 | Action::UserAdmin(_)
+                | Action::ActivateProtocolVersion(_)
+                | Action::RevokePendingActivation(_)
+                | Action::StartPreDepositDatasetMigration(_)
         )
     }
 
@@ -582,6 +590,10 @@ impl_action_from!(ActivateProtocolVersion, ActivateProtocolVersion);
 impl_action_from!(RevokePendingActivation, RevokePendingActivation);
 impl_action_from!(ConfigFunding, ConfigFunding);
 impl_action_from!(UserAdmin, UserAdmin);
+impl_action_from!(
+    StartPreDepositDatasetMigration,
+    StartPreDepositDatasetMigration
+);
 
 #[cfg(test)]
 mod tests {
@@ -728,5 +740,49 @@ mod tests {
 
         assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 64);
         assert!(action.is_admin_multisig_action());
+    }
+
+    #[test]
+    fn pre_deposit_dataset_migration_uses_sdk_ordinal_and_admin_multisig() {
+        let action = Action::StartPreDepositDatasetMigration(StartPreDepositDatasetMigration {
+            dataset_id: Hash::default(),
+            total_entries: 100,
+            chunk_size: 10,
+            start_slot: 42,
+            format_version: 1,
+            meta: ActionMeta::default(),
+        });
+
+        let bytes = bincode::serialize(&action).expect("migration start should serialize");
+
+        assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 66);
+        assert!(action.is_admin_multisig_action());
+        assert_eq!(
+            serde_json::to_value(action).expect("migration start should serialize to JSON"),
+            serde_json::json!({
+                "startPreDepositDatasetMigration": {
+                    "id": Hash::default().to_string(),
+                    "n": 100,
+                    "cs": 10,
+                    "ss": 42,
+                    "fv": 1
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn protocol_version_governance_requires_admin_multisig() {
+        let activation = Action::ActivateProtocolVersion(ActivateProtocolVersion {
+            version: 2,
+            meta: ActionMeta::default(),
+        });
+        let revocation = Action::RevokePendingActivation(RevokePendingActivation {
+            version: 2,
+            meta: ActionMeta::default(),
+        });
+
+        assert!(activation.is_admin_multisig_action());
+        assert!(revocation.is_admin_multisig_action());
     }
 }
