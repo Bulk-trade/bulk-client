@@ -26,11 +26,11 @@ class OrderState:
 
     def get_side(self) -> Side:
         """Get the order side"""
-        return Side.BUY if self.is_buy else Side.SELL
+        return self.side
 
     def amount_remaining(self) -> float:
-        """Get the amount of remaining to be filled"""
-        return max(self.size - self.size_done, 0.0)
+        """The server's size field already contains the remaining quantity."""
+        return self.size
 
     @classmethod
     def from_api(cls, data: Dict) -> 'OrderState':
