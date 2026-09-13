@@ -11,7 +11,7 @@ def test_signature_domain_registry_is_stable_and_compact():
 
 
 def test_transaction_signature_is_bound_to_one_domain():
-    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+    signer = TransactionSigner("11111111111111111111111111111111")
     transaction = {
         "actions": [{"faucet": {"u": signer.public_key}}],
         "nonce": "42",
@@ -53,7 +53,7 @@ def test_faucet_signature_matches_rust_testnet_vector():
 
 
 def test_signer_rejects_a_missing_domain():
-    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+    signer = TransactionSigner("11111111111111111111111111111111")
     transaction = {
         "actions": [{"faucet": {"u": signer.public_key}}],
         "nonce": "42",
@@ -70,7 +70,7 @@ def test_signer_rejects_a_missing_domain():
 
 
 def test_signed_clients_require_an_explicit_domain():
-    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+    signer = TransactionSigner("11111111111111111111111111111111")
 
     for constructor in (
         lambda: BulkHttpClient(private_key=signer.private_key),

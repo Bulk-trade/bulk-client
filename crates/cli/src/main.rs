@@ -525,6 +525,26 @@ fn keypair_from_private_key(key_b58: &str) -> eyre::Result<Keypair> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_signer::Signer;
+
+    #[test]
+    fn onchain_private_key_preserves_identity_and_rejects_malformed_keypairs() {
+        let expected = solana_keypair::keypair_from_seed(&[7u8; 32]).unwrap();
+        assert_eq!(
+            keypair_from_private_key(&bs58::encode(expected.to_bytes()).into_string())
+                .unwrap()
+                .pubkey(),
+            expected.pubkey()
+        );
+        for length in [0, 31, 32, 33, 63, 65] {
+            assert!(
+                keypair_from_private_key(&bs58::encode(vec![7u8; length]).into_string()).is_err()
+            );
+        }
+        let mut invalid = expected.to_bytes();
+        invalid[63] ^= 1;
+        assert!(keypair_from_private_key(&bs58::encode(invalid).into_string()).is_err());
+    }
 
     #[test]
     fn parse_ledger_info_command_without_private_key() {

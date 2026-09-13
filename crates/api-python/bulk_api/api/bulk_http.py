@@ -56,13 +56,13 @@ class BulkHttpClient:
             signature_domain: Explicit network accepted by the signature
             timeout: Request timeout in seconds
         """
-        if private_key and not isinstance(signature_domain, SignatureDomain):
+        if private_key is not None and not isinstance(signature_domain, SignatureDomain):
             raise ValueError(
                 "explicit SignatureDomain is required when private_key is configured"
             )
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
-        self.signer = TransactionSigner(private_key) if private_key else None
+        self.signer = TransactionSigner(private_key) if private_key is not None else None
         self.signature_domain = signature_domain
 
     # ===================================================================
@@ -793,60 +793,12 @@ class BulkHttpClient:
 # EXAMPLE USAGE
 # ===================================================================
 
-def load_or_create_keys(key_file: str = "/tmp/bulk_keys") -> tuple[str, str]:
-    """
-    Load existing keys from file or create new ones and save them
-
-    Args:
-        key_file: Path to key storage file
-
-    Returns:
-        Tuple of (private_key, public_key)
-    """
-    if os.path.exists(key_file):
-        # Load existing keys
-        with open(key_file, 'r') as f:
-            keys = json.load(f)
-            private_key = keys['private_key']
-            public_key = keys['public_key']
-            print(f"Loaded existing keys from {key_file}")
-            print(f"Public key: {public_key}")
-            return private_key, public_key
-    else:
-        # Generate new keys and save them
-        private_key, public_key = TransactionSigner.generate_account()
-        keys = {
-            'private_key': private_key,
-            'public_key': public_key
-        }
-
-        # Request faucet (testnet only)
-        base_url = "https://exchange-api2.bulk.trade/api/v1"
-        client = BulkHttpClient(
-            base_url=base_url,
-            private_key=private_key,
-            signature_domain=SignatureDomain.TESTNET,
-        )
-        try:
-            faucet_result = client.request_faucet()
-            print(f"Faucet request: {faucet_result}")
-        except Exception as e:
-            print(f"Faucet error (expected on mainnet): {e}")
-
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(key_file) if os.path.dirname(key_file) else '.', exist_ok=True)
-
-        with open(key_file, 'w') as f:
-            json.dump(keys, f, indent=2)
-        print(f"Generated new keys and saved to {key_file}")
-        print(f"Public key: {public_key}")
-
-        return private_key, public_key
-
 if __name__ == "__main__":
     import os
 
-    private_key, pub_key = load_or_create_keys()
+    private_key = os.environ.get("BULK_PRIVATE_KEY")
+    if not private_key:
+        raise ValueError("BULK_PRIVATE_KEY is required for the trading example")
 
     base_url = "https://exchange-api2.bulk.trade/api/v1"
     client = BulkHttpClient(
@@ -903,7 +855,7 @@ if __name__ == "__main__":
 
     # Example 2: Account queries (no private key needed)
     print("\n=== Account Queries (Unsigned) ===")
-    test_user = pub_key
+    test_user = client.signer.public_key
 
     # Get full account
     account = client.get_full_account(test_user)

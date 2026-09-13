@@ -55,14 +55,13 @@ impl TransactionSigner {
             // Full 64-byte keypair (secret + public)
             Keypair::try_from(key_bytes.as_slice())
                 .map_err(|e| eyre::eyre!("invalid 64-byte keypair: {e}"))?
-        } else if key_bytes.len() >= 32 {
+        } else if key_bytes.len() == 32 {
             // 32-byte seed — derive the keypair
-            keypair_from_seed(&key_bytes[..32])
+            keypair_from_seed(&key_bytes)
                 .map_err(|e| eyre::eyre!("failed to create keypair from seed: {e}"))?
         } else {
             bail!(
-                "private key {} is wrong size (got {} bytes)",
-                key_b58,
+                "private key must contain 32 seed bytes or 64 keypair bytes (got {} bytes)",
                 key_bytes.len()
             );
         };
@@ -262,10 +261,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn private_key_requires_exact_encoding_and_never_exposes_secret() {
+        for length in [0, 31, 33, 63, 65] {
+            let encoded = bs58::encode(vec![7u8; length]).into_string();
+            let error = TransactionSigner::from_private_key(&encoded)
+                .err()
+                .expect("invalid length");
+            if !encoded.is_empty() {
+                assert!(!error.to_string().contains(&encoded));
+            }
+        }
+    }
+
+    #[test]
+    fn private_key_preserves_seed_and_validates_public_suffix() {
+        let expected = keypair_from_seed(&[7u8; 32]).unwrap();
+        assert_eq!(
+            TransactionSigner::from_private_key(&bs58::encode([7u8; 32]).into_string())
+                .unwrap()
+                .public_key(),
+            expected.pubkey()
+        );
+        assert_eq!(
+            TransactionSigner::from_private_key(&bs58::encode(expected.to_bytes()).into_string())
+                .unwrap()
+                .public_key(),
+            expected.pubkey()
+        );
+        let mut invalid = expected.to_bytes();
+        invalid[63] ^= 1;
+        assert!(TransactionSigner::from_private_key(&bs58::encode(invalid).into_string()).is_err());
+    }
+
+    #[test]
     fn generic_signature_is_bound_to_one_domain() {
-        let signer =
-            TransactionSigner::from_private_key("1111111111111111111111111111111111111111111")
-                .expect("test signer");
+        let signer = TransactionSigner::from_private_key("11111111111111111111111111111111")
+            .expect("test signer");
         let mainnet = signer
             .sign_bytes(b"{\"action\":\"faucet\"}", SignatureDomain::Mainnet)
             .expect("mainnet signature");

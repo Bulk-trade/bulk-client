@@ -76,7 +76,7 @@ mod tests {
         let error = BulkHttpClient::new(&HttpConfig {
             base_url: "http://localhost".to_string(),
             signer: Some(
-                TransactionSigner::from_private_key("1111111111111111111111111111111111111111111")
+                TransactionSigner::from_private_key("11111111111111111111111111111111")
                     .expect("test signer"),
             ),
             signature_domain: None,
