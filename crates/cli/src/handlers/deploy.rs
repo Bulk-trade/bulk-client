@@ -131,7 +131,7 @@ pub async fn handle_config_maker(
 ///
 /// # Arguments
 /// * `api` - Authenticated Bulk HTTP client.
-/// * `args` - Market symbol, transition, and optional close price.
+/// * `args` - Market symbols, transition, and optional close price.
 /// * `submit` - Transaction preview and confirmation options.
 ///
 /// # Returns
@@ -142,6 +142,14 @@ pub async fn handle_market_admin(
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     let action = MarketAction::from(args.action);
+    let symbols = args
+        .symbols
+        .into_iter()
+        .map(|symbol| symbol.trim().to_owned())
+        .collect::<Vec<_>>();
+    if symbols.iter().any(String::is_empty) {
+        return Err(eyre::eyre!("market symbols must not be empty"));
+    }
     if args.price.is_some() && action != MarketAction::Close {
         return Err(eyre::eyre!("--price is valid only for the close action"));
     }
@@ -152,18 +160,19 @@ pub async fn handle_market_admin(
         return Err(eyre::eyre!("close price must be finite and positive"));
     }
 
-    eprintln!("Applying {:?} to market {}", action, args.symbol);
-    submit_actions(
-        api,
-        submit,
-        vec![Action::MarketAdmin(MarketAdmin {
-            symbol: args.symbol.into(),
-            action,
-            price: args.price,
-            meta: Default::default(),
-        })],
-    )
-    .await
+    eprintln!("Applying {:?} to markets {}", action, symbols.join(", "));
+    let actions = symbols
+        .into_iter()
+        .map(|symbol| {
+            Action::MarketAdmin(MarketAdmin {
+                symbol: symbol.into(),
+                action,
+                price: args.price,
+                meta: Default::default(),
+            })
+        })
+        .collect();
+    submit_actions(api, submit, actions).await
 }
 
 /// Configures the accepted oracle source for an instrument.
