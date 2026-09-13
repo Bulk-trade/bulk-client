@@ -38,7 +38,11 @@ class TransactionSigner:
             private_key: Base58 encoded private key
         """
         private_key_bytes = base58.b58decode(private_key)
+        if len(private_key_bytes) not in (32, 64):
+            raise ValueError("private key must contain 32 seed bytes or 64 keypair bytes")
         self.signing_key = SigningKey(private_key_bytes[:32])
+        if len(private_key_bytes) == 64 and private_key_bytes[32:] != bytes(self.signing_key.verify_key):
+            raise ValueError("private key public suffix does not match its seed")
         self.public_key = base58.b58encode(bytes(self.signing_key.verify_key)).decode()
         self.private_key = private_key
         self.nonce = 0
@@ -466,7 +470,7 @@ def _test_faucet1():
         'account': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS',
         'signer': '4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS'
     }
-    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+    signer = TransactionSigner("11111111111111111111111111111111")
     signed = signer.sign_transaction(faucet, SignatureDomain.DEVNET)
     print(signed)
 
@@ -505,7 +509,7 @@ def _test_trailing():
         "account": "4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS",
         "signer": "4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS",
     }
-    signer = TransactionSigner("1111111111111111111111111111111111111111111")
+    signer = TransactionSigner("11111111111111111111111111111111")
 
     signed = signer.sign_transaction(orders, SignatureDomain.DEVNET)
     assert signer.verify(orders, SignatureDomain.DEVNET)

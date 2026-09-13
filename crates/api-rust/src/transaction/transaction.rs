@@ -467,7 +467,7 @@ mod tests {
     use crate::msgs::{ApproveCommissionFee, BuilderCode, RevokeCommissionFee};
 
     /// A stable base58 seed (32-byte all-zeros key) used only in tests.
-    const TEST_PRIVATE_KEY1: &str = "1111111111111111111111111111111111111111111";
+    const TEST_PRIVATE_KEY1: &str = "11111111111111111111111111111111";
     const TEST_PRIVATE_KEY2: &str = "9TucdiMw5Sr5uQMhrxzXivuCAdi7qDLTLASqdSfXX6qH";
 
     fn bytes_hex(bytes: &[u8]) -> String {
