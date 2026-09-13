@@ -41,21 +41,20 @@ class PrivateKeyValidation(unittest.TestCase):
         self.assertEqual(client.signer.public_key, base58.b58encode(
             bytes(SigningKey(seed).verify_key)).decode())
 
-    def test_http_demo_uses_explicit_key_without_generating(self):
+    def test_http_module_execution_never_uses_keys_or_network(self):
         import runpy
         import importlib
+        import io
+        from contextlib import redirect_stdout
         from unittest.mock import patch
 
         encoded = base58.b58encode(bytes([7]) * 32).decode()
-        class StopBeforeNetwork(Exception):
-            pass
-
-        def inspect_key(signer, private_key):
-            self.assertEqual(private_key, encoded)
-            raise StopBeforeNetwork
-
         with patch.dict("os.environ", {"BULK_PRIVATE_KEY": encoded}), \
-                patch.object(TransactionSigner, "__init__", inspect_key), \
-                patch.object(TransactionSigner, "generate_account", side_effect=AssertionError("unexpected generation")):
-            with self.assertRaises(StopBeforeNetwork):
-                runpy.run_path(importlib.import_module("bulk_api.api.bulk_http").__file__, run_name="__main__")
+                patch.object(TransactionSigner, "__init__", side_effect=AssertionError("unexpected key access")), \
+                patch.object(TransactionSigner, "generate_account", side_effect=AssertionError("unexpected key generation")), \
+                patch("requests.get", side_effect=AssertionError("unexpected network")), \
+                patch("requests.post", side_effect=AssertionError("unexpected transaction")), \
+                redirect_stdout(io.StringIO()) as output:
+            runpy.run_path(importlib.import_module("bulk_api.api.bulk_http").__file__, run_name="__main__")
+        self.assertNotIn(encoded, output.getvalue())
+        self.assertIn("docs/python-http-api.md", output.getvalue())
