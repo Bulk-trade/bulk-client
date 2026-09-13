@@ -1308,6 +1308,7 @@ impl Actor {
                         self.account_state.open_orders.insert(oid, order.clone());
                     }
                     self.emit(Topic::Order, &Event::Order(order));
+                    self.publish_account();
                 } else {
                     error!("Could not parse order event: {:?}", data);
                 }
@@ -1488,6 +1489,64 @@ impl Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn order_updates_publish_resting_and_terminal_state_without_margin_updates() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (advance, mut receive) = mpsc::channel::<()>(1);
+        let server = tokio::spawn(async move {
+            let mut socket = tokio_tungstenite::accept_async(listener.accept().await.unwrap().0)
+                .await
+                .unwrap();
+            for status in ["resting", "cancelled"] {
+                receive.recv().await.unwrap();
+                socket
+                    .send(Message::Text(
+                        json!({"type": "account", "data": {
+                            "type": "orderUpdate", "ot": "limit", "status": status,
+                            "sym": "BTC-USD", "oid": "order-1", "px": 100.0,
+                            "origSz": -2.0, "sz": -2.0, "fillSz": 0.0, "vwap": 0.0,
+                            "tif": "gtc", "r": false, "mk": true, "ts": 7
+                        }})
+                        .to_string()
+                        .into(),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            while let Some(message) = socket.next().await {
+                if matches!(message, Ok(Message::Close(_)) | Err(_)) {
+                    break;
+                }
+            }
+        });
+        let mut client = BulkWsClient::connect(WSConfig {
+            url: format!("ws://{address}"),
+            track_account: false,
+            track_ticker: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        advance.send(()).await.unwrap();
+        let state = time::timeout(Duration::from_secs(2), client.wait_account_changed())
+            .await
+            .expect("resting order must publish without a margin event")
+            .unwrap();
+        assert_eq!(state.open_orders["order-1"].signed_size, -2.0);
+        advance.send(()).await.unwrap();
+        let state = time::timeout(Duration::from_secs(2), client.wait_account_changed())
+            .await
+            .expect("terminal order must publish without a margin event")
+            .unwrap();
+        assert!(state.open_orders.is_empty());
+        client.shutdown().await;
+        time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn initial_snapshot_is_published_and_next_wait_skips_unread_state() {
