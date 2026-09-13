@@ -142,9 +142,11 @@ class TransactionSigner:
         """
         if not isinstance(signature_domain, SignatureDomain):
             raise ValueError("explicit SignatureDomain is required")
-        parts = [TransactionSigner.write_u64(len(actions))]
+        v2 = any(TransactionSigner.action_has_explicit_slippage(action) for action in actions)
+        parts = [b"\xff" * 8 + b"bulk-actions\x02"] if v2 else []
+        parts.append(TransactionSigner.write_u64(len(actions)))
         for action in actions:
-            parts.append(TransactionSigner.serialize_action(action))
+            parts.append(TransactionSigner.serialize_action(action, v2))
 
         parts.append(TransactionSigner.write_u64(int(nonce)))
         parts.append(TransactionSigner.decode_and_validate_32_bytes(account))
@@ -152,7 +154,21 @@ class TransactionSigner:
         return b''.join(parts)
 
     @staticmethod
-    def serialize_action(action: dict) -> bytes:
+    def action_has_explicit_slippage(action: dict) -> bool:
+        match action:
+            case {"m": order}:
+                return order.get("slippage") is not None
+            case {"trig": order}:
+                return any(TransactionSigner.action_has_explicit_slippage(child) for child in order["actions"])
+            case {"of": order}:
+                return TransactionSigner.action_has_explicit_slippage(order["trigger"]) or any(
+                    TransactionSigner.action_has_explicit_slippage(child) for child in order["actions"]
+                )
+            case _:
+                return False
+
+    @staticmethod
+    def serialize_action(action: dict, v2: bool = False) -> bytes:
         match action:
             case {"m": order}:
                 if "commission" in order:
@@ -166,10 +182,13 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['sz']),
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode'))
+                    or (b'\x00' if v2 else b''),
                 ]
-                if order.get('slippage') is not None:
-                    parts.append(TransactionSigner.write_fixedpoint(order['slippage']))
+                if v2:
+                    parts.append(TransactionSigner.write_optional_fixedpoint(order.get('slippage')))
+                elif order.get('slippage') is not None:
+                    raise ValueError("explicit slippage requires V2 transaction framing")
                 return b''.join(parts)
 
             case {"l": order}:
@@ -186,7 +205,8 @@ class TransactionSigner:
                     TransactionSigner.write_u32(TIME_IN_FORCE_MAP[order["tif"]]),
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode'))
+                    or (b'\x00' if v2 else b''),
                 ])
 
             case {"st": order}:
@@ -234,7 +254,7 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action)
+                        TransactionSigner.serialize_action(action, v2)
                         for action in order['actions']
                     ),
                 ])
@@ -257,10 +277,10 @@ class TransactionSigner:
                     raise ValueError("on-fill trigger must be a market or limit order")
                 return b''.join([
                     TransactionSigner.write_u32(10),
-                    TransactionSigner.serialize_action(trigger),
+                    TransactionSigner.serialize_action(trigger, v2),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action)
+                        TransactionSigner.serialize_action(action, v2)
                         for action in order['actions']
                     ),
                 ])

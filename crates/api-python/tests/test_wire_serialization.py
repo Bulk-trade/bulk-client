@@ -332,8 +332,8 @@ def test_market_order_slippage_preserves_legacy_signing_and_binds_new_value():
             "slippage": "25.5",
         }
     }
-    encoded = signer.TransactionSigner.serialize_action(with_slippage)
-    assert encoded == legacy + struct.pack("<Q", 2_550_000_000)
+    encoded = signer.TransactionSigner.serialize_action(with_slippage, v2=True)
+    assert encoded == legacy + b"\x00\x01" + struct.pack("<Q", 2_550_000_000)
 
 
 def test_market_order_model_defaults_to_100_bps_and_can_omit_for_legacy():
