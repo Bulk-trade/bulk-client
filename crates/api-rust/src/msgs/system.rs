@@ -42,8 +42,10 @@ pub struct Withdraw {
     pub recipient_token_account: Pubkey,
     #[serde(rename = "a")]
     pub amount: u64,
-    #[serde(with = "crate::msgs::serde_hash", rename = "b")]
-    pub blockhash: Hash,
+    #[serde(with = "crate::msgs::serde_signature", rename = "ss")]
+    pub solana_signature: Signature,
+    #[serde(default, rename = "ii")]
+    pub instruction_index: u16,
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -204,6 +206,23 @@ pub struct PreDepositCredit {
     pub meta: ActionMeta,
 }
 
+/// Starts executor-side processing of a governance-approved pre-deposit dataset.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartPreDepositDatasetMigration {
+    #[serde(with = "crate::msgs::serde_hash", rename = "id")]
+    pub dataset_id: Hash,
+    #[serde(rename = "n")]
+    pub total_entries: u32,
+    #[serde(rename = "cs")]
+    pub chunk_size: u16,
+    #[serde(rename = "ss")]
+    pub start_slot: u64,
+    #[serde(rename = "fv")]
+    pub format_version: u16,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
 /// Configures a market-specific maker rebate tier override.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -280,4 +299,28 @@ pub struct RevokePendingActivation {
     pub version: u32,
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn withdraw_uses_solana_receipt_fields() {
+        let withdraw = Withdraw {
+            user: Pubkey::default(),
+            vault: Pubkey::default(),
+            recipient_token_account: Pubkey::default(),
+            amount: 25,
+            solana_signature: Signature::default(),
+            instruction_index: 4,
+            meta: ActionMeta::default(),
+        };
+
+        let value = serde_json::to_value(withdraw).expect("withdraw should serialize");
+
+        assert_eq!(value.get("ii"), Some(&serde_json::json!(4)));
+        assert!(value.get("ss").is_some());
+        assert!(value.get("b").is_none());
+    }
 }

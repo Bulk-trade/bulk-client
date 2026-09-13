@@ -451,6 +451,14 @@ impl ClearSignMessage {
             action.pre_deposit_pda,
             action.entry_index
         ),
+        Action::StartPreDepositDatasetMigration(action) => format!(
+            "StartPreDepositDatasetMigration dataset_id={} total_entries={} chunk_size={} start_slot={} format_version={}",
+            action.dataset_id,
+            action.total_entries,
+            action.chunk_size,
+            action.start_slot,
+            action.format_version
+        ),
         Action::ConfigMakerRebateTier(action) => format!(
             "ConfigMakerRebateTier instrument={} maker={} minimum_tier={:?} expires_slot={:?}",
             action.instrument, action.maker, action.minimum_tier, action.expires_slot

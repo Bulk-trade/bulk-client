@@ -27,12 +27,24 @@ pub struct MarketInfo {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Beacon {
     pub epoch: u32,
-    pub node_id: u16,
     pub wall_clock_ns: u64,
     pub since_commit_us: u64,
+    pub per_peer_origination: Vec<(Pubkey, u64)>,
+    pub row_unattributed: u64,
+    pub per_peer_participation: Vec<(Pubkey, u32)>,
+    pub participation_total_rounds: u32,
+    pub stake_announce: Option<StakeAnnounce>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+/// Solana stake projected onto the reward roster for a beacon epoch.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StakeAnnounce {
+    pub stake_epoch: u64,
+    pub roster_hash: [u8; 32],
+    pub values: Vec<u64>,
 }
 
 /// WarmJoin protocol: a validator announces it has caught up and is ready to vote.
@@ -45,7 +57,6 @@ pub struct Beacon {
 /// Re-emitted join TXs naturally hash differently, preventing dedup stalls.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Join {
-    pub node_id: u16,
     pub committed_round: u64,
 
     #[serde(skip)]
@@ -135,7 +146,64 @@ pub struct UpdateValidatorSet {
     pub removed: Vec<Pubkey>,
     pub version: u64,
     pub admin_sigs: Vec<AdminSignature>,
+    #[serde(default)]
+    pub tier_changes: Vec<(Pubkey, u8)>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn beacon_and_join_use_current_sdk_shape() {
+        let beacon = Beacon {
+            epoch: 7,
+            wall_clock_ns: 11,
+            since_commit_us: 13,
+            per_peer_origination: Vec::new(),
+            row_unattributed: 17,
+            per_peer_participation: Vec::new(),
+            participation_total_rounds: 19,
+            stake_announce: None,
+            meta: ActionMeta::default(),
+        };
+        let join = Join {
+            committed_round: 23,
+            meta: ActionMeta::default(),
+        };
+
+        assert_eq!(
+            serde_json::to_value(beacon).expect("beacon should serialize"),
+            serde_json::json!({
+                "epoch": 7,
+                "wall_clock_ns": 11,
+                "since_commit_us": 13,
+                "per_peer_origination": [],
+                "row_unattributed": 17,
+                "per_peer_participation": [],
+                "participation_total_rounds": 19,
+                "stake_announce": null
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(join).expect("join should serialize"),
+            serde_json::json!({"committed_round": 23})
+        );
+    }
+
+    #[test]
+    fn validator_set_defaults_omitted_tier_changes() {
+        let update: UpdateValidatorSet = serde_json::from_value(serde_json::json!({
+            "added": [],
+            "removed": [],
+            "version": 1,
+            "admin_sigs": []
+        }))
+        .expect("validator set update should deserialize");
+
+        assert!(update.tier_changes.is_empty());
+    }
 }
