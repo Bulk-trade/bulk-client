@@ -89,9 +89,15 @@ impl ClearSignMessage {
         let _ = writeln!(message, "Signable-Hash: {}", Self::sha256_hex(signable));
         if options.include_signable_schema {
             let _ = writeln!(
-            message,
-            "Signable-Schema: bincode(commission_signable_actions)||nonce_le_u64||account_bytes||signature_domain_u8"
-        );
+                message,
+                "Signable-Schema: {}",
+                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V2_PREFIX)
+                {
+                    "u64_max_le||bulk-actions_utf8||version_u8(2)||bincode(actions)||nonce_le_u64||account_bytes||signature_domain_u8"
+                } else {
+                    "bincode(commission_signable_actions)||nonce_le_u64||account_bytes||signature_domain_u8"
+                }
+            );
         }
         for (index, action) in actions.iter().enumerate() {
             Self::render_action(&mut message, action, index.to_string());
@@ -567,7 +573,7 @@ impl ClearSignMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::ClearSignMessage;
+    use super::{ClearSignMessage, ClearSignMessageOptions};
     use crate::common::tif::TimeInForce;
     use crate::msgs::{
         BuilderCode, Faucet, LimitOrder, MarketOrder, OpaqueAction, UpdateMultisigPolicy,
@@ -724,14 +730,17 @@ mod tests {
             slippage: Some(25.5),
             meta: ActionMeta::default(),
         };
-        let message = ClearSignMessage::canonical_message(
+        let message = ClearSignMessage::canonical_message_with_options(
             SignatureDomain::Devnet,
             account,
             99,
             &[Action::MarketOrder(order.clone())],
+            ClearSignMessageOptions {
+                include_signable_schema: true,
+            },
         )
         .expect("build slippage clear-sign message");
-        let without_slippage = ClearSignMessage::canonical_message(
+        let without_slippage = ClearSignMessage::canonical_message_with_options(
             SignatureDomain::Devnet,
             account,
             99,
@@ -739,9 +748,14 @@ mod tests {
                 slippage: None,
                 ..order
             })],
+            ClearSignMessageOptions {
+                include_signable_schema: true,
+            },
         )
         .expect("build legacy clear-sign message");
 
+        assert!(message.contains("Signable-Schema: u64_max_le||bulk-actions_utf8||version_u8(2)"));
+        assert!(without_slippage.contains("Signable-Schema: bincode(commission_signable_actions)"));
         assert!(message.contains("slippage=25.50000000bps"));
         assert!(!without_slippage.contains("slippage="));
         assert_ne!(

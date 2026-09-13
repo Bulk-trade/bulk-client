@@ -1,0 +1,508 @@
+{
+  "sdk_revision": "1521f300895f2aa35a8517d2015ad7c4f53ac6e3",
+  "vectors": [
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "m": {
+            "b": true,
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "slippage": 25.0,
+            "sz": 1.0
+          }
+        },
+        {
+          "m": {
+            "b": false,
+            "builderCode": {
+              "fee": 5,
+              "to": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+            },
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "sz": 2.0
+          }
+        },
+        {
+          "l": {
+            "b": true,
+            "builderCode": {
+              "fee": 5,
+              "to": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+            },
+            "c": "BTC-USD",
+            "i": false,
+            "px": 100.0,
+            "r": false,
+            "sz": 3.0,
+            "tif": "GTC"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        "5iPTfpJrBYYhbmj7PXyY9srCuU6fsq3DzRQWxLL4osj2",
+        "DoLgGWLQg6izsrW52eMtmjot9JLAKfWLAZYDRU9QRKKZ",
+        "6hA5kud5xUXx69i6bgaf4ZDRZUW75qftwQuhv6Ubd3gg"
+      ],
+      "domain": "devnet",
+      "name": "commissioned",
+      "nonce": "42",
+      "signable_hex": "ffffffffffffffff62756c6b2d616374696f6e730203000000000000000000000007000000000000004254432d5553440100e1f505000000000000000100f90295000000000000000007000000000000004254432d5553440000c2eb0b00000000000001010101010101010101010101010101010101010101010101010101010101010105000100000007000000000000004254432d5553440100e40b540200000000a3e11100000000000000000000010101010101010101010101010101010101010101010101010101010101010101052a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "m": {
+            "b": true,
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "slippage": 25.0,
+            "sz": 1.0
+          }
+        },
+        {
+          "m": {
+            "b": false,
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "sz": 2.0
+          }
+        },
+        {
+          "l": {
+            "b": true,
+            "c": "BTC-USD",
+            "i": false,
+            "px": 100.0,
+            "r": false,
+            "sz": 3.0,
+            "tif": "GTC"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        "5iPTfpJrBYYhbmj7PXyY9srCuU6fsq3DzRQWxLL4osj2",
+        "DoLgGWLQg6izsrW52eMtmjot9JLAKfWLAZYDRU9QRKKZ",
+        "6hA5kud5xUXx69i6bgaf4ZDRZUW75qftwQuhv6Ubd3gg"
+      ],
+      "domain": "devnet",
+      "name": "mixed",
+      "nonce": "42",
+      "signable_hex": "ffffffffffffffff62756c6b2d616374696f6e730203000000000000000000000007000000000000004254432d5553440100e1f505000000000000000100f90295000000000000000007000000000000004254432d5553440000c2eb0b00000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e11100000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "msp": {
+            "a": [
+              {
+                "msp": {
+                  "a": [
+                    {
+                      "m": {
+                        "b": true,
+                        "c": "BTC-USD",
+                        "i": false,
+                        "r": false,
+                        "slippage": 25.0,
+                        "sz": 1.0
+                      }
+                    },
+                    {
+                      "m": {
+                        "b": false,
+                        "c": "BTC-USD",
+                        "i": false,
+                        "r": false,
+                        "sz": 2.0
+                      }
+                    },
+                    {
+                      "l": {
+                        "b": true,
+                        "c": "BTC-USD",
+                        "i": false,
+                        "px": 100.0,
+                        "r": false,
+                        "sz": 3.0,
+                        "tif": "GTC"
+                      }
+                    }
+                  ],
+                  "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+                }
+              }
+            ],
+            "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "nested",
+      "nonce": "42",
+      "signable_hex": "ffffffffffffffff62756c6b2d616374696f6e730201000000000000001f000000010101010101010101010101010101010101010101010101010101010101010101000000000000001f000000010101010101010101010101010101010101010101010101010101010101010103000000000000000000000007000000000000004254432d5553440100e1f505000000000000000100f90295000000000000000007000000000000004254432d5553440000c2eb0b00000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e111000000000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "trig": {
+            "actions": [
+              {
+                "m": {
+                  "b": true,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "r": false,
+                  "slippage": 25.0,
+                  "sz": 1.0
+                }
+              },
+              {
+                "m": {
+                  "b": false,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "r": false,
+                  "sz": 2.0
+                }
+              },
+              {
+                "l": {
+                  "b": true,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "px": 100.0,
+                  "r": false,
+                  "sz": 3.0,
+                  "tif": "GTC"
+                }
+              }
+            ],
+            "c": "BTC-USD",
+            "d": true,
+            "tr": 100.0
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "trigger",
+      "nonce": "42",
+      "signable_hex": "ffffffffffffffff62756c6b2d616374696f6e730201000000000000000800000007000000000000004254432d5553440100e40b540200000003000000000000000000000007000000000000004254432d5553440100e1f505000000000000000100f90295000000000000000007000000000000004254432d5553440000c2eb0b00000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e11100000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "of": {
+            "actions": [
+              {
+                "m": {
+                  "b": true,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "r": false,
+                  "slippage": 25.0,
+                  "sz": 1.0
+                }
+              },
+              {
+                "m": {
+                  "b": false,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "r": false,
+                  "sz": 2.0
+                }
+              }
+            ],
+            "trigger": {
+              "l": {
+                "b": true,
+                "c": "BTC-USD",
+                "i": false,
+                "px": 100.0,
+                "r": false,
+                "sz": 3.0,
+                "tif": "GTC"
+              }
+            }
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "onfill",
+      "nonce": "42",
+      "signable_hex": "ffffffffffffffff62756c6b2d616374696f6e730201000000000000000a0000000100000007000000000000004254432d5553440100e40b540200000000a3e111000000000000000000000002000000000000000000000007000000000000004254432d5553440100e1f505000000000000000100f90295000000000000000007000000000000004254432d5553440000c2eb0b00000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "msp": {
+            "a": [
+              {
+                "of": {
+                  "actions": [
+                    {
+                      "trig": {
+                        "actions": [
+                          {
+                            "m": {
+                              "b": false,
+                              "c": "BTC-USD",
+                              "i": false,
+                              "r": false,
+                              "sz": 2.0
+                            }
+                          },
+                          {
+                            "l": {
+                              "b": true,
+                              "c": "BTC-USD",
+                              "i": false,
+                              "px": 100.0,
+                              "r": false,
+                              "sz": 3.0,
+                              "tif": "GTC"
+                            }
+                          }
+                        ],
+                        "c": "BTC-USD",
+                        "d": true,
+                        "tr": 100.0
+                      }
+                    }
+                  ],
+                  "trigger": {
+                    "m": {
+                      "b": false,
+                      "c": "BTC-USD",
+                      "i": false,
+                      "r": false,
+                      "sz": 2.0
+                    }
+                  }
+                }
+              }
+            ],
+            "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "legacy_multisig_onfill_trigger",
+      "nonce": "42",
+      "signable_hex": "01000000000000001f000000010101010101010101010101010101010101010101010101010101010101010101000000000000000a0000000000000007000000000000004254432d5553440000c2eb0b0000000000000001000000000000000800000007000000000000004254432d5553440100e40b540200000002000000000000000000000007000000000000004254432d5553440000c2eb0b000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e1110000000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "m": {
+            "b": false,
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "sz": 2.0
+          }
+        },
+        {
+          "l": {
+            "b": true,
+            "c": "BTC-USD",
+            "i": false,
+            "px": 100.0,
+            "r": false,
+            "sz": 3.0,
+            "tif": "GTC"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        "DoLgGWLQg6izsrW52eMtmjot9JLAKfWLAZYDRU9QRKKZ",
+        "6hA5kud5xUXx69i6bgaf4ZDRZUW75qftwQuhv6Ubd3gg"
+      ],
+      "domain": "devnet",
+      "name": "legacy",
+      "nonce": "42",
+      "signable_hex": "02000000000000000000000007000000000000004254432d5553440000c2eb0b0000000000000100000007000000000000004254432d5553440100e40b540200000000a3e111000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "m": {
+            "b": true,
+            "builderCode": {
+              "fee": 5,
+              "to": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+            },
+            "c": "BTC-USD",
+            "i": false,
+            "r": false,
+            "sz": 1.0
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        "22XZMCZeD1HDb2sCJ7aJ7KbXkdohesASyzFqsWduk2z8"
+      ],
+      "domain": "devnet",
+      "name": "legacy_market_commission",
+      "nonce": "42",
+      "signable_hex": "01000000000000000000000007000000000000004254432d5553440100e1f505000000000000010101010101010101010101010101010101010101010101010101010101010101052a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "l": {
+            "b": true,
+            "builderCode": {
+              "fee": 5,
+              "to": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+            },
+            "c": "BTC-USD",
+            "i": false,
+            "px": 100.0,
+            "r": false,
+            "sz": 3.0,
+            "tif": "GTC"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        "6hA5kud5xUXx69i6bgaf4ZDRZUW75qftwQuhv6Ubd3gg"
+      ],
+      "domain": "devnet",
+      "name": "legacy_limit_commission",
+      "nonce": "42",
+      "signable_hex": "01000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e11100000000000000000000010101010101010101010101010101010101010101010101010101010101010101052a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "msp": {
+            "a": [
+              {
+                "m": {
+                  "b": false,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "r": false,
+                  "sz": 2.0
+                }
+              }
+            ],
+            "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "legacy_multisig_market",
+      "nonce": "42",
+      "signable_hex": "01000000000000001f000000010101010101010101010101010101010101010101010101010101010101010101000000000000000000000007000000000000004254432d5553440000c2eb0b00000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "msp": {
+            "a": [
+              {
+                "l": {
+                  "b": true,
+                  "c": "BTC-USD",
+                  "i": false,
+                  "px": 100.0,
+                  "r": false,
+                  "sz": 3.0,
+                  "tif": "GTC"
+                }
+              }
+            ],
+            "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "legacy_multisig_limit",
+      "nonce": "42",
+      "signable_hex": "01000000000000001f000000010101010101010101010101010101010101010101010101010101010101010101000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e1110000000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    },
+    {
+      "account": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "actions": [
+        {
+          "msp": {
+            "a": [
+              {
+                "msp": {
+                  "a": [
+                    {
+                      "m": {
+                        "b": false,
+                        "c": "BTC-USD",
+                        "i": false,
+                        "r": false,
+                        "sz": 2.0
+                      }
+                    },
+                    {
+                      "l": {
+                        "b": true,
+                        "c": "BTC-USD",
+                        "i": false,
+                        "px": 100.0,
+                        "r": false,
+                        "sz": 3.0,
+                        "tif": "GTC"
+                      }
+                    }
+                  ],
+                  "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+                }
+              }
+            ],
+            "m": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"
+          }
+        }
+      ],
+      "default_meta_order_ids": [
+        null
+      ],
+      "domain": "devnet",
+      "name": "legacy_multisig_nested",
+      "nonce": "42",
+      "signable_hex": "01000000000000001f000000010101010101010101010101010101010101010101010101010101010101010101000000000000001f000000010101010101010101010101010101010101010101010101010101010101010102000000000000000000000007000000000000004254432d5553440000c2eb0b000000000000000100000007000000000000004254432d5553440100e40b540200000000a3e111000000000000000000000000002a00000000000000010101010101010101010101010101010101010101010101010101010101010103"
+    }
+  ]
+}

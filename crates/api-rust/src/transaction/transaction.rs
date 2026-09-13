@@ -7,6 +7,31 @@ use solana_signature::Signature;
 use std::fmt::Debug;
 use std::str::FromStr;
 
+pub(crate) const SIGNABLE_ACTIONS_V2_PREFIX: &[u8; 21] =
+    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x02";
+
+#[derive(Clone, Copy, PartialEq)]
+enum SignableSchema {
+    Legacy,
+    Embedded,
+    V2,
+}
+
+fn action_has_explicit_slippage(action: &Action) -> bool {
+    match action {
+        Action::MarketOrder(order) => order.slippage.is_some(),
+        Action::Trigger(trigger) => trigger.actions.iter().any(action_has_explicit_slippage),
+        Action::OnFill(on_fill) => {
+            action_has_explicit_slippage(&on_fill.trigger)
+                || on_fill.actions.iter().any(action_has_explicit_slippage)
+        }
+        Action::MultisigPropose(proposal) => {
+            proposal.actions.iter().any(action_has_explicit_slippage)
+        }
+        _ => false,
+    }
+}
+
 /// Stable signature-domain registry. Zero is deliberately unassigned so a
 /// missing or legacy domain cannot silently select a live network.
 #[repr(u8)]
@@ -73,7 +98,16 @@ impl Transaction {
         nonce: u64,
         actions: &[Action],
     ) -> eyre::Result<Vec<u8>> {
-        let mut serialized = bincode::serialize(&RawSignableActions(actions))?;
+        let schema = if actions.iter().any(action_has_explicit_slippage) {
+            SignableSchema::V2
+        } else {
+            SignableSchema::Legacy
+        };
+        let mut serialized = Vec::new();
+        if schema == SignableSchema::V2 {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+        }
+        bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
         serialized.extend_from_slice(&nonce.to_le_bytes());
         serialized.extend_from_slice(account.as_ref());
         serialized.push(signature_domain as u8);
@@ -142,34 +176,36 @@ impl Serialize for RawSafeF64 {
     }
 }
 
-struct RawSignableMarketOrder<'a>(&'a crate::msgs::MarketOrder);
+struct RawSignableMarketOrder<'a>(&'a crate::msgs::MarketOrder, SignableSchema);
 
 impl Serialize for RawSignableMarketOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut tuple = serializer.serialize_tuple(
-            5 + usize::from(self.0.builder_code.is_some()) + usize::from(self.0.slippage.is_some()),
+            5 + usize::from(self.1 != SignableSchema::Legacy || self.0.builder_code.is_some())
+                + usize::from(self.1 == SignableSchema::V2),
         )?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&RawSafeF64(self.0.size))?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
-        if self.0.builder_code.is_some() {
+        if self.1 != SignableSchema::Legacy || self.0.builder_code.is_some() {
             tuple.serialize_element(&self.0.builder_code)?;
         }
-        if let Some(slippage) = self.0.slippage {
-            tuple.serialize_element(&RawSafeF64(slippage))?;
+        if self.1 == SignableSchema::V2 {
+            tuple.serialize_element(&self.0.slippage.map(RawSafeF64))?;
         }
         tuple.end()
     }
 }
 
-struct RawSignableLimitOrder<'a>(&'a crate::msgs::LimitOrder);
+struct RawSignableLimitOrder<'a>(&'a crate::msgs::LimitOrder, SignableSchema);
 
 impl Serialize for RawSignableLimitOrder<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple =
-            serializer.serialize_tuple(7 + usize::from(self.0.builder_code.is_some()))?;
+        let mut tuple = serializer.serialize_tuple(
+            7 + usize::from(self.1 != SignableSchema::Legacy || self.0.builder_code.is_some()),
+        )?;
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_buy)?;
         tuple.serialize_element(&RawSafeF64(self.0.price))?;
@@ -177,14 +213,14 @@ impl Serialize for RawSignableLimitOrder<'_> {
         tuple.serialize_element(&self.0.tif)?;
         tuple.serialize_element(&self.0.reduce_only)?;
         tuple.serialize_element(&self.0.iso)?;
-        if self.0.builder_code.is_some() {
+        if self.1 != SignableSchema::Legacy || self.0.builder_code.is_some() {
             tuple.serialize_element(&self.0.builder_code)?;
         }
         tuple.end()
     }
 }
 
-struct RawSignableTrigger<'a>(&'a crate::msgs::conditional::Trigger);
+struct RawSignableTrigger<'a>(&'a crate::msgs::conditional::Trigger, SignableSchema);
 
 impl Serialize for RawSignableTrigger<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -192,12 +228,12 @@ impl Serialize for RawSignableTrigger<'_> {
         tuple.serialize_element(&self.0.symbol)?;
         tuple.serialize_element(&self.0.is_above)?;
         tuple.serialize_element(&RawSafeF64(self.0.threshold))?;
-        tuple.serialize_element(&RawSignableActions(&self.0.actions))?;
+        tuple.serialize_element(&RawSignableActions(&self.0.actions, self.1))?;
         tuple.end()
     }
 }
 
-struct RawSignableOnFill<'a>(&'a crate::msgs::conditional::OnFill);
+struct RawSignableOnFill<'a>(&'a crate::msgs::conditional::OnFill, SignableSchema);
 
 impl Serialize for RawSignableOnFill<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -210,25 +246,25 @@ impl Serialize for RawSignableOnFill<'_> {
             ));
         }
         let mut tuple = serializer.serialize_tuple(2)?;
-        tuple.serialize_element(&RawSignableAction(&self.0.trigger))?;
-        tuple.serialize_element(&RawSignableActions(&self.0.actions))?;
+        tuple.serialize_element(&RawSignableAction(&self.0.trigger, self.1))?;
+        tuple.serialize_element(&RawSignableActions(&self.0.actions, self.1))?;
         tuple.end()
     }
 }
 
-struct RawSignableActions<'a>(&'a [Action]);
+struct RawSignableActions<'a>(&'a [Action], SignableSchema);
 
 impl Serialize for RawSignableActions<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
         for action in self.0 {
-            seq.serialize_element(&RawSignableAction(action))?;
+            seq.serialize_element(&RawSignableAction(action, self.1))?;
         }
         seq.end()
     }
 }
 
-struct RawSignableAction<'a>(&'a Action);
+struct RawSignableAction<'a>(&'a Action, SignableSchema);
 
 impl Serialize for RawSignableAction<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -237,13 +273,13 @@ impl Serialize for RawSignableAction<'_> {
                 "Action",
                 0,
                 "MarketOrder",
-                &RawSignableMarketOrder(action),
+                &RawSignableMarketOrder(action, self.1),
             ),
             Action::LimitOrder(action) => serializer.serialize_newtype_variant(
                 "Action",
                 1,
                 "LimitOrder",
-                &RawSignableLimitOrder(action),
+                &RawSignableLimitOrder(action, self.1),
             ),
             Action::ModifyOrder(action) => {
                 serializer.serialize_newtype_variant("Action", 2, "ModifyOrder", action)
@@ -267,7 +303,7 @@ impl Serialize for RawSignableAction<'_> {
                 "Action",
                 8,
                 "Trigger",
-                &RawSignableTrigger(action),
+                &RawSignableTrigger(action, self.1),
             ),
             Action::Trailing(action) => {
                 serializer.serialize_newtype_variant("Action", 9, "Trailing", action)
@@ -276,7 +312,7 @@ impl Serialize for RawSignableAction<'_> {
                 "Action",
                 10,
                 "OnFill",
-                &RawSignableOnFill(action),
+                &RawSignableOnFill(action, self.1),
             ),
             Action::Price(action) => {
                 serializer.serialize_newtype_variant("Action", 11, "Price", action)
@@ -339,7 +375,24 @@ impl Serialize for RawSignableAction<'_> {
                 serializer.serialize_newtype_variant("Action", 30, "CreateMultisig", action)
             }
             Action::MultisigPropose(action) => {
-                serializer.serialize_newtype_variant("Action", 31, "MultisigPropose", action)
+                serializer.serialize_newtype_variant(
+                    "Action",
+                    31,
+                    "MultisigPropose",
+                    &(
+                        action.multisig.to_bytes(),
+                        RawSignableActions(
+                            &action.actions,
+                            if self.1 == SignableSchema::V2 {
+                                SignableSchema::V2
+                            } else {
+                                // Historic proposals used tagged builder options, but no slippage field.
+                                SignableSchema::Embedded
+                            },
+                        ),
+                        action.proposal_lifetime_secs,
+                    ),
+                )
             }
             Action::MultisigApprove(action) => {
                 serializer.serialize_newtype_variant("Action", 32, "MultisigApprove", action)
@@ -472,6 +525,50 @@ mod tests {
 
     fn bytes_hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    #[test]
+    fn raw_signable_matches_real_sdk_vectors() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/sdk-signing-vectors.json")).unwrap();
+        for vector in fixtures["vectors"].as_array().unwrap() {
+            let actual = Transaction::raw_signable_bytes(
+                SignatureDomain::Devnet,
+                vector["account"].as_str().unwrap().parse().unwrap(),
+                vector["nonce"].as_str().unwrap().parse().unwrap(),
+                &serde_json::from_value::<Vec<Action>>(vector["actions"].clone()).unwrap(),
+            )
+            .unwrap();
+            let expected: Vec<u8> = vector["signable_hex"]
+                .as_str()
+                .unwrap()
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect();
+            assert_eq!(actual, expected, "{}", vector["name"]);
+            for (mut action, expected_id) in
+                serde_json::from_value::<Vec<Action>>(vector["actions"].clone())
+                    .unwrap()
+                    .into_iter()
+                    .zip(vector["default_meta_order_ids"].as_array().unwrap())
+            {
+                if let Some(expected_id) = expected_id.as_str() {
+                    match &action {
+                        Action::MarketOrder(order) => assert_eq!(
+                            order.order_id(Pubkey::default(), 0, 0).to_string(),
+                            expected_id
+                        ),
+                        Action::LimitOrder(order) => assert_eq!(
+                            order.order_id(Pubkey::default(), 0, 0).to_string(),
+                            expected_id
+                        ),
+                        _ => unreachable!(),
+                    }
+                    assert_eq!(action.hash().to_string(), expected_id);
+                }
+            }
+        }
     }
 
     #[test]
