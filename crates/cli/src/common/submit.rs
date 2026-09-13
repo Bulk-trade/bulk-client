@@ -205,7 +205,7 @@ fn humanize_status(status: &str) -> String {
 
 /// Wraps protected CLI actions in proposals to the protocol administrative multisig.
 ///
-/// - Wraps every protected action in its own single-action proposal.
+/// - Combines adjacent protected actions targeting the same multisig into one proposal.
 /// - Wraps multisig policy updates in a proposal to the target multisig.
 /// - Preserves the original ordering of administrative and ordinary actions.
 /// - Leaves existing multisig proposals and non-admin actions unchanged.
@@ -213,30 +213,50 @@ fn wrap_admin_actions(actions: Vec<Action>) -> Vec<Action> {
     let admin_multisig = Pubkey::from_str(ADMIN_MULTISIG).expect("valid admin multisig pubkey");
     let fee_admin_multisig =
         Pubkey::from_str(FEE_ADMIN_MULTISIG).expect("valid fee admin multisig pubkey");
-    actions
-        .into_iter()
-        .map(|action| {
-            let multisig = if let Action::UpdateMultisigPolicy(update) = &action {
-                Some(update.multisig)
-            } else if action.is_fee_admin_multisig_action() {
-                Some(fee_admin_multisig)
-            } else if action.is_admin_multisig_action() {
-                Some(admin_multisig)
-            } else {
-                None
-            };
-            if let Some(multisig) = multisig {
-                Action::MultisigPropose(MultisigPropose {
-                    multisig,
-                    actions: vec![action],
-                    proposal_lifetime_secs: None,
-                    meta: ActionMeta::default(),
-                })
-            } else {
-                action
+    let mut wrapped = Vec::new();
+    let mut pending: Option<(Pubkey, Vec<Action>)> = None;
+
+    for action in actions {
+        let multisig = if let Action::UpdateMultisigPolicy(update) = &action {
+            Some(update.multisig)
+        } else if action.is_fee_admin_multisig_action() {
+            Some(fee_admin_multisig)
+        } else if action.is_admin_multisig_action() {
+            Some(admin_multisig)
+        } else {
+            None
+        };
+
+        match (&mut pending, multisig) {
+            (Some((pending_multisig, pending_actions)), Some(multisig))
+                if *pending_multisig == multisig =>
+            {
+                pending_actions.push(action);
             }
-        })
-        .collect()
+            (_, Some(multisig)) => {
+                flush_admin_proposal(&mut wrapped, pending.take());
+                pending = Some((multisig, vec![action]));
+            }
+            (_, None) => {
+                flush_admin_proposal(&mut wrapped, pending.take());
+                wrapped.push(action);
+            }
+        }
+    }
+
+    flush_admin_proposal(&mut wrapped, pending);
+    wrapped
+}
+
+fn flush_admin_proposal(wrapped: &mut Vec<Action>, pending: Option<(Pubkey, Vec<Action>)>) {
+    if let Some((multisig, actions)) = pending {
+        wrapped.push(Action::MultisigPropose(MultisigPropose {
+            multisig,
+            actions,
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        }));
+    }
 }
 
 #[cfg(test)]
@@ -245,7 +265,7 @@ mod tests {
     use bulk_client::msgs::{AddMarket, CancelAll, ConfigMakerRebateTier, OpaqueAction, UserAdmin};
 
     #[test]
-    fn wraps_each_admin_action_once() {
+    fn wraps_adjacent_admin_actions_in_one_proposal() {
         let wrapped = wrap_admin_actions(vec![
             Action::AddMarket(AddMarket {
                 symbol: "BTC-USD".into(),
@@ -257,24 +277,22 @@ mod tests {
             }),
         ]);
 
-        let [Action::MultisigPropose(first), Action::MultisigPropose(second)] = wrapped.as_slice()
-        else {
-            panic!("each admin action must be wrapped separately");
+        let [Action::MultisigPropose(proposal)] = wrapped.as_slice() else {
+            panic!("admin actions must be wrapped together");
         };
         let expected_multisig = Pubkey::from_str(ADMIN_MULTISIG).unwrap();
-        assert_eq!(first.multisig, expected_multisig);
-        assert_eq!(second.multisig, expected_multisig);
-        assert_eq!(first.actions.len(), 1);
-        assert_eq!(second.actions.len(), 1);
-        assert_eq!(first.proposal_lifetime_secs, None);
-        assert_eq!(second.proposal_lifetime_secs, None);
-        assert!(matches!(first.actions[0], Action::AddMarket(_)));
-        assert!(matches!(second.actions[0], Action::AddMarket(_)));
+        assert_eq!(proposal.multisig, expected_multisig);
+        assert_eq!(proposal.actions.len(), 2);
+        assert_eq!(proposal.proposal_lifetime_secs, None);
+        assert!(proposal
+            .actions
+            .iter()
+            .all(|action| matches!(action, Action::AddMarket(_))));
 
         let wrapped_again = wrap_admin_actions(wrapped);
         assert!(matches!(
             wrapped_again.as_slice(),
-            [Action::MultisigPropose(_), Action::MultisigPropose(_)]
+            [Action::MultisigPropose(_)]
         ));
     }
 
@@ -307,15 +325,19 @@ mod tests {
         let expected = Pubkey::from_str(FEE_ADMIN_MULTISIG).unwrap();
         assert!(!expected.is_on_curve());
         assert_ne!(expected.to_bytes()[31] & 0x80, 0);
-        for action in wrapped {
-            let Action::MultisigPropose(proposal) = action else {
-                panic!("fee action must be wrapped in a proposal");
-            };
-            assert_eq!(proposal.multisig, expected);
-            assert_eq!(proposal.actions.len(), 1);
-            assert!(proposal.actions[0].is_fee_admin_multisig_action());
-            assert!(!proposal.actions[0].is_admin_multisig_action());
-        }
+        let [Action::MultisigPropose(proposal)] = wrapped.as_slice() else {
+            panic!("fee actions must be wrapped in one proposal");
+        };
+        assert_eq!(proposal.multisig, expected);
+        assert_eq!(proposal.actions.len(), 2);
+        assert!(proposal
+            .actions
+            .iter()
+            .all(Action::is_fee_admin_multisig_action));
+        assert!(proposal
+            .actions
+            .iter()
+            .all(|action| !action.is_admin_multisig_action()));
     }
 
     #[test]

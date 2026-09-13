@@ -449,6 +449,8 @@ impl Serialize for RawSignableAction<'_> {
             Action::UserAdmin(action) => {
                 serializer.serialize_newtype_variant("Action", 65, "UserAdmin", action)
             }
+            Action::StartPreDepositDatasetMigration(action) => serializer
+                .serialize_newtype_variant("Action", 66, "StartPreDepositDatasetMigration", action),
         }
     }
 }
