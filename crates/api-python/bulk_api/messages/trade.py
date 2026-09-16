@@ -407,6 +407,7 @@ class Stop:
     threshold: float
     limit: Optional[float] = None
     iso: bool = False
+    builder_code: Optional[BuilderCode] = None
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -424,6 +425,8 @@ class Stop:
                 'i': self.iso,
             }
         }
+        if self.builder_code is not None:
+            order["st"]["builderCode"] = self.builder_code.to_api()
         return order
 
 
@@ -440,6 +443,7 @@ class TakeProfit:
     threshold: float
     limit: Optional[float] = None
     iso: bool = False
+    builder_code: Optional[BuilderCode] = None
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -457,6 +461,8 @@ class TakeProfit:
                 'i': self.iso,
             }
         }
+        if self.builder_code is not None:
+            order["tp"]["builderCode"] = self.builder_code.to_api()
         return order
 
 
@@ -474,6 +480,7 @@ class TrailingStop:
     step_bps: int
     limit: Optional[float] = None
     iso: bool = False
+    builder_code: Optional[BuilderCode] = None
 
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
@@ -493,6 +500,8 @@ class TrailingStop:
                 'i': self.iso,
             }
         }
+        if self.builder_code is not None:
+            order["trl"]["builderCode"] = self.builder_code.to_api()
         return order
 
 
@@ -514,9 +523,10 @@ class Range:
     limit_min: Optional[float] = None
     limit_max: Optional[float] = None
     iso: bool = False
+    builder_code: Optional[BuilderCode] = None
 
     def to_api(self) -> Dict:
-        return {
+        order = {
             "rng": {
                 "c": self.symbol,
                 "d": self.is_buy,
@@ -528,6 +538,9 @@ class Range:
                 "i": self.iso,
             }
         }
+        if self.builder_code is not None:
+            order["rng"]["builderCode"] = self.builder_code.to_api()
+        return order
 
 
 @dataclass

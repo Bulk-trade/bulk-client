@@ -210,6 +210,8 @@ class TransactionSigner:
                 ])
 
             case {"st": order}:
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(5),
                     TransactionSigner.write_string(order['c']),
@@ -218,9 +220,12 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"tp": order}:
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(6),
                     TransactionSigner.write_string(order['c']),
@@ -229,9 +234,12 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"rng": order}:
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(7),
                     TransactionSigner.write_string(order['c']),
@@ -242,6 +250,7 @@ class TransactionSigner:
                     TransactionSigner.write_optional_fixedpoint(order['lmin']),
                     TransactionSigner.write_optional_fixedpoint(order['lmax']),
                     TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"trig": order}:
@@ -260,6 +269,8 @@ class TransactionSigner:
                 ])
 
             case {"trl": order}:
+                if "builderCode" in order and order["builderCode"] is None:
+                    raise ValueError("builderCode must be omitted or an object")
                 return b''.join([
                     TransactionSigner.write_u32(9),
                     TransactionSigner.write_string(order['c']),
@@ -269,6 +280,7 @@ class TransactionSigner:
                     TransactionSigner.write_u32(order['stb']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
+                    TransactionSigner.write_builder_code(order.get('builderCode')),
                 ])
 
             case {"of": order}:

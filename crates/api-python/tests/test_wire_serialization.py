@@ -214,6 +214,39 @@ def test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields():
     assert set(on_fill["of"]["trigger"]) == {"l"}
 
 
+def test_conditional_builder_code_preserves_absent_signing_and_binds_present_code():
+    trade = load_trade()
+    signer = load_signer()
+    builder = trade.BuilderCode(PUBKEY, 5)
+    cases = [
+        (trade.Stop("BTC-USD", True, 1.0, 100.0), "st"),
+        (trade.TakeProfit("BTC-USD", False, 1.0, 100.0), "tp"),
+        (trade.Range("BTC-USD", True, 1.0, 90.0, 110.0), "rng"),
+        (trade.TrailingStop("BTC-USD", trade.Side.BUY, 1.0, 100, 10), "trl"),
+    ]
+    for order, kind in cases:
+        old_action = order.to_api()
+        assert "builderCode" not in old_action[kind]
+        old_bytes = signer.TransactionSigner.serialize_action(old_action)
+        old_v2 = signer.TransactionSigner.serialize_action(old_action, v2=True)
+        assert old_v2 == old_bytes
+
+        order.builder_code = builder
+        with_builder = order.to_api()
+        assert with_builder[kind]["builderCode"] == {"to": PUBKEY, "fee": 5}
+        expected = old_bytes + b"\x01" + bytes(32) + b"\x05"
+        assert signer.TransactionSigner.serialize_action(with_builder) == expected
+        assert signer.TransactionSigner.serialize_action(with_builder, v2=True) == expected
+
+        with_builder[kind]["builderCode"] = None
+        try:
+            signer.TransactionSigner.serialize_action(with_builder)
+        except ValueError as error:
+            assert "builderCode" in str(error)
+        else:
+            raise AssertionError("explicit null builderCode must be rejected")
+
+
 def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     signer = load_signer()
     builder_code = {"to": PUBKEY, "fee": 5}

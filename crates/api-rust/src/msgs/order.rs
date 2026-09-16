@@ -23,7 +23,16 @@ pub struct BuilderCode {
     pub fee: u8,
 }
 
-fn deserialize_builder_code<'de, D>(deserializer: D) -> Result<Option<BuilderCode>, D::Error>
+/// Decodes an optional builder code while rejecting an explicit JSON null.
+///
+/// # Arguments
+/// * `deserializer` - Source of the optional builder-code field.
+///
+/// # Returns
+/// The builder code when present, or a deserialization error.
+pub(crate) fn deserialize_builder_code<'de, D>(
+    deserializer: D,
+) -> Result<Option<BuilderCode>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -132,9 +141,7 @@ impl Serialize for OrderHashLimitAction<'_> {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Market Order
-// ─────────────────────────────────────────────────────────────────────────────
+// ───── Market Order ──────────────────────────────────────────────────────────────────────────────
 
 /// Default fair-price slippage bound for market orders, in basis points.
 pub const DEFAULT_MARKET_SLIPPAGE_BPS: f64 = 100.0;
@@ -218,12 +225,12 @@ impl MarketOrder {
         self.slippage.unwrap_or(DEFAULT_MARKET_SLIPPAGE_BPS)
     }
 
-    /// Compute order ID
+    /// Computes the order ID from the original order fields and transaction context.
     ///
     /// # Arguments
-    /// - `account`: account associated with order
-    /// - `nonce`: nonce associated with tx
-    /// - `seqno`: action sequence number
+    /// * `account` - Account associated with the order.
+    /// * `nonce` - Nonce associated with the transaction.
+    /// * `seqno` - Action sequence number.
     pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
         let mut bin = Vec::<u8>::new();
         bin.extend(seqno.to_le_bytes());
@@ -238,9 +245,7 @@ impl MarketOrder {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Limit Order
-// ─────────────────────────────────────────────────────────────────────────────
+// ───── Limit Order ───────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -309,12 +314,12 @@ impl Serialize for LimitOrder {
 }
 
 impl LimitOrder {
-    /// Compute order ID
+    /// Computes the order ID from the original order fields and transaction context.
     ///
     /// # Arguments
-    /// - `account`: account associated with order
-    /// - `nonce`: nonce associated with tx
-    /// - `seqno`: action sequence number
+    /// * `account` - Account associated with the order.
+    /// * `nonce` - Nonce associated with the transaction.
+    /// * `seqno` - Action sequence number.
     pub fn order_id(&self, account: Pubkey, nonce: u64, seqno: u32) -> Hash {
         let mut bin = Vec::<u8>::new();
         bin.extend(seqno.to_le_bytes());
@@ -329,9 +334,7 @@ impl LimitOrder {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Modify Order
-// ─────────────────────────────────────────────────────────────────────────────
+// ───── Modify Order ──────────────────────────────────────────────────────────────────────────────
 
 /// Update order: changing order size
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -347,9 +350,7 @@ pub struct ModifyOrder {
     pub meta: ActionMeta,
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Cancel Order
-// ─────────────────────────────────────────────────────────────────────────────
+// ───── Cancel Order ──────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelOrder {
@@ -362,9 +363,7 @@ pub struct CancelOrder {
     pub meta: ActionMeta,
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Cancel All Orders
-// ─────────────────────────────────────────────────────────────────────────────
+// ───── Cancel All Orders ─────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelAll {
