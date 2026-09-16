@@ -78,8 +78,9 @@ network round-trip. An OCO entry with a limit order + stop-loss + take-profit is
 ### Builder Codes
 
 Builder codes are optional fees for routed order flow. API JSON uses
-`builderCode` on market and limit orders and `abc`/`rbc` approval actions.
-When `builderCode` is absent, it contributes no signing bytes.
+`builderCode` on market, limit, stop, take-profit, range, and trailing orders,
+and `abc`/`rbc` approval actions. When `builderCode` is absent, it
+contributes no signing bytes.
 
 Trigger baskets sign their nested actions recursively. On-fill actions carry
 their market or limit trigger inline and sign that trigger before their

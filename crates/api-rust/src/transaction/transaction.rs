@@ -7,6 +7,7 @@ use solana_signature::Signature;
 use std::fmt::Debug;
 use std::str::FromStr;
 
+// ───── Signing Schema ────────────────────────────────────────────────────────────────────────────
 pub(crate) const SIGNABLE_ACTIONS_V2_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x02";
 
@@ -32,6 +33,7 @@ fn action_has_explicit_slippage(action: &Action) -> bool {
     }
 }
 
+// ───── Signature Domain ──────────────────────────────────────────────────────────────────────────
 /// Stable signature-domain registry. Zero is deliberately unassigned so a
 /// missing or legacy domain cannot silently select a live network.
 #[repr(u8)]
@@ -43,6 +45,7 @@ pub enum SignatureDomain {
 }
 
 impl SignatureDomain {
+    /// Returns the lowercase network name.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Mainnet => "mainnet",
@@ -92,33 +95,19 @@ pub struct Transaction {
 
 #[allow(unused)]
 impl Transaction {
-    pub(crate) fn raw_signable_bytes(
-        signature_domain: SignatureDomain,
-        account: Pubkey,
-        nonce: u64,
-        actions: &[Action],
-    ) -> eyre::Result<Vec<u8>> {
-        let schema = if actions.iter().any(action_has_explicit_slippage) {
-            SignableSchema::V2
-        } else {
-            SignableSchema::Legacy
-        };
-        let mut serialized = Vec::new();
-        if schema == SignableSchema::V2 {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
-        }
-        bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
-        serialized.extend_from_slice(&nonce.to_le_bytes());
-        serialized.extend_from_slice(account.as_ref());
-        serialized.push(signature_domain as u8);
-        Ok(serialized)
-    }
+    // ───── Public API Contract ───────────────────────────────────────────────────────────────────
 
-    /// Sign transaction
-    /// - NOTE: nonce and account must be filled appropriately before can sign the tx
+    /// Signs the transaction using the signer's configured mode.
+    ///
+    /// * Encode a clear text or raw payload for the signer.
+    /// * Sign it and record the signing public key.
     ///
     /// # Arguments
-    /// - `signer`: tx signer
+    /// * `signer` - Key and mode used to sign the transaction.
+    /// * `signature_domain` - Network domain bound to the signature.
+    ///
+    /// # Returns
+    /// An error if the payload cannot be encoded or signed.
     pub fn sign(
         &mut self,
         signer: &TransactionSigner,
@@ -153,7 +142,13 @@ impl Transaction {
         Ok(())
     }
 
-    /// Determine if tx was properly signed
+    /// Verifies the transaction's raw signature.
+    ///
+    /// # Arguments
+    /// * `signature_domain` - Network domain to verify against.
+    ///
+    /// # Returns
+    /// Whether the signature is valid, or a payload encoding error.
     pub fn verify(&self, signature_domain: SignatureDomain) -> eyre::Result<bool> {
         Ok(self.signature.verify(
             &self.signer.to_bytes(),
@@ -166,8 +161,46 @@ impl Transaction {
             .as_slice(),
         ))
     }
+
+    // ───── Signing Internals ─────────────────────────────────────────────────────────────────────
+
+    /// Encodes the stable transaction payload for raw signing.
+    ///
+    /// * Select the legacy or versioned action schema.
+    /// * Serialize the actions and append the transaction context.
+    ///
+    /// # Arguments
+    /// * `signature_domain` - Network domain appended to the payload.
+    /// * `account` - Account bound to the signature.
+    /// * `nonce` - Transaction nonce bound to the signature.
+    /// * `actions` - Actions encoded in the compatible signing schema.
+    ///
+    /// # Returns
+    /// The signable bytes, or an action encoding error.
+    pub(crate) fn raw_signable_bytes(
+        signature_domain: SignatureDomain,
+        account: Pubkey,
+        nonce: u64,
+        actions: &[Action],
+    ) -> eyre::Result<Vec<u8>> {
+        let schema = if actions.iter().any(action_has_explicit_slippage) {
+            SignableSchema::V2
+        } else {
+            SignableSchema::Legacy
+        };
+        let mut serialized = Vec::new();
+        if schema == SignableSchema::V2 {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+        }
+        bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
+        serialized.extend_from_slice(&nonce.to_le_bytes());
+        serialized.extend_from_slice(account.as_ref());
+        serialized.push(signature_domain as u8);
+        Ok(serialized)
+    }
 }
 
+// ───── Action Signing ────────────────────────────────────────────────────────────────────────────
 struct RawSafeF64(f64);
 
 impl Serialize for RawSafeF64 {
@@ -220,6 +253,67 @@ impl Serialize for RawSignableLimitOrder<'_> {
     }
 }
 
+// ───── Conditional Order Signing ─────────────────────────────────────────────────────────────────
+struct RawSignableStopOrTP<'a>(&'a crate::msgs::conditional::StopOrTP);
+
+impl Serialize for RawSignableStopOrTP<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple =
+            serializer.serialize_tuple(6 + usize::from(self.0.builder_code.is_some()))?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_above)?;
+        tuple.serialize_element(&RawSafeF64(self.0.size))?;
+        tuple.serialize_element(&RawSafeF64(self.0.threshold))?;
+        tuple.serialize_element(&self.0.limit.map(RawSafeF64))?;
+        tuple.serialize_element(&self.0.iso)?;
+        if self.0.builder_code.is_some() {
+            tuple.serialize_element(&self.0.builder_code)?;
+        }
+        tuple.end()
+    }
+}
+
+struct RawSignableRange<'a>(&'a crate::msgs::conditional::Range);
+
+impl Serialize for RawSignableRange<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple =
+            serializer.serialize_tuple(8 + usize::from(self.0.builder_code.is_some()))?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_buy)?;
+        tuple.serialize_element(&RawSafeF64(self.0.size))?;
+        tuple.serialize_element(&RawSafeF64(self.0.collar_min))?;
+        tuple.serialize_element(&RawSafeF64(self.0.collar_max))?;
+        tuple.serialize_element(&self.0.limit_min.map(RawSafeF64))?;
+        tuple.serialize_element(&self.0.limit_max.map(RawSafeF64))?;
+        tuple.serialize_element(&self.0.iso)?;
+        if self.0.builder_code.is_some() {
+            tuple.serialize_element(&self.0.builder_code)?;
+        }
+        tuple.end()
+    }
+}
+
+struct RawSignableTrailing<'a>(&'a crate::msgs::conditional::Trailing);
+
+impl Serialize for RawSignableTrailing<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple =
+            serializer.serialize_tuple(7 + usize::from(self.0.builder_code.is_some()))?;
+        tuple.serialize_element(&self.0.symbol)?;
+        tuple.serialize_element(&self.0.is_buy)?;
+        tuple.serialize_element(&RawSafeF64(self.0.size))?;
+        tuple.serialize_element(&self.0.trail_bps)?;
+        tuple.serialize_element(&self.0.step_bps)?;
+        tuple.serialize_element(&self.0.limit.map(RawSafeF64))?;
+        tuple.serialize_element(&self.0.iso)?;
+        if self.0.builder_code.is_some() {
+            tuple.serialize_element(&self.0.builder_code)?;
+        }
+        tuple.end()
+    }
+}
+
 struct RawSignableTrigger<'a>(&'a crate::msgs::conditional::Trigger, SignableSchema);
 
 impl Serialize for RawSignableTrigger<'_> {
@@ -252,6 +346,7 @@ impl Serialize for RawSignableOnFill<'_> {
     }
 }
 
+// ───── Action Dispatch ───────────────────────────────────────────────────────────────────────────
 struct RawSignableActions<'a>(&'a [Action], SignableSchema);
 
 impl Serialize for RawSignableActions<'_> {
@@ -290,24 +385,36 @@ impl Serialize for RawSignableAction<'_> {
             Action::CancelAll(action) => {
                 serializer.serialize_newtype_variant("Action", 4, "CancelAll", action)
             }
-            Action::Stop(action) => {
-                serializer.serialize_newtype_variant("Action", 5, "Stop", action)
-            }
-            Action::TakeProfit(action) => {
-                serializer.serialize_newtype_variant("Action", 6, "TakeProfit", action)
-            }
-            Action::Range(action) => {
-                serializer.serialize_newtype_variant("Action", 7, "Range", action)
-            }
+            Action::Stop(action) => serializer.serialize_newtype_variant(
+                "Action",
+                5,
+                "Stop",
+                &RawSignableStopOrTP(action),
+            ),
+            Action::TakeProfit(action) => serializer.serialize_newtype_variant(
+                "Action",
+                6,
+                "TakeProfit",
+                &RawSignableStopOrTP(action),
+            ),
+            Action::Range(action) => serializer.serialize_newtype_variant(
+                "Action",
+                7,
+                "Range",
+                &RawSignableRange(action),
+            ),
             Action::Trigger(action) => serializer.serialize_newtype_variant(
                 "Action",
                 8,
                 "Trigger",
                 &RawSignableTrigger(action, self.1),
             ),
-            Action::Trailing(action) => {
-                serializer.serialize_newtype_variant("Action", 9, "Trailing", action)
-            }
+            Action::Trailing(action) => serializer.serialize_newtype_variant(
+                "Action",
+                9,
+                "Trailing",
+                &RawSignableTrailing(action),
+            ),
             Action::OnFill(action) => serializer.serialize_newtype_variant(
                 "Action",
                 10,
@@ -530,6 +637,90 @@ mod tests {
     }
 
     #[test]
+    fn conditional_builder_code_preserves_old_signing_bytes_when_absent() {
+        use serde_json::json;
+
+        let account = Pubkey::new_from_array([1; 32]);
+        let cases = [
+            json!({"st":{"c":"BTC-USD","d":true,"sz":1.0,"tr":100.0,"lim":null,"i":false}}),
+            json!({"tp":{"c":"BTC-USD","d":false,"sz":1.0,"tr":100.0,"lim":null,"i":false}}),
+            json!({"rng":{"c":"BTC-USD","d":true,"sz":1.0,"pmin":90.0,"pmax":110.0,"lmin":null,"lmax":null,"i":false}}),
+            json!({"trl":{"c":"BTC-USD","b":true,"sz":1.0,"trb":100,"stb":10,"lim":null,"i":false}}),
+        ];
+        for mut value in cases {
+            let action: Action = serde_json::from_value(value.clone()).unwrap();
+            let old_action = match &action {
+                Action::Stop(order) | Action::TakeProfit(order) => bincode::serialize(&(
+                    if matches!(&action, Action::Stop(_)) {
+                        5u32
+                    } else {
+                        6u32
+                    },
+                    &order.symbol,
+                    order.is_above,
+                    RawSafeF64(order.size),
+                    RawSafeF64(order.threshold),
+                    order.limit.map(RawSafeF64),
+                    order.iso,
+                ))
+                .unwrap(),
+                Action::Range(order) => bincode::serialize(&(
+                    7u32,
+                    &order.symbol,
+                    order.is_buy,
+                    RawSafeF64(order.size),
+                    RawSafeF64(order.collar_min),
+                    RawSafeF64(order.collar_max),
+                    order.limit_min.map(RawSafeF64),
+                    order.limit_max.map(RawSafeF64),
+                    order.iso,
+                ))
+                .unwrap(),
+                Action::Trailing(order) => bincode::serialize(&(
+                    9u32,
+                    &order.symbol,
+                    order.is_buy,
+                    RawSafeF64(order.size),
+                    order.trail_bps,
+                    order.step_bps,
+                    order.limit.map(RawSafeF64),
+                    order.iso,
+                ))
+                .unwrap(),
+                _ => unreachable!(),
+            };
+            let mut expected = bincode::serialize(&1u64).unwrap();
+            expected.extend_from_slice(&old_action);
+            expected.extend_from_slice(&42u64.to_le_bytes());
+            expected.extend_from_slice(account.as_ref());
+            expected.push(SignatureDomain::Devnet as u8);
+            assert_eq!(
+                Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
+                    .unwrap(),
+                expected
+            );
+
+            let kind = value.as_object().unwrap().keys().next().unwrap().clone();
+            value[&kind]["builderCode"] =
+                json!({"to":Pubkey::new_from_array([7;32]).to_string(),"fee":5});
+            let action: Action = serde_json::from_value(value).unwrap();
+            let mut expected = bincode::serialize(&1u64).unwrap();
+            expected.extend_from_slice(&old_action);
+            expected.push(1);
+            expected.extend_from_slice(&[7; 32]);
+            expected.push(5);
+            expected.extend_from_slice(&42u64.to_le_bytes());
+            expected.extend_from_slice(account.as_ref());
+            expected.push(SignatureDomain::Devnet as u8);
+            assert_eq!(
+                Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
+                    .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn raw_signable_matches_real_sdk_vectors() {
         let fixtures: serde_json::Value =
             serde_json::from_str(include_str!("fixtures/sdk-signing-vectors.json")).unwrap();
@@ -662,6 +853,7 @@ mod tests {
                 threshold: 100.0,
                 limit: None,
                 iso: false,
+                builder_code: None,
                 meta: ActionMeta::default(),
             })),
             actions: Vec::new(),
@@ -797,9 +989,7 @@ mod tests {
         assert_eq!(testnet[testnet.len() - 1], SignatureDomain::Testnet as u8);
     }
 
-    // -----------------------------------------------------------------------
-    // LimitOrder
-    // -----------------------------------------------------------------------
+    // ───── LimitOrder ────────────────────────────────────────────────────────────────────────────
 
     fn make_limit_order_tx() -> (Transaction, TransactionSigner) {
         let signer =
@@ -1102,9 +1292,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // CancelAll
-    // -----------------------------------------------------------------------
+    // ───── CancelAll ─────────────────────────────────────────────────────────────────────────────
 
     fn make_cancel_all_tx() -> (Transaction, TransactionSigner) {
         let signer =
@@ -1173,9 +1361,7 @@ mod tests {
         assert!(!valid, "tampered cancel_all should not verify");
     }
 
-    // -----------------------------------------------------------------------
-    // Faucet (no amount)
-    // -----------------------------------------------------------------------
+    // ───── Faucet (no amount) ────────────────────────────────────────────────────────────────────
 
     fn make_faucet_tx() -> (Transaction, TransactionSigner) {
         let signer =
@@ -1240,9 +1426,7 @@ mod tests {
         assert!(!valid, "tampered faucet user should not verify");
     }
 
-    // -----------------------------------------------------------------------
-    // TakeProfit (market trigger, no limit)
-    // -----------------------------------------------------------------------
+    // ───── TakeProfit (market trigger, no limit) ─────────────────────────────────────────────────
 
     fn make_take_profit_tx() -> (Transaction, TransactionSigner) {
         let signer =
@@ -1257,6 +1441,7 @@ mod tests {
             threshold: 60_000.0,
             limit: Some(60_010.0),
             iso: false,
+            builder_code: None,
             meta: Default::default(),
         });
 
@@ -1284,6 +1469,7 @@ mod tests {
             threshold: 60_000.0,
             limit: None,
             iso: false,
+            builder_code: None,
             meta: Default::default(),
         });
 
