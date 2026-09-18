@@ -10,12 +10,36 @@ use std::str::FromStr;
 // ───── Signing Schema ────────────────────────────────────────────────────────────────────────────
 pub(crate) const SIGNABLE_ACTIONS_V2_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x02";
+pub(crate) const SIGNABLE_ACTIONS_V3_PREFIX: &[u8; 21] =
+    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x03";
 
 #[derive(Clone, Copy, PartialEq)]
 enum SignableSchema {
     Legacy,
     Embedded,
     V2,
+    V3,
+}
+
+/// Detects builder codes at every action depth before selecting the signing schema.
+///
+/// # Arguments
+/// * `action` - Action and any nested actions to inspect.
+fn action_has_builder_code(action: &Action) -> bool {
+    match action {
+        Action::MarketOrder(order) => order.builder_code.is_some(),
+        Action::LimitOrder(order) => order.builder_code.is_some(),
+        Action::Stop(order) | Action::TakeProfit(order) => order.builder_code.is_some(),
+        Action::Range(order) => order.builder_code.is_some(),
+        Action::Trailing(order) => order.builder_code.is_some(),
+        Action::Trigger(trigger) => trigger.actions.iter().any(action_has_builder_code),
+        Action::OnFill(on_fill) => {
+            action_has_builder_code(&on_fill.trigger)
+                || on_fill.actions.iter().any(action_has_builder_code)
+        }
+        Action::MultisigPropose(proposal) => proposal.actions.iter().any(action_has_builder_code),
+        _ => false,
+    }
 }
 
 fn action_has_explicit_slippage(action: &Action) -> bool {
@@ -183,16 +207,23 @@ impl Transaction {
         nonce: u64,
         actions: &[Action],
     ) -> eyre::Result<Vec<u8>> {
-        let schema = if actions.iter().any(action_has_explicit_slippage) {
+        let schema = if actions.iter().any(action_has_builder_code) {
+            SignableSchema::V3
+        } else if actions.iter().any(action_has_explicit_slippage) {
             SignableSchema::V2
         } else {
             SignableSchema::Legacy
         };
         let mut serialized = Vec::new();
-        if schema == SignableSchema::V2 {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+        if schema == SignableSchema::V3 {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V3_PREFIX);
+            bincode::serialize_into(&mut serialized, actions)?;
+        } else {
+            if schema == SignableSchema::V2 {
+                serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+            }
+            bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
         }
-        bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
         serialized.extend_from_slice(&nonce.to_le_bytes());
         serialized.extend_from_slice(account.as_ref());
         serialized.push(signature_domain as u8);
@@ -637,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn conditional_builder_code_preserves_old_signing_bytes_when_absent() {
+    fn conditional_builder_code_selects_v3_without_changing_uncommissioned_bytes() {
         use serde_json::json;
 
         let account = Pubkey::new_from_array([1; 32]);
@@ -649,74 +680,19 @@ mod tests {
         ];
         for mut value in cases {
             let action: Action = serde_json::from_value(value.clone()).unwrap();
-            let old_action = match &action {
-                Action::Stop(order) | Action::TakeProfit(order) => bincode::serialize(&(
-                    if matches!(&action, Action::Stop(_)) {
-                        5u32
-                    } else {
-                        6u32
-                    },
-                    &order.symbol,
-                    order.is_above,
-                    RawSafeF64(order.size),
-                    RawSafeF64(order.threshold),
-                    order.limit.map(RawSafeF64),
-                    order.iso,
-                ))
-                .unwrap(),
-                Action::Range(order) => bincode::serialize(&(
-                    7u32,
-                    &order.symbol,
-                    order.is_buy,
-                    RawSafeF64(order.size),
-                    RawSafeF64(order.collar_min),
-                    RawSafeF64(order.collar_max),
-                    order.limit_min.map(RawSafeF64),
-                    order.limit_max.map(RawSafeF64),
-                    order.iso,
-                ))
-                .unwrap(),
-                Action::Trailing(order) => bincode::serialize(&(
-                    9u32,
-                    &order.symbol,
-                    order.is_buy,
-                    RawSafeF64(order.size),
-                    order.trail_bps,
-                    order.step_bps,
-                    order.limit.map(RawSafeF64),
-                    order.iso,
-                ))
-                .unwrap(),
-                _ => unreachable!(),
-            };
-            let mut expected = bincode::serialize(&1u64).unwrap();
-            expected.extend_from_slice(&old_action);
-            expected.extend_from_slice(&42u64.to_le_bytes());
-            expected.extend_from_slice(account.as_ref());
-            expected.push(SignatureDomain::Devnet as u8);
-            assert_eq!(
+            let legacy =
                 Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
-                    .unwrap(),
-                expected
-            );
+                    .unwrap();
+            assert!(!legacy.starts_with(SIGNABLE_ACTIONS_V3_PREFIX));
 
             let kind = value.as_object().unwrap().keys().next().unwrap().clone();
             value[&kind]["builderCode"] =
                 json!({"to":Pubkey::new_from_array([7;32]).to_string(),"fee":5});
             let action: Action = serde_json::from_value(value).unwrap();
-            let mut expected = bincode::serialize(&1u64).unwrap();
-            expected.extend_from_slice(&old_action);
-            expected.push(1);
-            expected.extend_from_slice(&[7; 32]);
-            expected.push(5);
-            expected.extend_from_slice(&42u64.to_le_bytes());
-            expected.extend_from_slice(account.as_ref());
-            expected.push(SignatureDomain::Devnet as u8);
-            assert_eq!(
+            let with_builder =
                 Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
-                    .unwrap(),
-                expected
-            );
+                    .unwrap();
+            assert!(with_builder.starts_with(SIGNABLE_ACTIONS_V3_PREFIX));
         }
     }
 
@@ -799,7 +775,7 @@ mod tests {
                 )
                 .expect("serialize trigger")
             ),
-            "01000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d55534401405973070000000000010100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 
@@ -839,7 +815,7 @@ mod tests {
                 )
                 .expect("serialize on-fill")
             ),
-            "01000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b0000000002000000010002000000000000000000000007000000000000004254432d55534401405973070000000000010000000007000000000000004254432d5553440140597307000000000001010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 

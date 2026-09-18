@@ -1,14 +1,15 @@
 # SDK signing fixtures
 
 `sdk-signing-vectors.json` was generated from the actual `bulk-transaction` crate
-at SDK commit `1521f300895f2aa35a8517d2015ad7c4f53ac6e3`, not from this client's
+at SDK commit `bc0ea23f17b42090d73177beb424ad6516d58386`, not from this client's
 serializer. Each actions array was deserialized into SDK `Vec<Action>` and passed
 to `bulk_transaction::transaction::signable_bytes_into` with the recorded domain,
 account and nonce. `default_meta_order_ids` records SDK `Action::hash()` for
 market/limit actions with their untouched default metadata; other entries are null.
 
-Coverage includes V2 mixed/commissioned orders, nested multisigs, Trigger and
-OnFill, plus legacy omitted-slippage orders and historic embedded multisig layouts.
+Coverage includes legacy and V2 orders without builder codes, V3 LOB and COB
+orders with builder codes, nested multisigs, Trigger and OnFill, and historic
+embedded multisig layouts.
 Rust checks all vectors and both order-ID entry points. Python checks its supported
 actions and asserts that unsupported multisig proposals are rejected.
 
