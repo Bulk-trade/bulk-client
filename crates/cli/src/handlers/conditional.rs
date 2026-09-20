@@ -25,6 +25,7 @@ pub async fn handle_stop(
         threshold: args.threshold,
         limit: args.limit,
         iso: false,
+        builder_code: None,
         meta: Default::default(),
     });
 
@@ -52,6 +53,7 @@ pub async fn handle_take_profit(
         threshold: args.threshold,
         limit: args.limit,
         iso: false,
+        builder_code: None,
         meta: Default::default(),
     });
 
@@ -81,6 +83,7 @@ pub async fn handle_range(
         limit_min: args.limit_min,
         limit_max: args.limit_max,
         iso: false,
+        builder_code: None,
         meta: Default::default(),
     });
 
@@ -109,6 +112,7 @@ pub async fn handle_trailing(
         step_bps: args.step_bps,
         limit: args.limit,
         iso: false,
+        builder_code: None,
         meta: Default::default(),
     });
 
