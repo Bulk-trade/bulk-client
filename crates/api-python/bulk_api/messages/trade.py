@@ -18,6 +18,8 @@ TIME_IN_FORCE_MAP = {
     TimeInForce.GTC: 0,
     TimeInForce.IOC: 1,
     TimeInForce.ALO: 2,
+    TimeInForce.ALO_SLIDE: 3,
+    TimeInForce.ALO_JOIN: 4,
 }
 
 SIDE_MAP = {

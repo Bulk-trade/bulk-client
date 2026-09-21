@@ -22,6 +22,10 @@ class TimeInForce(Enum):
     IOC = "IOC"
     # Add Liquidity Only (i.e. Post-Only)
     ALO = "ALO"
+    # Add Liquidity Only; slide crossing prices to the nearest non-crossing tick
+    ALO_SLIDE = "ALO_SLIDE"
+    # Add Liquidity Only; join the same-side best price when crossing
+    ALO_JOIN = "ALO_JOIN"
 
     def __str__(self):
         """Convert to string for API"""
@@ -106,4 +110,3 @@ class OrderStatus(Enum):
                 return OrderStatus.REJECTED_INVALID
             case _:
                 raise ValueError(f"Unknown order status {s}")
-

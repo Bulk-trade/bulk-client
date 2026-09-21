@@ -18,7 +18,7 @@ pub struct PlaceArgs {
     /// Quantity and optional limit price as `qty@price` (limit) or bare `qty` (market).
     pub qty_price: QtyPrice,
 
-    /// GTC, ALO, IOC
+    /// GTC, IOC, ALO, ALO_SLIDE, or ALO_JOIN.
     #[arg(long, default_value = "GTC")]
     pub tif: TimeInForce,
 

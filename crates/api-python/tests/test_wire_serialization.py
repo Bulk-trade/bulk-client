@@ -74,6 +74,8 @@ def load_trade():
         GTC = "GTC"
         IOC = "IOC"
         ALO = "ALO"
+        ALO_SLIDE = "ALO_SLIDE"
+        ALO_JOIN = "ALO_JOIN"
 
     class OrderStatus(Enum):
         ERROR = None
@@ -117,6 +119,26 @@ def test_trailing_stop_uses_signer_field_name():
     assert "trb" in action["trl"]
     assert "tdb" not in action["trl"]
     assert signer.TransactionSigner.serialize_action(action).startswith(struct.pack("<I", 9))
+
+
+def test_alo_slide_and_join_use_stable_wire_values():
+    signer = load_signer()
+    trade = load_trade()
+
+    for tif, value in [
+        (trade.TimeInForce.ALO_SLIDE, 3),
+        (trade.TimeInForce.ALO_JOIN, 4),
+    ]:
+        action = trade.LimitOrder(
+            symbol="BTC-USD",
+            side=trade.Side.BUY,
+            price=100_000.0,
+            size=1.0,
+            time_in_force=tif,
+        ).to_api()
+        encoded = signer.TransactionSigner.serialize_action(action)
+        assert action["l"]["tif"] == tif.value
+        assert encoded[36:40] == struct.pack("<I", value)
 
 
 def test_whitelist_faucet_accepts_client_payload_shape():

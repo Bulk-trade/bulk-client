@@ -12,10 +12,17 @@ TIME_IN_FORCE_MAP = {
     "GTC": 0,
     "IOC": 1,
     "ALO": 2,
+    "ALO_SLIDE": 3,
+    "ALO_JOIN": 4,
 
     "gtc": 0,
     "ioc": 1,
     "alo": 2,
+    "alo_slide": 3,
+    "alo_join": 4,
+    "postOnly": 2,
+    "postOnlySlide": 3,
+    "postOnlyJoin": 4,
 }
 
 
