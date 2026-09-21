@@ -1,5 +1,5 @@
 use bulk_cli_sdk::{config_risk_action, config_security_action};
-use bulk_client::msgs::MultisigPropose;
+use bulk_client::msgs::{MultisigPropose, Response};
 use bulk_client::parts::{make_nonce, HttpConfig};
 use bulk_client::transaction::{
     Action, ActionMeta, ClearSignMessage, SignatureDomain, TransactionSigner,
@@ -7,6 +7,7 @@ use bulk_client::transaction::{
 use bulk_client::BulkHttpClient;
 use clap::{Args, Parser, Subcommand};
 use solana_pubkey::Pubkey;
+use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
 use std::str::FromStr;
@@ -119,12 +120,9 @@ async fn submit_action(
         preview_and_confirm(api, nonce, &actions, auto_yes)?;
     }
 
-    for response in api.place_tx(actions, None, Some(nonce)).await? {
-        println!("{}", response.status);
-        if let Some(message) = response.message {
-            println!("  {message}");
-        }
-    }
+    let action_debug = proposed_action_debug(&actions);
+    let results = api.place_tx(actions, None, Some(nonce)).await?;
+    eprint!("{}", format_results(&results, &action_debug));
     Ok(())
 }
 
@@ -170,6 +168,183 @@ fn preview_and_confirm(
     Ok(())
 }
 
+// ───── Response Formatting ─────────────────────────────────────────────────────────────────
+
+/// Formats submission responses using the same output layout as the main CLI.
+///
+/// # Arguments
+/// * `results` - Ordered API responses returned for the submitted transaction.
+/// * `action_debug` - Debug descriptions of actions nested inside a proposal.
+fn format_results(results: &[Response], action_debug: &[String]) -> String {
+    if let Some(created) = results
+        .iter()
+        .find(|response| response.status == "proposalCreated")
+    {
+        return format_proposal_created(created, action_debug);
+    }
+
+    let approval = results
+        .iter()
+        .find(|response| response.status == "proposalApproved");
+    let proposal_outcome = results.iter().rev().find(|response| {
+        matches!(
+            response.status.as_str(),
+            "proposalFailed"
+                | "proposalExecuted"
+                | "proposalReadyForExecution"
+                | "proposalRejected"
+        )
+    });
+
+    if approval.is_some() || proposal_outcome.is_some() {
+        return format_approval_result(approval, proposal_outcome);
+    }
+
+    let mut output = String::from("\nStatus\n");
+    output.push_str("────────────────────────────────────────\n");
+    if results.is_empty() {
+        output.push_str("  No response statuses returned\n");
+        return output;
+    }
+    for response in results {
+        let _ = writeln!(output, "  {}", humanize_status(&response.status));
+        if let Some(message) = &response.message {
+            let _ = writeln!(output, "    Message: {message}");
+        }
+    }
+    output
+}
+
+/// Formats a newly created proposal and its nested actions.
+///
+/// # Arguments
+/// * `created` - The proposal-created API response.
+/// * `action_debug` - Debug descriptions of actions nested inside the proposal.
+fn format_proposal_created(created: &Response, action_debug: &[String]) -> String {
+    let mut output = String::from("\nProposal Created\n");
+    output.push_str("────────────────────────────────────────\n");
+    write_json_field(&mut output, "Proposal", &created.raw, "proposalId");
+    write_json_field(&mut output, "Required signers", &created.raw, "threshold");
+    output.push_str("\nActions\n");
+    output.push_str("────────────────────────────────────────\n");
+    if action_debug.is_empty() {
+        output.push_str("  No action details available\n");
+    } else {
+        for (index, action) in action_debug.iter().enumerate() {
+            let _ = writeln!(output, "  [{index}] {action}");
+        }
+    }
+    output
+}
+
+/// Extracts debug descriptions for actions nested inside multisig proposals.
+///
+/// # Arguments
+/// * `actions` - Submitted top-level actions.
+fn proposed_action_debug(actions: &[Action]) -> Vec<String> {
+    actions
+        .iter()
+        .flat_map(|action| match action {
+            Action::MultisigPropose(proposal) => proposal
+                .actions
+                .iter()
+                .map(|nested| format!("{nested:?}"))
+                .collect(),
+            ordinary => vec![format!("{ordinary:?}")],
+        })
+        .collect()
+}
+
+/// Formats proposal approval progress and its final outcome.
+///
+/// # Arguments
+/// * `approval` - Optional proposal-approval response.
+/// * `outcome` - Optional final proposal-outcome response.
+fn format_approval_result(approval: Option<&Response>, outcome: Option<&Response>) -> String {
+    let details = approval.or(outcome).expect("approval result exists");
+    let mut output = String::from("\nApprovals\n");
+    output.push_str("────────────────────────────────────────\n");
+    write_json_field(&mut output, "Proposal", &details.raw, "proposalId");
+    write_json_field(&mut output, "Multisig", &details.raw, "multisig");
+    let approvals = details
+        .raw
+        .get("approvals")
+        .and_then(|value| value.as_u64());
+    let threshold = details
+        .raw
+        .get("threshold")
+        .and_then(|value| value.as_u64());
+    if let (Some(approvals), Some(threshold)) = (approvals, threshold) {
+        let _ = writeln!(output, "  Progress: {approvals} / {threshold} approvals");
+    }
+    write_json_field(&mut output, "Rejections", &details.raw, "rejections");
+    let rejected = outcome
+        .or(approval)
+        .is_some_and(|response| response.status == "proposalRejected");
+    let signer_label = if rejected { "Signer" } else { "Approved by" };
+    write_json_field(&mut output, signer_label, &details.raw, "signer");
+
+    output.push_str("\nOutcome\n");
+    output.push_str("────────────────────────────────────────\n");
+    let final_response = outcome.or(approval).expect("approval result exists");
+    let _ = writeln!(
+        output,
+        "  Status: {}",
+        humanize_status(&final_response.status)
+    );
+    if let Some(message) = &final_response.message {
+        let _ = writeln!(output, "  Error: {message}");
+    } else if final_response.status == "proposalReadyForExecution" {
+        write_json_field(
+            &mut output,
+            "Execute after",
+            &final_response.raw,
+            "executeAfter",
+        );
+    }
+    output
+}
+
+/// Writes one non-null JSON field as a labeled output line.
+///
+/// # Arguments
+/// * `output` - Destination output buffer.
+/// * `label` - Human-readable field label.
+/// * `body` - Structured API response body.
+/// * `field` - JSON field name to read.
+fn write_json_field(output: &mut String, label: &str, body: &serde_json::Value, field: &str) {
+    let Some(value) = body.get(field) else {
+        return;
+    };
+    if value.is_null() {
+        return;
+    }
+    let display = value
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| value.to_string());
+    let _ = writeln!(output, "  {label}: {display}");
+}
+
+/// Converts a camel-case response status into a human-readable phrase.
+///
+/// # Arguments
+/// * `status` - Machine-readable API status.
+fn humanize_status(status: &str) -> String {
+    let mut output = String::with_capacity(status.len() + 4);
+    for (index, character) in status.chars().enumerate() {
+        if index > 0 && character.is_ascii_uppercase() {
+            output.push(' ');
+        }
+        if index == 0 {
+            output.extend(character.to_uppercase());
+        } else {
+            output.push(character.to_ascii_lowercase());
+        }
+    }
+    output
+}
+
 // ───── Input Helpers ───────────────────────────────────────────────────────────────────────
 
 /// Resolves an argument as file contents when the path exists or as inline text otherwise.
@@ -190,6 +365,7 @@ fn read_inline_or_file(input: &str) -> eyre::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bulk_client::msgs::OpaqueAction;
 
     /// Verifies that Clap recognizes the SDK-specific command surface and global options.
     #[test]
@@ -229,6 +405,38 @@ mod tests {
         assert!(cli.ledger);
         assert_eq!(cli.ledger_derivation_path.as_deref(), Some("0/0"));
         assert!(matches!(cli.command, Command::ConfigSecurity(_)));
+    }
+
+    /// Verifies that created proposals include their ID, threshold, and nested SDK action.
+    #[test]
+    fn formats_created_proposal_like_main_cli() {
+        let nested = Action::ConfigSecurity(OpaqueAction {
+            payload: vec![1, 2, 3],
+            meta: ActionMeta::default(),
+        });
+        let actions = vec![Action::MultisigPropose(MultisigPropose {
+            multisig: Pubkey::from_str(ADMIN_MULTISIG).unwrap(),
+            actions: vec![nested],
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        })];
+        let response = Response {
+            order_id: None,
+            status: "proposalCreated".to_owned(),
+            message: None,
+            raw: serde_json::json!({
+                "proposalId": 42,
+                "threshold": 2
+            }),
+        };
+
+        let output = format_results(&[response], &proposed_action_debug(&actions));
+
+        assert!(output.contains("Proposal Created"));
+        assert!(output.contains("Proposal: 42"));
+        assert!(output.contains("Required signers: 2"));
+        assert!(output.contains("[0] ConfigSecurity"));
+        assert!(!output.contains("MultisigPropose"));
     }
 }
 
