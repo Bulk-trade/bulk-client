@@ -78,6 +78,9 @@ bulk_admin_parse_common_args() {
 
 bulk_admin_run() {
   local command="$1"
+  local manifest_path
+  local package
+  local binary
   local signer_args=()
   shift
 
@@ -108,11 +111,24 @@ bulk_admin_run() {
   echo "API URL: ${BULK_API_URL}" >&2
   echo "Verify the signer, account, nonce, and action in the preview before confirming." >&2
 
+  case "${command}" in
+    config-risk-matrix|config-security)
+      manifest_path="${PROJECT_ROOT}/crates/cli-sdk/Cargo.toml"
+      package="bulk-cli-sdk"
+      binary="bulk-sdk"
+      ;;
+    *)
+      manifest_path="${PROJECT_ROOT}/Cargo.toml"
+      package="bulk-cli"
+      binary="bulk"
+      ;;
+  esac
+
   cargo run \
     --release \
-    --manifest-path "${PROJECT_ROOT}/crates/cli-sdk/Cargo.toml" \
-    --package bulk-cli-sdk \
-    --bin bulk-sdk \
+    --manifest-path "${manifest_path}" \
+    --package "${package}" \
+    --bin "${binary}" \
     -- \
     --api-url "${BULK_API_URL}" \
     ${signer_args[@]+"${signer_args[@]}"} \
