@@ -110,9 +110,9 @@ bulk_admin_run() {
 
   cargo run \
     --release \
-    --manifest-path "${PROJECT_ROOT}/Cargo.toml" \
-    --package bulk-cli \
-    --bin bulk \
+    --manifest-path "${PROJECT_ROOT}/crates/cli-sdk/Cargo.toml" \
+    --package bulk-cli-sdk \
+    --bin bulk-sdk \
     -- \
     --api-url "${BULK_API_URL}" \
     ${signer_args[@]+"${signer_args[@]}"} \

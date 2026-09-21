@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 bincode = "1.3.3"
-bulk-client = { path = "../api-rust" }
+bulk-client = { path = "../api-rust", features = ["ledger"] }
 bulk-sdk-core = { path = "../../../bulk-sdk/core" }
 clap = { version = "4.5.58", features = ["derive", "env"] }
 eyre = "0.6"

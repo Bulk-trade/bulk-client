@@ -23,7 +23,7 @@ struct Cli {
     #[command(subcommand)]
     command: Command,
 
-    /// Private key encoded as base58.
+    /// Private key encoded as base58, required unless --ledger is used.
     #[arg(long, env = "BULK_PRIVATE_KEY", hide_env_values = true, global = true)]
     private_key: Option<String>,
 
@@ -42,6 +42,22 @@ struct Cli {
     /// Submit without interactive confirmation.
     #[arg(long, global = true)]
     yes: bool,
+
+    /// Use Ledger (Solana app) signer mode.
+    #[arg(long, global = true)]
+    ledger: bool,
+
+    /// Ledger locator, typically usb://ledger.
+    #[arg(long, default_value = "usb://ledger", global = true)]
+    ledger_locator: String,
+
+    /// Ledger derivation path (key path like 0/0 or absolute path like m/44'/501'/0'/0').
+    #[arg(long, global = true)]
+    ledger_derivation_path: Option<String>,
+
+    /// Confirm the selected Ledger pubkey on-device during initialization.
+    #[arg(long, global = true)]
+    ledger_confirm_key: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -194,6 +210,26 @@ mod tests {
             Command::ConfigRiskMatrix(_)
         ));
     }
+
+    /// Verifies that the SDK CLI accepts the Ledger options used by the admin wrappers.
+    #[test]
+    fn parses_ledger_signer_options() {
+        let cli = Cli::try_parse_from([
+            "bulk-sdk",
+            "config-security",
+            "/tmp/paxg-usd.json5",
+            "--ledger",
+            "--ledger-derivation-path",
+            "0/0",
+            "--signature-domain",
+            "devnet",
+        ])
+        .unwrap();
+
+        assert!(cli.ledger);
+        assert_eq!(cli.ledger_derivation_path.as_deref(), Some("0/0"));
+        assert!(matches!(cli.command, Command::ConfigSecurity(_)));
+    }
 }
 
 // ───── Entrypoint ──────────────────────────────────────────────────────────────────────────
@@ -209,14 +245,23 @@ async fn main() -> eyre::Result<()> {
         }
     };
 
-    let private_key = cli
-        .private_key
-        .as_deref()
-        .ok_or_else(|| eyre::eyre!("--private-key is required"))?;
     let signature_domain = cli
         .signature_domain
         .ok_or_else(|| eyre::eyre!("--signature-domain is required"))?;
-    let signer = TransactionSigner::from_private_key(private_key)?;
+    let signer = if cli.ledger {
+        TransactionSigner::from_ledger_with_options(
+            &cli.ledger_locator,
+            cli.ledger_derivation_path.as_deref(),
+            cli.ledger_confirm_key,
+            "bulk-sdk",
+        )?
+    } else {
+        let private_key = cli
+            .private_key
+            .as_deref()
+            .ok_or_else(|| eyre::eyre!("--private-key is required unless --ledger is used"))?;
+        TransactionSigner::from_private_key(private_key)?
+    };
     let config = HttpConfig {
         base_url: cli.api_url.trim_end_matches('/').to_owned(),
         signer: Some(signer),
