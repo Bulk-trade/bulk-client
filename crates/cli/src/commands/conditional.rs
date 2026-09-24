@@ -20,6 +20,10 @@ pub struct StopArgs {
     /// Optional limit price; omit for a market trigger.
     #[arg(long)]
     pub limit: Option<f64>,
+
+    /// Optional market-order slippage override in basis points.
+    #[arg(long)]
+    pub slippage: Option<f64>,
 }
 
 /// `TakeProfitArgs` is structurally identical to `StopArgs`; re-exported under
@@ -54,6 +58,14 @@ pub struct RangeArgs {
     /// Optional limit price for the upper-boundary trigger.
     #[arg(long)]
     pub limit_max: Option<f64>,
+
+    /// Optional market-order slippage override for the stop-loss leg, in basis points.
+    #[arg(long)]
+    pub sl_slippage: Option<f64>,
+
+    /// Optional market-order slippage override for the take-profit leg, in basis points.
+    #[arg(long)]
+    pub tp_slippage: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,4 +94,8 @@ pub struct TrailingArgs {
     /// Optional limit price if the stop should place a limit order on trigger.
     #[arg(long)]
     pub limit: Option<f64>,
+
+    /// Optional market-order slippage override in basis points.
+    #[arg(long)]
+    pub slippage: Option<f64>,
 }

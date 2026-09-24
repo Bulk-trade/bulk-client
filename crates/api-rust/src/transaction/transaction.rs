@@ -12,6 +12,8 @@ pub(crate) const SIGNABLE_ACTIONS_V2_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x02";
 pub(crate) const SIGNABLE_ACTIONS_V3_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x03";
+pub(crate) const SIGNABLE_ACTIONS_V4_PREFIX: &[u8; 21] =
+    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x04";
 
 #[derive(Clone, Copy, PartialEq)]
 enum SignableSchema {
@@ -19,6 +21,53 @@ enum SignableSchema {
     Embedded,
     V2,
     V3,
+    V4,
+}
+
+/// Detects leaf conditional actions at every depth before selecting fixed Option framing.
+fn action_contains_leaf_conditional(action: &Action) -> bool {
+    match action {
+        Action::Stop(_) | Action::TakeProfit(_) | Action::Range(_) | Action::Trailing(_) => true,
+        Action::Trigger(trigger) => trigger.actions.iter().any(action_contains_leaf_conditional),
+        Action::OnFill(on_fill) => {
+            action_contains_leaf_conditional(&on_fill.trigger)
+                || on_fill.actions.iter().any(action_contains_leaf_conditional)
+        }
+        Action::MultisigPropose(proposal) => proposal
+            .actions
+            .iter()
+            .any(action_contains_leaf_conditional),
+        _ => false,
+    }
+}
+
+fn validate_nested_actions(action: &Action) -> eyre::Result<()> {
+    match action {
+        Action::Trigger(trigger) => {
+            for child in &trigger.actions {
+                validate_nested_actions(child)?;
+            }
+        }
+        Action::OnFill(on_fill) => {
+            if !matches!(
+                on_fill.trigger.as_ref(),
+                Action::MarketOrder(_) | Action::LimitOrder(_)
+            ) {
+                eyre::bail!("on-fill trigger must be a market or limit order");
+            }
+            validate_nested_actions(&on_fill.trigger)?;
+            for child in &on_fill.actions {
+                validate_nested_actions(child)?;
+            }
+        }
+        Action::MultisigPropose(proposal) => {
+            for child in &proposal.actions {
+                validate_nested_actions(child)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Detects builder codes at every action depth before selecting the signing schema.
@@ -45,6 +94,9 @@ fn action_has_builder_code(action: &Action) -> bool {
 fn action_has_explicit_slippage(action: &Action) -> bool {
     match action {
         Action::MarketOrder(order) => order.slippage.is_some(),
+        Action::Stop(order) | Action::TakeProfit(order) => order.slippage.is_some(),
+        Action::Range(order) => order.sl_slippage.is_some() || order.tp_slippage.is_some(),
+        Action::Trailing(order) => order.slippage.is_some(),
         Action::Trigger(trigger) => trigger.actions.iter().any(action_has_explicit_slippage),
         Action::OnFill(on_fill) => {
             action_has_explicit_slippage(&on_fill.trigger)
@@ -207,7 +259,12 @@ impl Transaction {
         nonce: u64,
         actions: &[Action],
     ) -> eyre::Result<Vec<u8>> {
-        let schema = if actions.iter().any(action_has_builder_code) {
+        for action in actions {
+            validate_nested_actions(action)?;
+        }
+        let schema = if actions.iter().any(action_contains_leaf_conditional) {
+            SignableSchema::V4
+        } else if actions.iter().any(action_has_builder_code) {
             SignableSchema::V3
         } else if actions.iter().any(action_has_explicit_slippage) {
             SignableSchema::V2
@@ -215,7 +272,10 @@ impl Transaction {
             SignableSchema::Legacy
         };
         let mut serialized = Vec::new();
-        if schema == SignableSchema::V3 {
+        if schema == SignableSchema::V4 {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V4_PREFIX);
+            bincode::serialize_into(&mut serialized, actions)?;
+        } else if schema == SignableSchema::V3 {
             serialized.extend_from_slice(SIGNABLE_ACTIONS_V3_PREFIX);
             bincode::serialize_into(&mut serialized, actions)?;
         } else {
@@ -668,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn conditional_builder_code_selects_v3_without_changing_uncommissioned_bytes() {
+    fn leaf_conditionals_use_v4_with_or_without_builder_code() {
         use serde_json::json;
 
         let account = Pubkey::new_from_array([1; 32]);
@@ -680,10 +740,10 @@ mod tests {
         ];
         for mut value in cases {
             let action: Action = serde_json::from_value(value.clone()).unwrap();
-            let legacy =
+            let without_builder =
                 Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
                     .unwrap();
-            assert!(!legacy.starts_with(SIGNABLE_ACTIONS_V3_PREFIX));
+            assert!(without_builder.starts_with(SIGNABLE_ACTIONS_V4_PREFIX));
 
             let kind = value.as_object().unwrap().keys().next().unwrap().clone();
             value[&kind]["builderCode"] =
@@ -692,8 +752,35 @@ mod tests {
             let with_builder =
                 Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
                     .unwrap();
-            assert!(with_builder.starts_with(SIGNABLE_ACTIONS_V3_PREFIX));
+            assert!(with_builder.starts_with(SIGNABLE_ACTIONS_V4_PREFIX));
+            assert_ne!(without_builder, with_builder);
         }
+    }
+
+    #[test]
+    fn v4_conditionals_preserve_multi_action_boundaries() {
+        let account = Pubkey::new_from_array([1; 32]);
+        let actions: Vec<Action> = serde_json::from_value(serde_json::json!([
+            {"st":{"c":"BTC-USD","d":false,"sz":1.0,"tr":90.0,"lim":null,"i":false}},
+            {"l":{"c":"BTC-USD","b":true,"px":80.0,"sz":2.0,"tif":"GTC","r":false,"i":false}},
+            {"rng":{"c":"BTC-USD","d":true,"sz":1.0,"pmin":70.0,"pmax":110.0,"lmin":null,"lmax":null,"i":false,"slSlippage":40.0,"tpSlippage":20.0}}
+        ]))
+        .unwrap();
+
+        let mut expected = SIGNABLE_ACTIONS_V4_PREFIX.to_vec();
+        bincode::serialize_into(&mut expected, &actions).unwrap();
+        expected.extend_from_slice(&42_u64.to_le_bytes());
+        expected.extend_from_slice(account.as_ref());
+        expected.push(SignatureDomain::Devnet as u8);
+
+        assert_eq!(
+            Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &actions)
+                .unwrap(),
+            expected,
+        );
+        let bytes = bincode::serialize(&actions).unwrap();
+        let decoded: Vec<Action> = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(decoded.len(), 3);
     }
 
     #[test]
@@ -830,6 +917,7 @@ mod tests {
                 limit: None,
                 iso: false,
                 builder_code: None,
+                slippage: None,
                 meta: ActionMeta::default(),
             })),
             actions: Vec::new(),
@@ -1418,6 +1506,7 @@ mod tests {
             limit: Some(60_010.0),
             iso: false,
             builder_code: None,
+            slippage: None,
             meta: Default::default(),
         });
 
@@ -1446,6 +1535,7 @@ mod tests {
             limit: None,
             iso: false,
             builder_code: None,
+            slippage: None,
             meta: Default::default(),
         });
 

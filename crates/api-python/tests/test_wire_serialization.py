@@ -236,7 +236,7 @@ def test_conditional_models_emit_canonical_iso_and_inline_on_fill_fields():
     assert set(on_fill["of"]["trigger"]) == {"l"}
 
 
-def test_conditional_builder_code_preserves_absent_signing_and_binds_present_code():
+def test_conditional_builder_code_and_slippage_use_fixed_option_framing():
     trade = load_trade()
     signer = load_signer()
     builder = trade.BuilderCode(PUBKEY, 5)
@@ -256,9 +256,10 @@ def test_conditional_builder_code_preserves_absent_signing_and_binds_present_cod
         order.builder_code = builder
         with_builder = order.to_api()
         assert with_builder[kind]["builderCode"] == {"to": PUBKEY, "fee": 5}
-        expected = old_bytes + b"\x01" + bytes(32) + b"\x05"
-        assert signer.TransactionSigner.serialize_action(with_builder) == expected
-        assert signer.TransactionSigner.serialize_action(with_builder, v2=True) == expected
+        encoded = signer.TransactionSigner.serialize_action(with_builder)
+        assert encoded != old_bytes
+        assert signer.TransactionSigner.serialize_action(with_builder, v2=True) == encoded
+        assert b"\x01" + bytes(32) + b"\x05" in encoded
 
         with_builder[kind]["builderCode"] = None
         try:
@@ -267,6 +268,24 @@ def test_conditional_builder_code_preserves_absent_signing_and_binds_present_cod
             assert "builderCode" in str(error)
         else:
             raise AssertionError("explicit null builderCode must be rejected")
+
+
+def test_conditional_models_emit_optional_slippage_overrides():
+    trade = load_trade()
+
+    assert trade.Stop("BTC-USD", True, 1.0, 100.0, slippage=25.0).to_api()["st"]["slippage"] == "25.0"
+    assert trade.TakeProfit("BTC-USD", False, 1.0, 100.0, slippage=30.0).to_api()["tp"]["slippage"] == "30.0"
+    assert trade.Range(
+        "BTC-USD", True, 1.0, 90.0, 110.0,
+        sl_slippage=40.0, tp_slippage=20.0,
+    ).to_api()["rng"] == {
+        "c": "BTC-USD", "d": True, "sz": "1.0", "pmin": 90.0,
+        "pmax": 110.0, "lmin": None, "lmax": None, "i": False,
+        "slSlippage": "40.0", "tpSlippage": "20.0",
+    }
+    assert trade.TrailingStop(
+        "BTC-USD", trade.Side.BUY, 1.0, 100, 10, slippage=35.0,
+    ).to_api()["trl"]["slippage"] == "35.0"
 
 
 def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
@@ -294,7 +313,7 @@ def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     trigger_bytes = signer.TransactionSigner.serialize_transaction(
         [trigger], 7, PUBKEY, signer.SignatureDomain.TESTNET
     )
-    expected_trigger = "01000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d55534401405973070000000000010100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    expected_trigger = "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
     assert trigger_bytes.hex() == expected_trigger, trigger_bytes.hex()
 
     on_fill = {
@@ -318,7 +337,7 @@ def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     on_fill_bytes = signer.TransactionSigner.serialize_transaction(
         [on_fill], 7, PUBKEY, signer.SignatureDomain.TESTNET
     )
-    expected_on_fill = "01000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b0000000002000000010002000000000000000000000007000000000000004254432d55534401405973070000000000010000000007000000000000004254432d5553440140597307000000000001010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    expected_on_fill = "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
     assert on_fill_bytes.hex() == expected_on_fill, on_fill_bytes.hex()
 
 

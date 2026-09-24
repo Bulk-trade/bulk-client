@@ -64,6 +64,7 @@ async fn main() -> eyre::Result<()> {
         limit: None,
         iso: false,
         builder_code: None,
+        slippage: None,
         meta: ActionMeta {
             account,
             nonce,

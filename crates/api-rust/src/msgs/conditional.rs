@@ -51,6 +51,10 @@ pub struct StopOrTP {
     )]
     pub builder_code: Option<BuilderCode>,
 
+    /// Optional market-order slippage override, in basis points.
+    #[serde(rename = "slippage", with = "crate::msgs::opt_fixed_point", default)]
+    pub slippage: Option<f64>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -59,7 +63,7 @@ impl Serialize for StopOrTP {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             let mut state = serializer
-                .serialize_struct("StopOrTP", 6 + usize::from(self.builder_code.is_some()))?;
+                .serialize_struct("StopOrTP", 7 + usize::from(self.builder_code.is_some()))?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("d", &self.is_above)?;
             state.serialize_field("sz", &FixedF64(self.size))?;
@@ -69,9 +73,10 @@ impl Serialize for StopOrTP {
             if let Some(builder_code) = &self.builder_code {
                 state.serialize_field("builderCode", builder_code)?;
             }
+            state.serialize_field("slippage", &self.slippage.map(FixedF64))?;
             state.end()
         } else {
-            let mut tuple = serializer.serialize_tuple(7)?;
+            let mut tuple = serializer.serialize_tuple(8)?;
             tuple.serialize_element(&self.symbol)?;
             tuple.serialize_element(&self.is_above)?;
             tuple.serialize_element(&FixedF64(self.size))?;
@@ -79,6 +84,7 @@ impl Serialize for StopOrTP {
             tuple.serialize_element(&self.limit.map(FixedF64))?;
             tuple.serialize_element(&self.iso)?;
             tuple.serialize_element(&self.builder_code)?;
+            tuple.serialize_element(&self.slippage.map(FixedF64))?;
             tuple.end()
         }
     }
@@ -135,6 +141,14 @@ pub struct Range {
     )]
     pub builder_code: Option<BuilderCode>,
 
+    /// Optional market-order slippage override for the stop-loss leg, in basis points.
+    #[serde(rename = "slSlippage", with = "crate::msgs::opt_fixed_point", default)]
+    pub sl_slippage: Option<f64>,
+
+    /// Optional market-order slippage override for the take-profit leg, in basis points.
+    #[serde(rename = "tpSlippage", with = "crate::msgs::opt_fixed_point", default)]
+    pub tp_slippage: Option<f64>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -143,7 +157,7 @@ impl Serialize for Range {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             let mut state = serializer
-                .serialize_struct("Range", 8 + usize::from(self.builder_code.is_some()))?;
+                .serialize_struct("Range", 10 + usize::from(self.builder_code.is_some()))?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("d", &self.is_buy)?;
             state.serialize_field("sz", &FixedF64(self.size))?;
@@ -155,9 +169,11 @@ impl Serialize for Range {
             if let Some(builder_code) = &self.builder_code {
                 state.serialize_field("builderCode", builder_code)?;
             }
+            state.serialize_field("slSlippage", &self.sl_slippage.map(FixedF64))?;
+            state.serialize_field("tpSlippage", &self.tp_slippage.map(FixedF64))?;
             state.end()
         } else {
-            let mut tuple = serializer.serialize_tuple(9)?;
+            let mut tuple = serializer.serialize_tuple(11)?;
             tuple.serialize_element(&self.symbol)?;
             tuple.serialize_element(&self.is_buy)?;
             tuple.serialize_element(&FixedF64(self.size))?;
@@ -167,6 +183,8 @@ impl Serialize for Range {
             tuple.serialize_element(&self.limit_max.map(FixedF64))?;
             tuple.serialize_element(&self.iso)?;
             tuple.serialize_element(&self.builder_code)?;
+            tuple.serialize_element(&self.sl_slippage.map(FixedF64))?;
+            tuple.serialize_element(&self.tp_slippage.map(FixedF64))?;
             tuple.end()
         }
     }
@@ -244,6 +262,10 @@ pub struct Trailing {
     )]
     pub builder_code: Option<BuilderCode>,
 
+    /// Optional market-order slippage override, in basis points.
+    #[serde(rename = "slippage", with = "crate::msgs::opt_fixed_point", default)]
+    pub slippage: Option<f64>,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
@@ -252,7 +274,7 @@ impl Serialize for Trailing {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             let mut state = serializer
-                .serialize_struct("Trailing", 7 + usize::from(self.builder_code.is_some()))?;
+                .serialize_struct("Trailing", 8 + usize::from(self.builder_code.is_some()))?;
             state.serialize_field("c", &self.symbol)?;
             state.serialize_field("b", &self.is_buy)?;
             state.serialize_field("sz", &FixedF64(self.size))?;
@@ -263,9 +285,10 @@ impl Serialize for Trailing {
             if let Some(builder_code) = &self.builder_code {
                 state.serialize_field("builderCode", builder_code)?;
             }
+            state.serialize_field("slippage", &self.slippage.map(FixedF64))?;
             state.end()
         } else {
-            let mut tuple = serializer.serialize_tuple(8)?;
+            let mut tuple = serializer.serialize_tuple(9)?;
             tuple.serialize_element(&self.symbol)?;
             tuple.serialize_element(&self.is_buy)?;
             tuple.serialize_element(&FixedF64(self.size))?;
@@ -274,6 +297,7 @@ impl Serialize for Trailing {
             tuple.serialize_element(&self.limit.map(FixedF64))?;
             tuple.serialize_element(&self.iso)?;
             tuple.serialize_element(&self.builder_code)?;
+            tuple.serialize_element(&self.slippage.map(FixedF64))?;
             tuple.end()
         }
     }
@@ -360,7 +384,13 @@ mod tests {
                 serde_json::to_value(&present).unwrap()[kind]["builderCode"]["fee"],
                 5
             );
-            assert!(bincode::serialize(&present).unwrap().ends_with(&[5]));
+            let bytes = bincode::serialize(&present).unwrap();
+            let roundtrip: Action = bincode::deserialize(&bytes)
+                .unwrap_or_else(|error| panic!("{kind} bincode roundtrip failed: {error}"));
+            assert_eq!(
+                serde_json::to_value(roundtrip).unwrap()[kind]["builderCode"]["fee"],
+                5
+            );
         }
     }
 
@@ -412,6 +442,35 @@ mod tests {
                 .get("i")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn conditional_slippage_options_roundtrip_json_and_binary() {
+        for (kind, payload, fields) in [
+            (
+                "st",
+                json!({"c":"BTC-USD","d":true,"sz":1.0,"tr":100.0,"lim":null,"i":false,"slippage":25.0}),
+                vec![("slippage", 25.0)],
+            ),
+            (
+                "rng",
+                json!({"c":"BTC-USD","d":true,"sz":1.0,"pmin":90.0,"pmax":110.0,"lmin":null,"lmax":null,"i":false,"slSlippage":40.0,"tpSlippage":20.0}),
+                vec![("slSlippage", 40.0), ("tpSlippage", 20.0)],
+            ),
+            (
+                "trl",
+                json!({"c":"BTC-USD","b":true,"sz":1.0,"trb":100,"stb":10,"lim":null,"i":false,"slippage":35.0}),
+                vec![("slippage", 35.0)],
+            ),
+        ] {
+            let action: Action = serde_json::from_value(json!({(kind): payload})).unwrap();
+            let bytes = bincode::serialize(&action).unwrap();
+            let roundtrip: Action = bincode::deserialize(&bytes).unwrap();
+            let json = serde_json::to_value(roundtrip).unwrap();
+            for (field, value) in fields {
+                assert_eq!(json[kind][field], value);
+            }
+        }
     }
 
     #[test]

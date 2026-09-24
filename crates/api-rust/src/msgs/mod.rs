@@ -83,11 +83,7 @@ pub(crate) mod serde_pubkey {
             let s = String::deserialize(deserializer)?;
             Pubkey::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
         } else {
-            let bytes = <Vec<u8>>::deserialize(deserializer)?;
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("expected 32 bytes for Pubkey"))?;
-            Ok(Pubkey::from(arr))
+            <[u8; 32]>::deserialize(deserializer).map(Pubkey::from)
         }
     }
 }
@@ -167,7 +163,12 @@ pub(crate) mod opt_fixed_point {
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<f64>, D::Error> {
-        deserializer.deserialize_any(OptF64Visitor)
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_any(OptF64Visitor)
+        } else {
+            Option::<u64>::deserialize(deserializer)
+                .map(|value| value.map(|fixed| fixed as f64 / SCALE))
+        }
     }
 
     struct OptF64Visitor;

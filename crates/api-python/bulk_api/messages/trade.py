@@ -414,6 +414,7 @@ class Stop:
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
+    slippage: Optional[float] = None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -429,6 +430,8 @@ class Stop:
         }
         if self.builder_code is not None:
             order["st"]["builderCode"] = self.builder_code.to_api()
+        if self.slippage is not None:
+            order["st"]["slippage"] = f"{self.slippage}"
         return order
 
 
@@ -450,6 +453,7 @@ class TakeProfit:
     seqno: Optional[int] = None
     nonce: Optional[Union[str,int]] = None
     pubkey: Optional[str] = None
+    slippage: Optional[float] = None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -465,6 +469,8 @@ class TakeProfit:
         }
         if self.builder_code is not None:
             order["tp"]["builderCode"] = self.builder_code.to_api()
+        if self.slippage is not None:
+            order["tp"]["slippage"] = f"{self.slippage}"
         return order
 
 
@@ -488,6 +494,7 @@ class TrailingStop:
     nonce: Optional[Union[str,int]] = None
     oid: Optional[str] = None
     pubkey: Optional[str] = None
+    slippage: Optional[float] = None
 
     def to_api(self) -> Dict:
         """Convert to API format with compact field names"""
@@ -504,6 +511,8 @@ class TrailingStop:
         }
         if self.builder_code is not None:
             order["trl"]["builderCode"] = self.builder_code.to_api()
+        if self.slippage is not None:
+            order["trl"]["slippage"] = f"{self.slippage}"
         return order
 
 
@@ -526,6 +535,8 @@ class Range:
     limit_max: Optional[float] = None
     iso: bool = False
     builder_code: Optional[BuilderCode] = None
+    sl_slippage: Optional[float] = None
+    tp_slippage: Optional[float] = None
 
     def to_api(self) -> Dict:
         order = {
@@ -542,6 +553,10 @@ class Range:
         }
         if self.builder_code is not None:
             order["rng"]["builderCode"] = self.builder_code.to_api()
+        if self.sl_slippage is not None:
+            order["rng"]["slSlippage"] = f"{self.sl_slippage}"
+        if self.tp_slippage is not None:
+            order["rng"]["tpSlippage"] = f"{self.tp_slippage}"
         return order
 
 

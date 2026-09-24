@@ -91,7 +91,11 @@ impl ClearSignMessage {
             let _ = writeln!(
                 message,
                 "Signable-Schema: {}",
-                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V3_PREFIX)
+                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V4_PREFIX)
+                {
+                    "u64_max_le||bulk-actions_utf8||version_u8(4)||bincode(actions_with_conditional_slippage_options)||nonce_le_u64||account_bytes||signature_domain_u8"
+                } else if signable
+                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V3_PREFIX)
                 {
                     "u64_max_le||bulk-actions_utf8||version_u8(3)||bincode(actions_with_builder_options)||nonce_le_u64||account_bytes||signature_domain_u8"
                 } else if signable
@@ -477,20 +481,33 @@ impl ClearSignMessage {
     }
 
     fn stop_tp(kind: &str, action: &StopOrTP) -> String {
+        let slippage = action
+            .slippage
+            .map(|value| format!(" slippage={value:.8}bps"))
+            .unwrap_or_default();
         format!(
-            "{} {} {} thresh={:.8} sz={:.8} limit={}",
+            "{} {} {} thresh={:.8} sz={:.8} limit={}{}",
             kind,
             action.symbol,
             if action.is_above { "Above" } else { "Below" },
             action.threshold,
             action.size,
             Self::fmt_opt(action.limit),
+            slippage,
         )
     }
 
     fn range(action: &Range) -> String {
+        let sl_slippage = action
+            .sl_slippage
+            .map(|value| format!(" sl_slippage={value:.8}bps"))
+            .unwrap_or_default();
+        let tp_slippage = action
+            .tp_slippage
+            .map(|value| format!(" tp_slippage={value:.8}bps"))
+            .unwrap_or_default();
         format!(
-            "Range {} {} min={:.8} max={:.8} sz={:.8} lmin={} lmax={}",
+            "Range {} {} min={:.8} max={:.8} sz={:.8} lmin={} lmax={}{}{}",
             action.symbol,
             if action.is_buy { "Buy" } else { "Sell" },
             action.collar_min,
@@ -498,6 +515,8 @@ impl ClearSignMessage {
             action.size,
             Self::fmt_opt(action.limit_min),
             Self::fmt_opt(action.limit_max),
+            sl_slippage,
+            tp_slippage,
         )
     }
 
@@ -512,14 +531,19 @@ impl ClearSignMessage {
     }
 
     fn trailing(action: &Trailing) -> String {
+        let slippage = action
+            .slippage
+            .map(|value| format!(" slippage={value:.8}bps"))
+            .unwrap_or_default();
         format!(
-            "Trailing {} {} sz={:.8} trail={}bps step={}bps limit={}",
+            "Trailing {} {} sz={:.8} trail={}bps step={}bps limit={}{}",
             action.symbol,
             if action.is_buy { "Buy" } else { "Sell" },
             action.size,
             action.trail_bps,
             action.step_bps,
             Self::fmt_opt(action.limit),
+            slippage,
         )
     }
 

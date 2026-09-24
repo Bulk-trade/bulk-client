@@ -14,8 +14,8 @@ pub async fn handle_stop(
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
-        "Placing Stop on {} | size={} threshold={} above={} limit={:?}",
-        args.symbol, args.size, args.threshold, args.above, args.limit
+        "Placing Stop on {} | size={} threshold={} above={} limit={:?} slippage={:?}",
+        args.symbol, args.size, args.threshold, args.above, args.limit, args.slippage
     );
 
     let action = Action::Stop(StopOrTP {
@@ -26,6 +26,7 @@ pub async fn handle_stop(
         limit: args.limit,
         iso: false,
         builder_code: None,
+        slippage: args.slippage,
         meta: Default::default(),
     });
 
@@ -42,8 +43,8 @@ pub async fn handle_take_profit(
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
     println!(
-        "Placing TakeProfit on {} | size={} threshold={} above={} limit={:?}",
-        args.symbol, args.size, args.threshold, args.above, args.limit
+        "Placing TakeProfit on {} | size={} threshold={} above={} limit={:?} slippage={:?}",
+        args.symbol, args.size, args.threshold, args.above, args.limit, args.slippage
     );
 
     let action = Action::TakeProfit(StopOrTP {
@@ -54,6 +55,7 @@ pub async fn handle_take_profit(
         limit: args.limit,
         iso: false,
         builder_code: None,
+        slippage: args.slippage,
         meta: Default::default(),
     });
 
@@ -84,6 +86,8 @@ pub async fn handle_range(
         limit_max: args.limit_max,
         iso: false,
         builder_code: None,
+        sl_slippage: args.sl_slippage,
+        tp_slippage: args.tp_slippage,
         meta: Default::default(),
     });
 
@@ -113,6 +117,7 @@ pub async fn handle_trailing(
         limit: args.limit,
         iso: false,
         builder_code: None,
+        slippage: args.slippage,
         meta: Default::default(),
     });
 

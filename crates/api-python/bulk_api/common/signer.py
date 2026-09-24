@@ -149,11 +149,18 @@ class TransactionSigner:
         """
         if not isinstance(signature_domain, SignatureDomain):
             raise ValueError("explicit SignatureDomain is required")
-        v2 = any(TransactionSigner.action_has_explicit_slippage(action) for action in actions)
-        parts = [b"\xff" * 8 + b"bulk-actions\x02"] if v2 else []
+        if any(TransactionSigner.action_contains_leaf_conditional(action) for action in actions):
+            schema = 4
+        elif any(TransactionSigner.action_has_builder_code(action) for action in actions):
+            schema = 3
+        elif any(TransactionSigner.action_has_explicit_slippage(action) for action in actions):
+            schema = 2
+        else:
+            schema = 0
+        parts = [b"\xff" * 8 + b"bulk-actions" + bytes([schema])] if schema else []
         parts.append(TransactionSigner.write_u64(len(actions)))
         for action in actions:
-            parts.append(TransactionSigner.serialize_action(action, v2))
+            parts.append(TransactionSigner.serialize_action(action, schema=schema))
 
         parts.append(TransactionSigner.write_u64(int(nonce)))
         parts.append(TransactionSigner.decode_and_validate_32_bytes(account))
@@ -175,7 +182,37 @@ class TransactionSigner:
                 return False
 
     @staticmethod
-    def serialize_action(action: dict, v2: bool = False) -> bytes:
+    def action_contains_leaf_conditional(action: dict) -> bool:
+        match action:
+            case {"st": _} | {"tp": _} | {"rng": _} | {"trl": _}:
+                return True
+            case {"trig": order}:
+                return any(TransactionSigner.action_contains_leaf_conditional(child) for child in order["actions"])
+            case {"of": order}:
+                return TransactionSigner.action_contains_leaf_conditional(order["trigger"]) or any(
+                    TransactionSigner.action_contains_leaf_conditional(child) for child in order["actions"]
+                )
+            case _:
+                return False
+
+    @staticmethod
+    def action_has_builder_code(action: dict) -> bool:
+        match action:
+            case {"m": order} | {"l": order} | {"st": order} | {"tp": order} | {"rng": order} | {"trl": order}:
+                return order.get("builderCode") is not None
+            case {"trig": order}:
+                return any(TransactionSigner.action_has_builder_code(child) for child in order["actions"])
+            case {"of": order}:
+                return TransactionSigner.action_has_builder_code(order["trigger"]) or any(
+                    TransactionSigner.action_has_builder_code(child) for child in order["actions"]
+                )
+            case _:
+                return False
+
+    @staticmethod
+    def serialize_action(action: dict, v2: bool = False, *, schema: Optional[int] = None) -> bytes:
+        if schema is None:
+            schema = 2 if v2 else 0
         match action:
             case {"m": order}:
                 if "commission" in order:
@@ -190,9 +227,9 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
                     TransactionSigner.write_builder_code(order.get('builderCode'))
-                    or (b'\x00' if v2 else b''),
+                    or (b'\x00' if schema in (2, 3, 4) else b''),
                 ]
-                if v2:
+                if schema in (2, 3, 4):
                     parts.append(TransactionSigner.write_optional_fixedpoint(order.get('slippage')))
                 elif order.get('slippage') is not None:
                     raise ValueError("explicit slippage requires V2 transaction framing")
@@ -213,7 +250,7 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
                     TransactionSigner.write_builder_code(order.get('builderCode'))
-                    or (b'\x00' if v2 else b''),
+                    or (b'\x00' if schema in (2, 3, 4) else b''),
                 ])
 
             case {"st": order}:
@@ -227,7 +264,8 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')) or b'\x00',
+                    TransactionSigner.write_optional_fixedpoint(order.get('slippage')),
                 ])
 
             case {"tp": order}:
@@ -241,7 +279,8 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')) or b'\x00',
+                    TransactionSigner.write_optional_fixedpoint(order.get('slippage')),
                 ])
 
             case {"rng": order}:
@@ -257,7 +296,9 @@ class TransactionSigner:
                     TransactionSigner.write_optional_fixedpoint(order['lmin']),
                     TransactionSigner.write_optional_fixedpoint(order['lmax']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')) or b'\x00',
+                    TransactionSigner.write_optional_fixedpoint(order.get('slSlippage')),
+                    TransactionSigner.write_optional_fixedpoint(order.get('tpSlippage')),
                 ])
 
             case {"trig": order}:
@@ -270,7 +311,7 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action, v2)
+                        TransactionSigner.serialize_action(action, schema=schema)
                         for action in order['actions']
                     ),
                 ])
@@ -287,7 +328,8 @@ class TransactionSigner:
                     TransactionSigner.write_u32(order['stb']),
                     TransactionSigner.write_optional_fixedpoint(order['lim']),
                     TransactionSigner.write_bool(order.get('i', False)),
-                    TransactionSigner.write_builder_code(order.get('builderCode')),
+                    TransactionSigner.write_builder_code(order.get('builderCode')) or b'\x00',
+                    TransactionSigner.write_optional_fixedpoint(order.get('slippage')),
                 ])
 
             case {"of": order}:
@@ -296,10 +338,10 @@ class TransactionSigner:
                     raise ValueError("on-fill trigger must be a market or limit order")
                 return b''.join([
                     TransactionSigner.write_u32(10),
-                    TransactionSigner.serialize_action(trigger, v2),
+                    TransactionSigner.serialize_action(trigger, schema=schema),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action, v2)
+                        TransactionSigner.serialize_action(action, schema=schema)
                         for action in order['actions']
                     ),
                 ])
