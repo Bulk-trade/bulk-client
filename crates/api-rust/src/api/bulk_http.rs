@@ -67,6 +67,12 @@ pub struct BulkHttpClient {
     is_localhost: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenOrderResponse {
+    open_order: OrderState,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +92,48 @@ mod tests {
         .expect("missing domain must fail");
 
         assert!(error.to_string().contains("signature domain is required"));
+    }
+
+    #[test]
+    fn open_orders_response_unwraps_conditional_order_envelope() {
+        let responses: Vec<OpenOrderResponse> = serde_json::from_value(json!([{
+            "openOrder": {
+                "symbol": "BTC-USD",
+                "orderId": "FJQvjE7vMrPgCrNvz1MBZeYaw1YYvoQq9YJSU3uq49bd",
+                "price": 82663.735,
+                "originalSize": -0.001,
+                "size": -0.001,
+                "filledSize": 0.0,
+                "vwap": 82663.735,
+                "maker": true,
+                "reduceOnly": true,
+                "iso": false,
+                "orderType": "trailing",
+                "trigger": {
+                    "isAbove": false,
+                    "px": 82663.735,
+                    "pxHi": 84772.50375,
+                    "trb": 200,
+                    "stb": 50
+                },
+                "tif": "gtc",
+                "status": "resting",
+                "timestamp": 1790292371428435084_u64
+            }
+        }]))
+        .expect("deserialize wrapped conditional open order");
+
+        assert_eq!(responses.len(), 1);
+        let order = &responses[0].open_order;
+        assert_eq!(order.symbol, "BTC-USD");
+        assert_eq!(
+            order.order_id,
+            "FJQvjE7vMrPgCrNvz1MBZeYaw1YYvoQq9YJSU3uq49bd"
+        );
+        assert_eq!(
+            order.trigger.as_ref().and_then(|trigger| trigger.trail_bps),
+            Some(200)
+        );
     }
 }
 
@@ -317,7 +365,12 @@ impl BulkHttpClient {
             .send()
             .await?
             .error_for_status()?;
-        Ok(resp.json().await?)
+        Ok(resp
+            .json::<Vec<OpenOrderResponse>>()
+            .await?
+            .into_iter()
+            .map(|response| response.open_order)
+            .collect())
     }
 
     /// Get one bounded page of account fills.
