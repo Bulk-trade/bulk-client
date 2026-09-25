@@ -44,6 +44,11 @@ pub struct LiqConfigByInstrument {
     pub max_adl_notional: f64,
     /// maximum ADL % taken
     pub max_adl_percent: f64,
+    /// Whether the residual liquidation reserve is included in maintenance margin.
+    ///
+    /// Liquidation strategy calculations apply the reserve regardless of this setting.
+    #[serde(default)]
+    pub apply_reserve: bool,
 }
 
 /// Liquidation and ADL related config
@@ -61,7 +66,10 @@ pub struct LiqConfig {
     /// Standard deviations above expected sweep cost allowed at normal urgency
     #[serde(default = "default_sweep_sds")]
     pub sweep_sds: f64,
-    /// Whether liquidation impact should be priced to the terminal sweep level.
+    /// Include terminal sweep impact in liquidation equity and maintenance-margin calculations.
+    ///
+    /// `false` selects mark-based risk; liquidation execution still uses sweep pricing. Missing
+    /// fields default to `false` so newly decoded actions cannot inadvertently restore sweep risk.
     #[serde(default = "default_price_to_sweep")]
     pub price_to_sweep: bool,
     /// configuration per instrument
@@ -80,7 +88,7 @@ fn default_sweep_sds() -> f64 {
 }
 
 fn default_price_to_sweep() -> bool {
-    true
+    false
 }
 
 fn default_max_sweep_bps() -> f64 {
@@ -118,10 +126,11 @@ mod tests {
 
         assert_eq!(config.urgency_size_fraction, 0.25);
         assert_eq!(config.sweep_sds, 2.0);
-        assert!(config.price_to_sweep);
+        assert!(!config.price_to_sweep);
         assert_eq!(config.instruments[0].execution_mode, ExecutionMode::Normal);
         assert_eq!(config.instruments[0].dump_retry_secs, 60);
         assert_eq!(config.instruments[0].max_sweep_bps, 100.0);
+        assert!(!config.instruments[0].apply_reserve);
     }
 
     #[test]
