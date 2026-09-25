@@ -47,7 +47,6 @@ pub struct LiqConfigByInstrument {
     /// Whether the residual liquidation reserve is included in maintenance margin.
     ///
     /// Liquidation strategy calculations apply the reserve regardless of this setting.
-    #[serde(default)]
     pub apply_reserve: bool,
 }
 
@@ -119,7 +118,8 @@ mod tests {
                 "volume_min": 1.0,
                 "volume_rampup": 60,
                 "max_adl_notional": 5_000_000.0,
-                "max_adl_percent": 50.0
+                "max_adl_percent": 50.0,
+                "apply_reserve": false
             }]
         }))
         .expect("SDK-compatible liquidator action");
@@ -131,6 +131,23 @@ mod tests {
         assert_eq!(config.instruments[0].dump_retry_secs, 60);
         assert_eq!(config.instruments[0].max_sweep_bps, 100.0);
         assert!(!config.instruments[0].apply_reserve);
+    }
+
+    #[test]
+    fn current_schema_requires_apply_reserve() {
+        let config = serde_json::from_value::<LiqConfigByInstrument>(serde_json::json!({
+            "symbol": "BTC-USD",
+            "max_exposure": 12_000_000.0,
+            "reserve": 75.0,
+            "rfactor": 0.25,
+            "volume_percent": 30.0,
+            "volume_min": 1.0,
+            "volume_rampup": 60,
+            "max_adl_notional": 5_000_000.0,
+            "max_adl_percent": 50.0
+        }));
+
+        assert!(config.is_err());
     }
 
     #[test]

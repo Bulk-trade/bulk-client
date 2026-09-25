@@ -46,10 +46,14 @@ bulk_admin_parse_common_args() {
     esac
   done
 
+  if [[ "${BULK_ADMIN_NETWORK}" == "dev" ]]; then
+    BULK_ADMIN_NETWORK="devnet"
+  fi
+
   case "${BULK_ADMIN_NETWORK}" in
     mainnet|testnet|devnet) ;;
     *)
-      echo "error: -net must be one of: mainnet, testnet, devnet" >&2
+      echo "error: -net must be one of: mainnet, testnet, dev, devnet" >&2
       return 2
       ;;
   esac
@@ -65,7 +69,7 @@ bulk_admin_parse_common_args() {
         BULK_ADMIN_API_URL="https://exchange-api.bulk.trade/api/v1"
         ;;
       devnet)
-        BULK_ADMIN_API_URL="http://localhost:12000/api/v1"
+        BULK_ADMIN_API_URL="http://64.130.50.69:12000/api/v1"
         ;;
       mainnet)
         BULK_ADMIN_API_URL="https://mainnet-api1.bulk.trade/api/v1"

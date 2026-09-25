@@ -135,10 +135,88 @@ pub async fn handle_liquidator_config(
         args.json.clone()
     };
 
-    let config: LiqConfig =
-        json5::from_str(&raw).map_err(|e| eyre::eyre!("invalid liquidator config: {e}"))?;
+    let config = parse_liquidator_config(&raw)?;
 
     eprintln!("Placing liquidator config update");
     let action = Action::UpdateLiquidatorConfig(config);
     submit_actions(api, submit, vec![action]).await
+}
+
+fn parse_liquidator_config(raw: &str) -> eyre::Result<LiqConfig> {
+    let mut value: serde_json::Value =
+        json5::from_str(raw).map_err(|e| eyre::eyre!("invalid liquidator config: {e}"))?;
+
+    if let Some(serde_json::Value::Object(instruments)) = value.get_mut("instruments") {
+        let instruments = std::mem::take(instruments)
+            .into_iter()
+            .map(|(symbol, value)| {
+                let serde_json::Value::Object(mut config) = value else {
+                    return Err(eyre::eyre!(
+                        "invalid liquidator config: instrument '{symbol}' must be an object"
+                    ));
+                };
+                config.insert("symbol".to_string(), serde_json::Value::String(symbol));
+                Ok(serde_json::Value::Object(config))
+            })
+            .collect::<eyre::Result<Vec<_>>>()?;
+        value["instruments"] = serde_json::Value::Array(instruments);
+    }
+
+    serde_json::from_value(value).map_err(|e| eyre::eyre!("invalid liquidator config: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_liquidator_config;
+
+    const GLOBAL_FIELDS: &str = r#"
+        "cross_exposure": 2500000.0,
+        "scoring_skew": 0.5,
+        "toxicity": 0.0,
+        "urgency_size_fraction": 0.25,
+        "sweep_sds": 2.0,
+        "price_to_sweep": false
+    "#;
+
+    const INSTRUMENT_FIELDS: &str = r#"
+        "apply_reserve": false,
+        "dump_retry_secs": 60,
+        "execution_mode": "normal",
+        "max_adl_notional": 100000.0,
+        "max_adl_percent": 100.0,
+        "max_exposure": 1000000.0,
+        "max_sweep_bps": 35.0,
+        "reserve": 65.0,
+        "rfactor": 0.25,
+        "volume_min": 0.5,
+        "volume_percent": 25.0,
+        "volume_rampup": 0
+    "#;
+
+    #[test]
+    fn parses_transaction_instrument_array() {
+        let raw = format!(
+            "{{{GLOBAL_FIELDS}, \"instruments\": [{{\"symbol\": \"BTC-USD\", {INSTRUMENT_FIELDS}}}]}}"
+        );
+
+        let config = parse_liquidator_config(&raw).unwrap();
+
+        assert_eq!(config.instruments.len(), 1);
+        assert_eq!(config.instruments[0].symbol, "BTC-USD");
+        assert!(!config.instruments[0].apply_reserve);
+    }
+
+    #[test]
+    fn converts_api_instrument_map() {
+        let raw = format!(
+            "{{{GLOBAL_FIELDS}, \"instruments\": {{\"BTC-USD\": {{{INSTRUMENT_FIELDS}}}}}, \
+             \"owner\": \"ignored\", \"strategy_pubkey\": \"ignored\"}}"
+        );
+
+        let config = parse_liquidator_config(&raw).unwrap();
+
+        assert_eq!(config.instruments.len(), 1);
+        assert_eq!(config.instruments[0].symbol, "BTC-USD");
+        assert_eq!(config.instruments[0].reserve, 65.0);
+    }
 }

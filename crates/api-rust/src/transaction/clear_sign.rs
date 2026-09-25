@@ -91,7 +91,11 @@ impl ClearSignMessage {
             let _ = writeln!(
                 message,
                 "Signable-Schema: {}",
-                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V4_PREFIX)
+                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V5_PREFIX)
+                {
+                    "u64_max_le||bulk-actions_utf8||version_u8(5)||bincode(actions_with_current_liquidator_config)||nonce_le_u64||account_bytes||signature_domain_u8"
+                } else if signable
+                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V4_PREFIX)
                 {
                     "u64_max_le||bulk-actions_utf8||version_u8(4)||bincode(actions_with_conditional_slippage_options)||nonce_le_u64||account_bytes||signature_domain_u8"
                 } else if signable

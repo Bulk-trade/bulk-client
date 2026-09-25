@@ -14,6 +14,8 @@ pub(crate) const SIGNABLE_ACTIONS_V3_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x03";
 pub(crate) const SIGNABLE_ACTIONS_V4_PREFIX: &[u8; 21] =
     b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x04";
+pub(crate) const SIGNABLE_ACTIONS_V5_PREFIX: &[u8; 21] =
+    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x05";
 
 #[derive(Clone, Copy, PartialEq)]
 enum SignableSchema {
@@ -22,6 +24,29 @@ enum SignableSchema {
     V2,
     V3,
     V4,
+}
+
+/// Detects liquidator configuration updates at every action depth.
+fn action_contains_liquidator_update(action: &Action) -> bool {
+    match action {
+        Action::UpdateLiquidatorConfig(_) => true,
+        Action::Trigger(trigger) => trigger
+            .actions
+            .iter()
+            .any(action_contains_liquidator_update),
+        Action::OnFill(on_fill) => {
+            action_contains_liquidator_update(&on_fill.trigger)
+                || on_fill
+                    .actions
+                    .iter()
+                    .any(action_contains_liquidator_update)
+        }
+        Action::MultisigPropose(proposal) => proposal
+            .actions
+            .iter()
+            .any(action_contains_liquidator_update),
+        _ => false,
+    }
 }
 
 /// Detects leaf conditional actions at every depth before selecting fixed Option framing.
@@ -262,27 +287,32 @@ impl Transaction {
         for action in actions {
             validate_nested_actions(action)?;
         }
-        let schema = if actions.iter().any(action_contains_leaf_conditional) {
-            SignableSchema::V4
-        } else if actions.iter().any(action_has_builder_code) {
-            SignableSchema::V3
-        } else if actions.iter().any(action_has_explicit_slippage) {
-            SignableSchema::V2
-        } else {
-            SignableSchema::Legacy
-        };
         let mut serialized = Vec::new();
-        if schema == SignableSchema::V4 {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V4_PREFIX);
-            bincode::serialize_into(&mut serialized, actions)?;
-        } else if schema == SignableSchema::V3 {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V3_PREFIX);
+        if actions.iter().any(action_contains_liquidator_update) {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V5_PREFIX);
             bincode::serialize_into(&mut serialized, actions)?;
         } else {
-            if schema == SignableSchema::V2 {
-                serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+            let schema = if actions.iter().any(action_contains_leaf_conditional) {
+                SignableSchema::V4
+            } else if actions.iter().any(action_has_builder_code) {
+                SignableSchema::V3
+            } else if actions.iter().any(action_has_explicit_slippage) {
+                SignableSchema::V2
+            } else {
+                SignableSchema::Legacy
+            };
+            if schema == SignableSchema::V4 {
+                serialized.extend_from_slice(SIGNABLE_ACTIONS_V4_PREFIX);
+                bincode::serialize_into(&mut serialized, actions)?;
+            } else if schema == SignableSchema::V3 {
+                serialized.extend_from_slice(SIGNABLE_ACTIONS_V3_PREFIX);
+                bincode::serialize_into(&mut serialized, actions)?;
+            } else {
+                if schema == SignableSchema::V2 {
+                    serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
+                }
+                bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
             }
-            bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
         }
         serialized.extend_from_slice(&nonce.to_le_bytes());
         serialized.extend_from_slice(account.as_ref());
@@ -711,8 +741,8 @@ mod tests {
     use super::*;
     use crate::common::tif::TimeInForce;
     use crate::msgs::conditional::StopOrTP;
-    use crate::msgs::liquidator::LiqConfig;
-    use crate::msgs::{CancelAll, Faucet, LimitOrder};
+    use crate::msgs::liquidator::{LiqConfig, LiqConfigByInstrument};
+    use crate::msgs::{CancelAll, Faucet, LimitOrder, MultisigPropose};
     use crate::transaction::ActionMeta;
     use std::sync::Arc;
 
@@ -954,7 +984,110 @@ mod tests {
         )
         .expect("signable bytes");
 
-        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 43);
+        assert!(signable.starts_with(SIGNABLE_ACTIONS_V5_PREFIX));
+        let ordinal_offset = SIGNABLE_ACTIONS_V5_PREFIX.len() + 8;
+        assert_eq!(
+            u32::from_le_bytes(
+                signable[ordinal_offset..ordinal_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            43
+        );
+    }
+
+    #[test]
+    fn liquidator_updates_use_v5_at_any_depth_and_bind_apply_reserve() {
+        let liquidator = Action::UpdateLiquidatorConfig(LiqConfig {
+            instruments: vec![LiqConfigByInstrument {
+                symbol: "BTC-USD".to_string(),
+                apply_reserve: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let account = Pubkey::new_from_array([1; 32]);
+
+        let direct = Transaction::raw_signable_bytes(
+            SignatureDomain::Devnet,
+            account,
+            42,
+            std::slice::from_ref(&liquidator),
+        )
+        .unwrap();
+        assert!(direct.starts_with(SIGNABLE_ACTIONS_V5_PREFIX));
+
+        let nested = Action::MultisigPropose(MultisigPropose {
+            multisig: Pubkey::new_from_array([2; 32]),
+            actions: vec![liquidator],
+            proposal_lifetime_secs: None,
+            meta: ActionMeta::default(),
+        });
+        let mut transaction = Transaction {
+            actions: vec![nested],
+            nonce: 42,
+            account,
+            signer: Pubkey::default(),
+            signature: Signature::default(),
+        };
+        let signer = TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).unwrap();
+
+        transaction.sign(&signer, SignatureDomain::Devnet).unwrap();
+        assert!(transaction.verify(SignatureDomain::Devnet).unwrap());
+
+        let Action::MultisigPropose(proposal) = &mut transaction.actions[0] else {
+            unreachable!();
+        };
+        let Action::UpdateLiquidatorConfig(config) = &mut proposal.actions[0] else {
+            unreachable!();
+        };
+        config.instruments[0].apply_reserve = false;
+
+        assert!(!transaction.verify(SignatureDomain::Devnet).unwrap());
+    }
+
+    #[test]
+    fn liquidator_signature_matches_current_sdk_vector() {
+        let signer = TransactionSigner::from_private_key(TEST_PRIVATE_KEY1).unwrap();
+        let account = signer.public_key();
+        let instrument = |symbol: &str, max_exposure: f64| LiqConfigByInstrument {
+            symbol: symbol.to_string(),
+            execution_mode: Default::default(),
+            dump_retry_secs: 60,
+            max_exposure,
+            reserve: 50.0,
+            rfactor: 0.25,
+            volume_percent: 5.0,
+            volume_min: 1.0,
+            volume_rampup: 0,
+            max_sweep_bps: 100.0,
+            max_adl_notional: 0.0,
+            max_adl_percent: 0.0,
+            apply_reserve: true,
+        };
+        let mut transaction = Transaction {
+            actions: vec![Action::UpdateLiquidatorConfig(LiqConfig {
+                cross_exposure: 15e6,
+                scoring_skew: 0.5,
+                toxicity: 0.0,
+                urgency_size_fraction: 0.25,
+                sweep_sds: 2.0,
+                price_to_sweep: true,
+                instruments: vec![instrument("BTC-USD", 10e6), instrument("ETH-USD", 5e6)],
+                meta: ActionMeta::default(),
+            })],
+            nonce: 42,
+            account,
+            signer: Pubkey::default(),
+            signature: Signature::default(),
+        };
+
+        transaction.sign(&signer, SignatureDomain::Devnet).unwrap();
+
+        assert_eq!(
+            transaction.signature.to_string(),
+            "3qZAVH4CYuTzQLRTJnXR1LycyfxgrTPVnCkM5G1H3iZx38wYNinKczFcevdeZtQbJFP5tTEJ3bozMNHE55n4NBqn"
+        );
     }
 
     #[test]
