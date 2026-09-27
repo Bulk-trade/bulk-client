@@ -161,6 +161,19 @@ fn history_fill_requires_a_lossless_trade_id() {
 }
 
 #[test]
+fn history_fill_derives_a_missing_trade_id_from_slot_and_sequence() {
+    let mut row = fill_row();
+    row.as_object_mut()
+        .expect("fill row is an object")
+        .remove("tradeId");
+
+    let fill: HistoryFill = serde_json::from_value(row).expect("legacy history fill");
+
+    assert_eq!(fill.trade_id.slot, u64::MAX);
+    assert_eq!(fill.trade_id.sequence, u64::MAX - 2);
+}
+
+#[test]
 fn rust_history_page_accepts_an_explicit_null_terminal_cursor() {
     let mut terminal = page(fill_row());
     terminal["page"]["nextCursor"] = Value::Null;

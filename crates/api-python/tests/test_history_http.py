@@ -180,6 +180,15 @@ class TradeIdTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tradeId"):
                 HistoryFill.from_api(row)
 
+    def test_history_fill_derives_a_missing_trade_id_from_slot_and_sequence(self):
+        row = fill_row()
+        del row["tradeId"]
+
+        fill = HistoryFill.from_api(row)
+
+        self.assertEqual(fill.trade_id.slot, U64_MAX)
+        self.assertEqual(fill.trade_id.sequence, U64_MAX - 2)
+
 
 def position_row():
     return {

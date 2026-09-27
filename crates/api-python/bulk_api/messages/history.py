@@ -188,12 +188,17 @@ class HistoryFill:
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> "HistoryFill":
+        trade_id = (
+            TradeId.from_api(data["tradeId"])
+            if "tradeId" in data
+            else TradeId(slot=data["slot"], sequence=data["sequence"])
+        )
         return cls(
             maker=data["maker"],
             taker=data["taker"],
             order_id_maker=data["orderIdMaker"],
             order_id_taker=data["orderIdTaker"],
-            trade_id=TradeId.from_api(data.get("tradeId")),
+            trade_id=trade_id,
             is_buy=data["isBuy"],
             symbol=data["symbol"],
             amount=data["amount"],

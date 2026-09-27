@@ -200,7 +200,7 @@ impl<'de> Deserialize<'de> for TradeId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryFill {
     #[serde(with = "crate::msgs::serde_pubkey")]
@@ -235,6 +235,77 @@ pub struct HistoryFill {
     pub slot: u64,
     pub timestamp: u64,
     pub sequence: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryFillWire {
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    maker: Pubkey,
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    taker: Pubkey,
+    #[serde(with = "crate::msgs::serde_hash")]
+    order_id_maker: Hash,
+    #[serde(with = "crate::msgs::serde_hash")]
+    order_id_taker: Hash,
+    #[serde(default, deserialize_with = "deserialize_present_nullable")]
+    trade_id: Option<Option<TradeId>>,
+    is_buy: bool,
+    symbol: String,
+    amount: f64,
+    price: f64,
+    maker_fee: f64,
+    taker_fee: f64,
+    fee: f64,
+    reason_code: u8,
+    #[serde(default)]
+    iso: bool,
+    #[serde(default, with = "option_pubkey")]
+    iso_pubkey: Option<Pubkey>,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    counterparty_hint: Option<String>,
+    slot: u64,
+    timestamp: u64,
+    sequence: u64,
+}
+
+impl<'de> Deserialize<'de> for HistoryFill {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = HistoryFillWire::deserialize(deserializer)?;
+        let trade_id = match wire.trade_id {
+            Some(Some(trade_id)) => trade_id,
+            Some(None) => return Err(de::Error::custom("tradeId must be <slot>:<sequence>")),
+            None => TradeId {
+                slot: wire.slot,
+                sequence: wire.sequence,
+            },
+        };
+
+        Ok(Self {
+            maker: wire.maker,
+            taker: wire.taker,
+            order_id_maker: wire.order_id_maker,
+            order_id_taker: wire.order_id_taker,
+            trade_id,
+            is_buy: wire.is_buy,
+            symbol: wire.symbol,
+            amount: wire.amount,
+            price: wire.price,
+            maker_fee: wire.maker_fee,
+            taker_fee: wire.taker_fee,
+            fee: wire.fee,
+            reason_code: wire.reason_code,
+            iso: wire.iso,
+            iso_pubkey: wire.iso_pubkey,
+            reason: wire.reason,
+            counterparty_hint: wire.counterparty_hint,
+            slot: wire.slot,
+            timestamp: wire.timestamp,
+            sequence: wire.sequence,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
