@@ -1,4 +1,4 @@
-use bulk_cli_sdk::{config_risk_action, config_security_action};
+use bulk_cli_sdk::{config_risk_action, config_security_action, create_market_actions};
 use bulk_client::msgs::{MultisigPropose, Response};
 use bulk_client::parts::{make_nonce, HttpConfig};
 use bulk_client::transaction::{
@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use solana_pubkey::Pubkey;
 use std::fmt::Write as _;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -63,6 +63,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Submit all market configuration actions in one admin proposal.
+    CreateMarket(CreateMarketArgs),
+
     /// Replace one coin's complete risk surface from a CSV file.
     #[command(name = "config-risk-matrix")]
     ConfigRiskMatrix(ConfigRiskMatrixArgs),
@@ -70,6 +73,27 @@ enum Command {
     /// Replace one complete security or currency definition.
     #[command(name = "config-security")]
     ConfigSecurity(ConfigSecurityArgs),
+}
+
+#[derive(Args, Debug)]
+struct CreateMarketArgs {
+    /// Underlier currency name; the traded instrument is SYMBOL-USD.
+    symbol: String,
+    /// BIP1 reference tier.
+    #[arg(value_parser = ["low", "medium", "high"])]
+    tier: String,
+    /// Root directory containing securities, model references, and risk references.
+    #[arg(long)]
+    config_dir: PathBuf,
+    /// Executor JSON5 file supplying funding defaults and pair overrides.
+    #[arg(long)]
+    executor_config: PathBuf,
+    /// Omit the currency action when the underlier already exists on the exchange.
+    #[arg(long)]
+    skip_currency: bool,
+    /// Validate and print actions without a signer or network access.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -95,7 +119,7 @@ struct ConfigSecurityArgs {
 ///
 /// # Arguments
 /// * `api` - Authenticated Bulk HTTP client.
-/// * `action` - SDK-backed public action to propose.
+/// * `proposed` - SDK-backed public actions to propose.
 /// * `preview` - Whether to display the canonical signing message.
 /// * `auto_yes` - Whether to skip interactive confirmation.
 ///
@@ -103,14 +127,14 @@ struct ConfigSecurityArgs {
 /// An error when proposal construction, confirmation, signing, or submission fails.
 async fn submit_action(
     api: &mut BulkHttpClient,
-    action: Action,
+    proposed: Vec<Action>,
     preview: bool,
     auto_yes: bool,
 ) -> eyre::Result<()> {
     let admin_multisig = Pubkey::from_str(ADMIN_MULTISIG)?;
     let actions = vec![Action::MultisigPropose(MultisigPropose {
         multisig: admin_multisig,
-        actions: vec![action],
+        actions: proposed,
         proposal_lifetime_secs: None,
         meta: ActionMeta::default(),
     })];
@@ -387,6 +411,40 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn parses_create_market_without_signer_for_dry_run() {
+        let cli = Cli::try_parse_from([
+            "bulk-sdk",
+            "create-market",
+            "PAPER",
+            "high",
+            "--config-dir",
+            "config",
+            "--executor-config",
+            "config/executor-testnet.json5",
+            "--dry-run",
+            "--skip-currency",
+        ])
+        .unwrap();
+        let Command::CreateMarket(args) = cli.command else {
+            panic!("expected CreateMarket");
+        };
+        assert!(args.dry_run && args.skip_currency);
+        assert_eq!(args.symbol, "PAPER");
+        assert_eq!(args.tier, "high");
+        assert!(Cli::try_parse_from([
+            "bulk-sdk",
+            "create-market",
+            "PAPER",
+            "invalid",
+            "--config-dir",
+            "config",
+            "--executor-config",
+            "executor.json5"
+        ])
+        .is_err());
+    }
+
     /// Verifies that the SDK CLI accepts the Ledger options used by the admin wrappers.
     #[test]
     fn parses_ledger_signer_options() {
@@ -445,11 +503,25 @@ mod tests {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
-    let action = match cli.command {
-        Command::ConfigRiskMatrix(args) => config_risk_action(&args.coin, &args.csv)?,
+    let actions = match cli.command {
+        Command::CreateMarket(args) => {
+            let actions = create_market_actions(
+                &args.config_dir,
+                &args.executor_config,
+                &args.symbol,
+                &args.tier,
+                args.skip_currency,
+            )?;
+            if args.dry_run {
+                println!("{}", serde_json::to_string_pretty(&actions)?);
+                return Ok(());
+            }
+            actions
+        }
+        Command::ConfigRiskMatrix(args) => vec![config_risk_action(&args.coin, &args.csv)?],
         Command::ConfigSecurity(args) => {
             let json = read_inline_or_file(&args.json)?;
-            config_security_action(&json)?
+            vec![config_security_action(&json)?]
         }
     };
 
@@ -477,5 +549,5 @@ async fn main() -> eyre::Result<()> {
         default_timeout: Duration::from_secs(120),
     };
     let mut api = BulkHttpClient::new(&config)?;
-    submit_action(&mut api, action, cli.preview, cli.yes).await
+    submit_action(&mut api, actions, cli.preview, cli.yes).await
 }
