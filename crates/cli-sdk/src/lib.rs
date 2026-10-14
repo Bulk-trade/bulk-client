@@ -76,6 +76,55 @@ pub fn create_market_actions(
     build_market_actions(plan)
 }
 
+/// Build a liquidator update by copying the current wildcard policy to a new pair.
+///
+/// # Arguments
+/// * `config` - Current JSON returned by the liquidator configuration API.
+/// * `symbol` - Traded pair name, such as PAPER-USD.
+///
+/// # Returns
+/// A full configuration update, or an error for a missing wildcard or existing pair.
+pub fn market_liquidator_action(
+    mut config: serde_json::Value,
+    symbol: &str,
+) -> eyre::Result<Action> {
+    if let Some(serde_json::Value::Object(instruments)) = config.get_mut("instruments") {
+        let entries = std::mem::take(instruments)
+            .into_iter()
+            .map(|(name, mut entry)| {
+                let policy = entry.as_object_mut().ok_or_else(|| {
+                    eyre::eyre!("liquidator instrument '{name}' must be an object")
+                })?;
+                policy.insert("symbol".into(), serde_json::Value::String(name));
+                Ok(entry)
+            })
+            .collect::<eyre::Result<Vec<_>>>()?;
+        config["instruments"] = serde_json::Value::Array(entries);
+    }
+    let mut config: bulk_client::msgs::liquidator::LiqConfig = serde_json::from_value(config)?;
+    if config
+        .instruments
+        .iter()
+        .any(|entry| entry.symbol == symbol)
+    {
+        eyre::bail!("liquidator configuration already contains {symbol}");
+    }
+    let mut matches = config
+        .instruments
+        .iter()
+        .filter(|entry| entry.symbol == "*");
+    let mut policy = matches
+        .next()
+        .ok_or_else(|| eyre::eyre!("liquidator configuration has no wildcard '*' policy"))?
+        .clone();
+    if matches.next().is_some() {
+        eyre::bail!("liquidator configuration has multiple wildcard policies");
+    }
+    policy.symbol = symbol.into();
+    config.instruments.push(policy);
+    Ok(Action::UpdateLiquidatorConfig(config))
+}
+
 // ───── Configuration Discovery ───────────────────────────────────────────────────────────────────
 
 fn read_market_plan(
@@ -335,6 +384,68 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn liquidator_copies_wildcard_and_preserves_current_policies() {
+        use bulk_client::msgs::liquidator::{ExecutionMode, LiqConfig, LiqConfigByInstrument};
+        let wildcard = LiqConfigByInstrument {
+            symbol: "*".into(),
+            execution_mode: ExecutionMode::Paused,
+            max_exposure: 12345.0,
+            apply_reserve: true,
+            ..Default::default()
+        };
+        let existing = LiqConfigByInstrument {
+            symbol: "BTC-USD".into(),
+            max_exposure: 999.0,
+            ..wildcard.clone()
+        };
+        let config = LiqConfig {
+            cross_exposure: 45678.0,
+            instruments: vec![wildcard.clone(), existing.clone()],
+            ..Default::default()
+        };
+        let array = serde_json::to_value(&config).unwrap();
+        let mut object = array.clone();
+        object["instruments"] = serde_json::json!({
+            "*": wildcard, "BTC-USD": existing
+        });
+        for raw in [array.clone(), object] {
+            let Action::UpdateLiquidatorConfig(updated) =
+                market_liquidator_action(raw, "FOO-USD").unwrap()
+            else {
+                panic!("wrong action")
+            };
+            assert_eq!(updated.cross_exposure, config.cross_exposure);
+            assert_eq!(updated.instruments.len(), 3);
+            let new = updated.instruments.last().unwrap();
+            assert_eq!(new.symbol, "FOO-USD");
+            let mut copied = serde_json::to_value(new).unwrap();
+            copied["symbol"] = serde_json::json!("*");
+            assert_eq!(copied, serde_json::to_value(&wildcard).unwrap());
+            for policy in &config.instruments {
+                let preserved = updated
+                    .instruments
+                    .iter()
+                    .find(|x| x.symbol == policy.symbol)
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(preserved).unwrap(),
+                    serde_json::to_value(policy).unwrap()
+                );
+            }
+        }
+        assert!(market_liquidator_action(array.clone(), "BTC-USD").is_err());
+        let mut missing = array.clone();
+        missing["instruments"] = serde_json::json!([]);
+        assert!(market_liquidator_action(missing, "FOO-USD").is_err());
+        let mut duplicate = array;
+        duplicate["instruments"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(wildcard).unwrap());
+        assert!(market_liquidator_action(duplicate, "FOO-USD").is_err());
+    }
 
     #[test]
     fn discovers_tier_references_and_substitutes_new_symbol() {

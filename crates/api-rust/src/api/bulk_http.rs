@@ -241,6 +241,24 @@ impl BulkHttpClient {
         Ok(resp.json().await?)
     }
 
+    /// Fetch the current liquidator configuration from the public API.
+    ///
+    /// # Arguments
+    /// None.
+    ///
+    /// # Returns
+    /// The configuration JSON, or an error when the request or decoding fails.
+    pub async fn get_liquidator_config(&self) -> eyre::Result<serde_json::Value> {
+        let response = self
+            .client
+            .get(format!("{}/config", self.config.base_url))
+            .query(&[("which", "liquidator")])
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(response.json().await?)
+    }
+
     /// Get market ticker/statistics for a symbol.
     pub async fn get_ticker(&self, symbol: &str) -> eyre::Result<Ticker> {
         let resp = self

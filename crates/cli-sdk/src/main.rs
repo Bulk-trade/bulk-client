@@ -1,4 +1,6 @@
-use bulk_cli_sdk::{config_risk_action, config_security_action, create_market_actions};
+use bulk_cli_sdk::{
+    config_risk_action, config_security_action, create_market_actions, market_liquidator_action,
+};
 use bulk_client::msgs::{MultisigPropose, Response};
 use bulk_client::parts::{make_nonce, HttpConfig};
 use bulk_client::transaction::{
@@ -91,7 +93,7 @@ struct CreateMarketArgs {
     /// Omit the currency action when the underlier already exists on the exchange.
     #[arg(long)]
     skip_currency: bool,
-    /// Validate and print actions without a signer or network access.
+    /// Fetch current liquidator config, validate, and print actions without a signer.
     #[arg(long)]
     dry_run: bool,
 }
@@ -505,13 +507,24 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
     let actions = match cli.command {
         Command::CreateMarket(args) => {
-            let actions = create_market_actions(
+            let mut actions = create_market_actions(
                 &args.config_dir,
                 &args.executor_config,
                 &args.symbol,
                 &args.tier,
                 args.skip_currency,
             )?;
+            let api = BulkHttpClient::new(&HttpConfig {
+                base_url: cli.api_url.trim_end_matches('/').to_owned(),
+                signer: None,
+                signature_domain: None,
+                default_timeout: Duration::from_secs(120),
+            })?;
+            let config = api.get_liquidator_config().await?;
+            actions.push(market_liquidator_action(
+                config,
+                &format!("{}-USD", args.symbol),
+            )?);
             if args.dry_run {
                 println!("{}", serde_json::to_string_pretty(&actions)?);
                 return Ok(());

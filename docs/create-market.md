@@ -14,12 +14,13 @@ From bulk-client, build the utility:
 cargo build --manifest-path crates/cli-sdk/Cargo.toml --bin bulk-sdk
 ```
 
-Validate locally without a signer or API connection:
+Validate without a signer (requires the target API to read its current liquidator config):
 
 ```sh
 crates/cli-sdk/target/debug/bulk-sdk create-market PAPER high \
   --config-dir ../bulk-sdk/config \
   --executor-config ../bulk-sdk/config/executor-testnet.json5 \
+  --api-url http://64.130.50.69:12000/api/v1 \
   --dry-run
 ```
 
@@ -39,9 +40,9 @@ shows the canonical transaction and requests confirmation. `--yes` skips confirm
 for a large risk matrix. `--dry-run` still prints every encoded action for inspection.
 
 Action order is currency, perpetual, volatility, fair price, regime, currency risk matrix,
-funding, and `AddMarket`. Use `--skip-currency` if the underlier already exists on the target
-exchange; there is no automatic existence detection. This yields seven actions instead
-of eight. The command submits the proposal; multisig approval and execution follow the
+funding, `AddMarket`, and `UpdateLiquidatorConfig`. Use `--skip-currency` if the underlier already exists on the target
+exchange; there is no automatic existence detection. This yields eight actions instead
+of nine. The command submits the proposal; multisig approval and execution follow the
 normal protocol policy.
 
 Choose `low`, `medium`, or `high`. Models come from
@@ -65,3 +66,11 @@ Run tests with:
 ```sh
 cargo test --manifest-path crates/cli-sdk/Cargo.toml
 ```
+
+Liquidator configuration is fetched from the selected API's `/config?which=liquidator`
+endpoint on every invocation, including dry runs. The `*` instrument policy is copied
+in full to the new pair, preserving the wildcard, global settings, and existing pairs.
+The complete updated configuration is included in the same multisig proposal.
+A missing or duplicate wildcard, existing pair policy, or failed API request aborts
+proposal creation. Because this replaces the full liquidator config, review pending
+config changes before approving the proposal to avoid overwriting intervening updates.
