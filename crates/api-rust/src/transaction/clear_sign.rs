@@ -270,8 +270,10 @@ impl ClearSignMessage {
                 Self::fmt_opt(action.price)
             )
         }
+        Action::Reserved67(_) => "Reserved action ordinal 67".to_owned(),
+        Action::HarvestProviderFees(action) => format!("HarvestProviderFees provider={} percentage={:?}", action.provider, action.percentage),
         Action::PricingAdmin(action) => {
-            format!("PricingAdmin {} {:?}", action.instrument, action.source)
+            format!("PricingAdmin {} {:?}", action.instrument, action.oracle_source)
         }
         Action::ConfigFairPrice(action) => format!(
             "ConfigFairPrice payload={}",
@@ -331,14 +333,15 @@ impl ClearSignMessage {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig settle_ccy={} max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8}",
+            "UpdateRiskConfig settle_ccy={} max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8} eloss_timescale={:.8}",
             action.settle_ccy,
             action.max_loss,
             action.eloss_floor,
             action.max_pliq,
             action.margin_buffer,
             action.corr_discount,
-            action.cascade_factor
+            action.cascade_factor,
+            action.eloss_timescale
         ),
         Action::UpdateAccountPolicy(action) => format!(
             "UpdateAccountPolicy withdraw_fee_usd={:?} min_withdraw_usd={:?} min_external_transfer_usd={:?}",

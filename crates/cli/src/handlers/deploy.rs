@@ -199,9 +199,43 @@ pub async fn handle_pricing_admin(
         submit,
         vec![Action::PricingAdmin(PricingAdmin {
             instrument: args.instrument.into(),
-            source,
+            oracle_source: source,
             meta: Default::default(),
         })],
+    )
+    .await
+}
+
+/// Proposes distribution of pending provider fees through the fee multisig.
+///
+/// # Arguments
+/// * `api` - Client submitting the proposal.
+/// * `args` - Provider and optional distribution percentage.
+/// * `submit` - Preview and confirmation settings.
+///
+/// # Returns
+/// An error for an invalid percentage or failed submission.
+pub async fn handle_harvest_provider_fees(
+    api: &mut BulkHttpClient,
+    args: crate::commands::HarvestProviderFeesArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    if let Some(percentage) = args.percentage {
+        eyre::ensure!(
+            percentage.is_finite() && (0.0..=100.0).contains(&percentage),
+            "percentage must be finite and between 0 and 100"
+        );
+    }
+    submit_actions(
+        api,
+        submit,
+        vec![Action::HarvestProviderFees(
+            bulk_client::msgs::HarvestProviderFees {
+                provider: args.provider,
+                percentage: args.percentage,
+                meta: Default::default(),
+            },
+        )],
     )
     .await
 }

@@ -41,6 +41,28 @@ pip install bulk-client
 - **Sub-accounts & multisig** - First-class support for sub-account management and multisig smart accounts
 - **Ed25519 signing** - Native signing with wincode binary serialization
 
+## Administrative actions
+
+The Rust API and CLI follow the SDK action wire format, including:
+
+```bash
+bulk pricing-admin BTC bip
+bulk pricing-admin BTC bulk-or-bip
+bulk pricing-admin BTC all
+bulk harvest-provider-fees <provider-pubkey> --percentage 25
+```
+
+`harvest-provider-fees` creates a fee multisig proposal. Omit `--percentage` to
+distribute all pending fees; percentages range from 0 to 100 and round to 0.01%.
+Liquidator configuration updates create protocol admin multisig proposals.
+
+Pricing JSON now uses `oracleSource`, accepting a name (`"Pyth"`, `"Bulk"`, or
+`"BIP"`) or an array such as `["Bulk", "BIP"]`. The legacy `source` field and
+`"both"` value remain accepted. Rust uses `PricingAdmin::oracle_source` and
+combines sources with `OracleSource::Bulk | OracleSource::BIP`.
+
+Risk configuration accepts `eloss_timescale`, defaulting to `sqrt(3)` when omitted.
+
 ## Architecture
 
 BULK client is built for latency-sensitive trading. Here's what makes it fast:

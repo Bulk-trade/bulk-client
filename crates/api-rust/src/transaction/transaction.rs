@@ -730,6 +730,10 @@ impl Serialize for RawSignableAction<'_> {
             Action::UserAdmin(action) => {
                 serializer.serialize_newtype_variant("Action", 65, "UserAdmin", action)
             }
+            Action::Reserved67(_) => Err(serde::ser::Error::custom("reserved action ordinal 67")),
+            Action::HarvestProviderFees(action) => {
+                serializer.serialize_newtype_variant("Action", 68, "HarvestProviderFees", action)
+            }
             Action::StartPreDepositDatasetMigration(action) => serializer
                 .serialize_newtype_variant("Action", 66, "StartPreDepositDatasetMigration", action),
         }
@@ -811,6 +815,36 @@ mod tests {
         let bytes = bincode::serialize(&actions).unwrap();
         let decoded: Vec<Action> = bincode::deserialize(&bytes).unwrap();
         assert_eq!(decoded.len(), 3);
+    }
+
+    #[test]
+    fn admin_actions_match_current_sdk_signing_vectors() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/sdk-admin-action-vectors.json")).unwrap();
+        for vector in fixtures["vectors"].as_array().unwrap() {
+            let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
+            let actual = Transaction::raw_signable_bytes(
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+            )
+            .unwrap();
+            let expected: Vec<u8> = vector["signable_hex"]
+                .as_str()
+                .unwrap()
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect();
+            assert_eq!(actual, expected, "{}", vector["actions"]);
+            let encoded = bincode::serialize(&actions).unwrap();
+            let decoded: Vec<Action> = bincode::deserialize(&encoded).unwrap();
+            assert_eq!(
+                serde_json::to_value(decoded).unwrap(),
+                serde_json::to_value(actions).unwrap()
+            );
+        }
     }
 
     #[test]

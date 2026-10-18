@@ -5,11 +5,11 @@ pub mod handlers;
 use crate::commands::{
     AccountPolicyArgs, AddMarketArgs, AgentWalletArgs, CancelAllArgs, CancelArgs, ConfigArgs,
     ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, CorrsArgs, CreateMultisigArgs,
-    CreateSubAccountArgs, DepositArgs, FaucetArgs, FundingConfigArgs, LedgerInfoArgs,
-    LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs, PlaceArgs,
-    PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, StopArgs, TakeProfitArgs,
-    TrailingArgs, TransferArgs, UpdateLeverageArgs, UpdateMultisigPolicyArgs, UserAdminArgs,
-    WithdrawIntentArgs,
+    CreateSubAccountArgs, DepositArgs, FaucetArgs, FundingConfigArgs, HarvestProviderFeesArgs,
+    LedgerInfoArgs, LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs,
+    PlaceArgs, PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs,
+    StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs,
+    UpdateMultisigPolicyArgs, UserAdminArgs, WithdrawIntentArgs,
 };
 use crate::common::submit::SubmitOptions;
 use crate::common::{resolve_api_url, CliConfig};
@@ -22,8 +22,8 @@ use crate::handlers::conditional::{
     handle_range, handle_stop, handle_take_profit, handle_trailing,
 };
 use crate::handlers::deploy::{
-    handle_add_market, handle_config_fees, handle_config_maker, handle_corrs, handle_market_admin,
-    handle_pricing_admin,
+    handle_add_market, handle_config_fees, handle_config_maker, handle_corrs,
+    handle_harvest_provider_fees, handle_market_admin, handle_pricing_admin,
 };
 use crate::handlers::multisig::{
     handle_create_multisig, handle_multisig_approve, handle_multisig_cancel,
@@ -312,6 +312,9 @@ enum Command {
     /// Example: bulk pricing-admin BTC both
     #[command(name = "pricing-admin")]
     PricingAdmin(PricingAdminArgs),
+
+    /// Distribute pending provider fees through the fee multisig.
+    HarvestProviderFees(HarvestProviderFeesArgs),
 }
 
 impl Command {
@@ -326,6 +329,7 @@ impl Command {
                 | Command::PricingAdmin(_)
                 | Command::UpdateFunding(_)
                 | Command::UserAdmin(_)
+                | Command::HarvestProviderFees(_)
         )
     }
 }
@@ -503,6 +507,9 @@ async fn main() -> eyre::Result<()> {
         Command::AddMarket(args) => handle_add_market(&mut api, args, &submit).await,
         Command::MarketAdmin(args) => handle_market_admin(&mut api, args, &submit).await,
         Command::PricingAdmin(args) => handle_pricing_admin(&mut api, args, &submit).await,
+        Command::HarvestProviderFees(args) => {
+            handle_harvest_provider_fees(&mut api, args, &submit).await
+        }
         Command::LedgerInfo(_) => unreachable!("handled before API setup"),
         Command::Config(_) => unreachable!("handled before API setup"),
         Command::Deposit(_) | Command::WithdrawIntent(_) => {
@@ -526,6 +533,36 @@ fn keypair_from_private_key(key_b58: &str) -> eyre::Result<Keypair> {
 mod tests {
     use super::*;
     use solana_signer::Signer;
+
+    #[test]
+    fn parse_new_sdk_actions_and_bip_sources() {
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "harvest-provider-fees",
+            "11111111111111111111111111111111",
+            "--percentage",
+            "25.125",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::HarvestProviderFees(HarvestProviderFeesArgs {
+                percentage: Some(25.125),
+                ..
+            })
+        ));
+        for source in [
+            "bip",
+            "all",
+            "bulk-or-bip",
+            "pyth-or-bip",
+            "both",
+            "bulk",
+            "pyth",
+        ] {
+            assert!(Cli::try_parse_from(["bulk", "pricing-admin", "BTC", source]).is_ok());
+        }
+    }
 
     #[test]
     fn onchain_private_key_preserves_identity_and_rejects_malformed_keypairs() {

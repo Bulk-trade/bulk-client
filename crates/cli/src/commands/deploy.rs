@@ -111,6 +111,10 @@ pub struct MarketAdminArgs {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OracleSourceArg {
+    Bip,
+    All,
+    BulkOrBip,
+    PythOrBip,
     Both,
     Pyth,
     Bulk,
@@ -119,6 +123,10 @@ pub enum OracleSourceArg {
 impl From<OracleSourceArg> for OracleSource {
     fn from(source: OracleSourceArg) -> Self {
         match source {
+            OracleSourceArg::Bip => Self::BIP,
+            OracleSourceArg::All => Self::All,
+            OracleSourceArg::BulkOrBip => Self::Bulk | Self::BIP,
+            OracleSourceArg::PythOrBip => Self::Pyth | Self::BIP,
             OracleSourceArg::Both => Self::Both,
             OracleSourceArg::Pyth => Self::Pyth,
             OracleSourceArg::Bulk => Self::Bulk,
@@ -133,4 +141,14 @@ pub struct PricingAdminArgs {
     /// Accepted publisher source.
     #[arg(value_enum)]
     pub source: OracleSourceArg,
+}
+
+/// Provider fee distribution authorized by the fee multisig.
+#[derive(Args, Debug)]
+pub struct HarvestProviderFeesArgs {
+    /// Provider receiving its share of pending fees.
+    pub provider: solana_pubkey::Pubkey,
+    /// Percentage to distribute in [0, 100]; omit to distribute all.
+    #[arg(long)]
+    pub percentage: Option<f64>,
 }

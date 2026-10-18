@@ -34,10 +34,36 @@ pub struct RiskConfigChange {
     #[serde(default = "default_cascade_factor")]
     pub cascade_factor: f64,
 
+    /// Divisor applied to risk-matrix expected losses.
+    #[serde(default = "default_eloss_timescale")]
+    pub eloss_timescale: f64,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }
 
 fn default_cascade_factor() -> f64 {
     0.25
+}
+
+fn default_eloss_timescale() -> f64 {
+    3.0_f64.sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn risk_timescale_defaults_and_preserves_explicit_values() {
+        let mut json = serde_json::json!({
+            "settle_ccy": "USD", "max_loss": 15000.0, "eloss_floor": 500.0,
+            "max_pliq": 0.9, "margin_buffer": 0.05, "corr_discount": 0.5
+        });
+        let default: RiskConfigChange = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(default.eloss_timescale, 3.0_f64.sqrt());
+        json["eloss_timescale"] = serde_json::json!(2.0);
+        let explicit: RiskConfigChange = serde_json::from_value(json).unwrap();
+        assert_eq!(explicit.eloss_timescale, 2.0);
+    }
 }

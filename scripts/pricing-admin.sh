@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <instrument> <both|pyth|bulk> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <instrument> <both|pyth|bulk|bip|all|bulk-or-bip|pyth-or-bip> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
 Configures the accepted oracle publisher source for an instrument.
 EOF
@@ -24,9 +24,9 @@ if (( $# != 2 )); then
 fi
 
 case "$2" in
-  both|pyth|bulk) ;;
+  both|pyth|bulk|bip|all|bulk-or-bip|pyth-or-bip) ;;
   *)
-    echo "error: source must be one of: both, pyth, bulk" >&2
+    echo "error: source must be one of: both, pyth, bulk, bip, all, bulk-or-bip, pyth-or-bip" >&2
     exit 2
     ;;
 esac

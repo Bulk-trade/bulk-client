@@ -9,12 +9,12 @@ use crate::msgs::subaccounts::{CreateSubAccount, RemoveSubAccount, RenameSubAcco
 use crate::msgs::{
     ActivateProtocolVersion, AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon,
     CancelAll, CancelOrder, ConfigFunding, ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1,
-    Faucet, FrostWithdrawStart, InitializeVault, Join, LimitOrder, MarketAdmin, MarketOrder,
-    Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature, PreDepositCredit, Price,
-    PricingAdmin, PythOracle, RevokeCommissionFee, RevokePendingActivation, RewardSettlement,
-    SolanaBlockAnchor, StartPreDepositDatasetMigration, UpdateAccountPolicy, UpdateFrostGroup,
-    UpdateUserSettings, UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw,
-    WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
+    Faucet, FrostWithdrawStart, HarvestProviderFees, InitializeVault, Join, LimitOrder,
+    MarketAdmin, MarketOrder, Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature,
+    PreDepositCredit, Price, PricingAdmin, PythOracle, RevokeCommissionFee,
+    RevokePendingActivation, RewardSettlement, SolanaBlockAnchor, StartPreDepositDatasetMigration,
+    UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings, UpdateValidatorSet, UserAdmin,
+    WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ pub struct ActionMeta {
     pub seqno: u32,
     pub hash: Option<Hash>,
 }
+
+#[doc(hidden)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ReservedAction {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,6 +241,12 @@ pub enum Action {
     // StartPreDepositDatasetMigration = ordinal(66)
     #[serde(rename = "startPreDepositDatasetMigration")]
     StartPreDepositDatasetMigration(StartPreDepositDatasetMigration),
+    // Preserve ordinal 68 without exposing the SDK-internal startup action.
+    #[doc(hidden)]
+    Reserved67(ReservedAction),
+    // HarvestProviderFees = ordinal(68)
+    #[serde(rename = "harvestProviderFees")]
+    HarvestProviderFees(HarvestProviderFees),
 }
 
 macro_rules! dispatch {
@@ -315,6 +325,8 @@ macro_rules! dispatch {
             Action::ConfigFunding($x) => $body,
             Action::UserAdmin($x) => $body,
             Action::StartPreDepositDatasetMigration($x) => $body,
+            Action::Reserved67(reserved) => match *reserved {},
+            Action::HarvestProviderFees($x) => $body,
         }
     };
 }
@@ -336,6 +348,7 @@ impl Action {
                 | Action::ConfigVolatility(_)
                 | Action::ConfigRisk(_)
                 | Action::UpdateRiskConfig(_)
+                | Action::UpdateLiquidatorConfig(_)
                 | Action::UpdateAccountPolicy(_)
                 | Action::ConfigFunding(_)
                 | Action::UserAdmin(_)
@@ -349,7 +362,9 @@ impl Action {
     pub fn is_fee_admin_multisig_action(&self) -> bool {
         matches!(
             self,
-            Action::ConfigFeePolicy(_) | Action::ConfigMakerRebateTier(_)
+            Action::ConfigFeePolicy(_)
+                | Action::ConfigMakerRebateTier(_)
+                | Action::HarvestProviderFees(_)
         )
     }
 
@@ -583,6 +598,7 @@ impl_action_from!(DkgFinished, DkgFinished);
 impl_action_from!(SolanaBlockAnchor, SolanaBlockAnchor);
 impl_action_from!(ConfigMakerRebateTier, ConfigMakerRebateTier);
 impl_action_from!(PricingAdmin, PricingAdmin);
+impl_action_from!(HarvestProviderFees, HarvestProviderFees);
 impl_action_from!(FrostWithdrawStart, FrostWithdrawStart);
 impl_action_from!(PreDepositCredit, PreDepositCredit);
 impl_action_from!(UpdateAccountPolicy, UpdateAccountPolicy);
@@ -601,6 +617,19 @@ mod tests {
     use crate::common::tif::TimeInForce;
     use crate::msgs::OracleSource;
     use std::sync::Arc;
+
+    #[test]
+    fn harvest_keeps_sdk_ordinal_after_reserved_slot() {
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "harvestProviderFees": {"provider": Pubkey::default().to_string()}
+        }))
+        .unwrap();
+        let bytes = bincode::serialize(&action).unwrap();
+        assert_eq!(&bytes[..4], &68_u32.to_le_bytes());
+        assert!(action.is_fee_admin_multisig_action());
+        assert!(serde_json::from_str::<Action>(r#"{"onStart":{}}"#).is_err());
+        assert!(serde_json::from_str::<Action>(r#"{"reserved67":{}}"#).is_err());
+    }
 
     #[test]
     fn test_limit_hash() {
@@ -634,7 +663,7 @@ mod tests {
     fn pricing_admin_uses_wire_ordinal_58_and_camel_case_json() {
         let action = Action::PricingAdmin(PricingAdmin {
             instrument: Arc::from("BTC"),
-            source: OracleSource::Bulk,
+            oracle_source: OracleSource::Bulk,
             meta: ActionMeta::default(),
         });
 
@@ -645,7 +674,7 @@ mod tests {
             serde_json::json!({
                 "pricingAdmin": {
                     "instrument": "BTC",
-                    "source": "bulk"
+                    "oracleSource": "Bulk"
                 }
             })
         );

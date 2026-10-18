@@ -301,6 +301,19 @@ pub struct RevokePendingActivation {
     pub meta: ActionMeta,
 }
 
+/// Distributes a share of a provider's pending fees from the protocol fee pool.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarvestProviderFees {
+    #[serde(with = "crate::msgs::serde_pubkey")]
+    pub provider: Pubkey,
+    /// Percentage in [0, 100], rounded to the nearest 0.01%; omission distributes all.
+    #[serde(default)]
+    pub percentage: Option<f64>,
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

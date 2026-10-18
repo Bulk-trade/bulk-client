@@ -265,6 +265,23 @@ mod tests {
     use bulk_client::msgs::{AddMarket, CancelAll, ConfigMakerRebateTier, OpaqueAction, UserAdmin};
 
     #[test]
+    fn new_action_authorization_matches_sdk() {
+        let harvest = Action::HarvestProviderFees(bulk_client::msgs::HarvestProviderFees {
+            provider: Pubkey::default(),
+            percentage: None,
+            meta: Default::default(),
+        });
+        let liquidator = Action::UpdateLiquidatorConfig(Default::default());
+        let wrapped = wrap_admin_actions(vec![harvest, liquidator]);
+        let [Action::MultisigPropose(fee), Action::MultisigPropose(admin)] = wrapped.as_slice()
+        else {
+            panic!("expected separate fee/admin proposals");
+        };
+        assert_eq!(fee.multisig, Pubkey::from_str(FEE_ADMIN_MULTISIG).unwrap());
+        assert_eq!(admin.multisig, Pubkey::from_str(ADMIN_MULTISIG).unwrap());
+    }
+
+    #[test]
     fn wraps_adjacent_admin_actions_in_one_proposal() {
         let wrapped = wrap_admin_actions(vec![
             Action::AddMarket(AddMarket {
