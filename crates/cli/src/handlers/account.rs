@@ -124,7 +124,11 @@ pub async fn handle_transfer(
 ) -> eyre::Result<()> {
     println!(
         "Transferring {} {} from {} → {} ({:?})",
-        args.amount, args.symbol, args.from, args.to, args.kind
+        args.amount,
+        args.symbol.as_deref().unwrap_or("margin"),
+        args.from,
+        args.to,
+        args.kind
     );
 
     let action = Action::Transfer(Transfer {
@@ -132,6 +136,7 @@ pub async fn handle_transfer(
         from: args.from,
         to: args.to,
         margin_amount: args.amount,
+        symbol: args.symbol.map(Arc::from),
         meta: Default::default(),
     });
 

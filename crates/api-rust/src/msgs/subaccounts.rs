@@ -31,7 +31,7 @@ pub struct CreateSubAccount {
     /// sub-account name
     pub name: Arc<str>,
     /// amount of margin to transfer
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub margin_amount: Option<f64>,
 
     #[serde(skip)]
@@ -64,6 +64,10 @@ pub struct Transfer {
     pub to: Pubkey,
     /// amount of instrument to transfer
     pub margin_amount: f64,
+
+    /// Isolated perpetual symbol; when present, `to` identifies the parent account.
+    #[serde(default)]
+    pub symbol: Option<Arc<str>>,
 
     #[serde(skip)]
     pub meta: ActionMeta,

@@ -191,7 +191,7 @@ enum Command {
 
     /// Transfer margin between accounts.
     ///
-    /// Example: bulk transfer <from> <to> USDC 500
+    /// Example: bulk transfer <from> <to> 500
     Transfer(TransferArgs),
 
     // ── Solana vault ─────────────────────────────────────────────────────────

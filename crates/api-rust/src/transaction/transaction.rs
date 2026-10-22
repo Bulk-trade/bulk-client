@@ -26,6 +26,22 @@ enum SignableSchema {
     V4,
 }
 
+pub(crate) const SIGNABLE_ACTIONS_V6_PREFIX: &[u8; 21] =
+    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x06";
+
+fn action_contains_transfer(action: &Action) -> bool {
+    match action {
+        Action::Transfer(_) => true,
+        Action::Trigger(trigger) => trigger.actions.iter().any(action_contains_transfer),
+        Action::OnFill(on_fill) => {
+            action_contains_transfer(&on_fill.trigger)
+                || on_fill.actions.iter().any(action_contains_transfer)
+        }
+        Action::MultisigPropose(proposal) => proposal.actions.iter().any(action_contains_transfer),
+        _ => false,
+    }
+}
+
 /// Detects liquidator configuration updates at every action depth.
 fn action_contains_liquidator_update(action: &Action) -> bool {
     match action {
@@ -288,7 +304,10 @@ impl Transaction {
             validate_nested_actions(action)?;
         }
         let mut serialized = Vec::new();
-        if actions.iter().any(action_contains_liquidator_update) {
+        if actions.iter().any(action_contains_transfer) {
+            serialized.extend_from_slice(SIGNABLE_ACTIONS_V6_PREFIX);
+            bincode::serialize_into(&mut serialized, actions)?;
+        } else if actions.iter().any(action_contains_liquidator_update) {
             serialized.extend_from_slice(SIGNABLE_ACTIONS_V5_PREFIX);
             bincode::serialize_into(&mut serialized, actions)?;
         } else {
@@ -844,6 +863,61 @@ mod tests {
                 serde_json::to_value(decoded).unwrap(),
                 serde_json::to_value(actions).unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn create_subaccounts_match_sdk_optional_margin_vectors() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/sdk-subaccount-vectors.json")).unwrap();
+        for vector in fixtures["vectors"].as_array().unwrap() {
+            let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
+            let signable = Transaction::raw_signable_bytes(
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+            )
+            .unwrap();
+            assert_eq!(
+                bytes_hex(&signable),
+                vector["signable_hex"].as_str().unwrap()
+            );
+            let encoded = bincode::serialize(&actions).unwrap();
+            let restored: Vec<Action> = bincode::deserialize(&encoded).unwrap();
+            assert_eq!(serde_json::to_value(restored).unwrap(), vector["actions"]);
+        }
+    }
+
+    #[test]
+    fn iso_transfers_match_current_sdk_vectors_at_every_depth() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/sdk-transfer-vectors.json")).unwrap();
+        for vector in fixtures["vectors"].as_array().unwrap() {
+            let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
+            let signable = Transaction::raw_signable_bytes(
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+            )
+            .unwrap();
+            assert!(signable.starts_with(SIGNABLE_ACTIONS_V6_PREFIX));
+            assert_eq!(
+                bytes_hex(&signable),
+                vector["signable_hex"].as_str().unwrap()
+            );
+            let message = crate::transaction::ClearSignMessage::canonical_message_with_options(
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+                crate::transaction::ClearSignMessageOptions {
+                    include_signable_schema: true,
+                },
+            )
+            .unwrap();
+            assert!(message.contains("version_u8(6)"));
         }
     }
 

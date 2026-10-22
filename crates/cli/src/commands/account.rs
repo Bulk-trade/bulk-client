@@ -107,8 +107,9 @@ pub struct TransferArgs {
     #[arg(value_parser = parse_pubkey)]
     pub to: Pubkey,
 
-    /// Asset symbol to transfer (e.g. USDC).
-    pub symbol: String,
+    /// Isolated perpetual symbol; `to` identifies the parent account when set.
+    #[arg(long)]
+    pub symbol: Option<String>,
 
     /// Amount to transfer.
     pub amount: f64,

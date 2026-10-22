@@ -91,7 +91,11 @@ impl ClearSignMessage {
             let _ = writeln!(
                 message,
                 "Signable-Schema: {}",
-                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V5_PREFIX)
+                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V6_PREFIX)
+                {
+                    "u64_max_le||bulk-actions_utf8||version_u8(6)||bincode(actions_with_iso_transfer_symbol)||nonce_le_u64||account_bytes||signature_domain_u8"
+                } else if signable
+                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V5_PREFIX)
                 {
                     "u64_max_le||bulk-actions_utf8||version_u8(5)||bincode(actions_with_current_liquidator_config)||nonce_le_u64||account_bytes||signature_domain_u8"
                 } else if signable
@@ -220,8 +224,9 @@ impl ClearSignMessage {
             )
         }
         Action::Transfer(action) => format!(
-            "Transfer {:?} from={} to={} amt={:.8}",
+            "Transfer {:?} from={} to={} amt={:.8} symbol={}",
             action.kind, action.from, action.to, action.margin_amount,
+            action.symbol.as_deref().unwrap_or("-"),
         ),
         Action::CreateMultisig(action) => Self::create_multisig(action),
         Action::MultisigPropose(action) => format!(

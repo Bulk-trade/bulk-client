@@ -315,7 +315,8 @@ bulk trail BTC-USD 0.1 --buy --trail-bps 200    # trailing stop
 
 # Sub-accounts
 bulk create-subaccount mybot --margin-symbol USDC --margin-amount 1000
-bulk transfer <from> <to> USDC 500
+bulk transfer <from> <to> 500
+bulk transfer <from> <parent> 500 --symbol BTC-USD
 
 # Multisig
 bulk create-multisig <pk1>,<pk2> --threshold 2 --lock 120
