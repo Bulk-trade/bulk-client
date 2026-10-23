@@ -123,8 +123,14 @@ impl ClearSignMessage {
 
     fn render_action(message: &mut String, action: &Action, path: String) {
         let _ = writeln!(message, "[{path}] {}", Self::action_line(action));
-        if let Action::MultisigPropose(proposal) = action {
-            for (index, nested_action) in proposal.actions.iter().enumerate() {
+        let nested_actions = match action {
+            Action::MultisigPropose(proposal) => Some(proposal.actions.as_slice()),
+            Action::Trigger(trigger) => Some(trigger.actions.as_slice()),
+            Action::OnFill(on_fill) => Some(on_fill.actions.as_slice()),
+            _ => None,
+        };
+        if let Some(nested_actions) = nested_actions {
+            for (index, nested_action) in nested_actions.iter().enumerate() {
                 Self::render_action(message, nested_action, format!("{path}.{index}"));
             }
         }
@@ -623,6 +629,7 @@ impl ClearSignMessage {
 mod tests {
     use super::{ClearSignMessage, ClearSignMessageOptions};
     use crate::common::tif::TimeInForce;
+    use crate::msgs::conditional::{OnFill, Trigger};
     use crate::msgs::{
         BuilderCode, Faucet, LimitOrder, MarketOrder, OpaqueAction, UpdateMultisigPolicy,
     };
@@ -639,6 +646,90 @@ mod tests {
                 .find(|line| line.starts_with("Signable-Hash: "))
                 .expect("missing signable hash line")
         }
+    }
+
+    #[test]
+    fn message_displays_trigger_actions_in_execution_order() {
+        use crate::msgs::order::CancelAll;
+
+        let actions = [Action::Trigger(Trigger {
+            symbol: Arc::from("BTC-USD"),
+            is_above: true,
+            threshold: 100_000.0,
+            actions: vec![
+                Action::CancelAll(CancelAll {
+                    symbols: vec![],
+                    meta: ActionMeta::default(),
+                }),
+                Action::MarketOrder(MarketOrder {
+                    symbol: Arc::from("BTC-USD"),
+                    is_buy: false,
+                    size: 0.1,
+                    reduce_only: true,
+                    iso: false,
+                    builder_code: None,
+                    slippage: None,
+                    meta: ActionMeta::default(),
+                }),
+            ],
+            meta: ActionMeta::default(),
+        })];
+        let account = Pubkey::new_unique();
+        let message =
+            ClearSignMessage::canonical_message(SignatureDomain::Devnet, account, 42, &actions)
+                .expect("build trigger message");
+        assert!(message.contains("[0] Trigger BTC-USD Above thresh=100000.00000000 nested=2"));
+        let cancel = message.find("[0.0] CancelAll *").expect("display cancel");
+        let sell = message
+            .find("[0.1] Market BTC-USD Sell sz=0.10000000 ro=true iso=false")
+            .expect("display market sell");
+        assert!(cancel < sell);
+        assert_eq!(
+            message,
+            ClearSignMessage::canonical_message(SignatureDomain::Devnet, account, 42, &actions,)
+                .expect("build identical trigger message")
+        );
+    }
+
+    #[test]
+    fn message_displays_on_fill_consequents_recursively() {
+        use crate::msgs::order::CancelAll;
+
+        let actions = [Action::OnFill(OnFill {
+            trigger: Box::new(Action::LimitOrder(LimitOrder {
+                symbol: Arc::from("BTC-USD"),
+                is_buy: true,
+                price: 95_000.0,
+                size: 0.1,
+                tif: TimeInForce::GTC,
+                reduce_only: false,
+                iso: false,
+                builder_code: None,
+                meta: ActionMeta::default(),
+            })),
+            actions: vec![Action::Trigger(Trigger {
+                symbol: Arc::from("BTC-USD"),
+                is_above: false,
+                threshold: 90_000.0,
+                actions: vec![Action::CancelAll(CancelAll {
+                    symbols: vec!["BTC-USD".to_string()],
+                    meta: ActionMeta::default(),
+                })],
+                meta: ActionMeta::default(),
+            })],
+            meta: ActionMeta::default(),
+        })];
+        let message = ClearSignMessage::canonical_message(
+            SignatureDomain::Devnet,
+            Pubkey::new_unique(),
+            42,
+            &actions,
+        )
+        .expect("build on-fill message");
+        assert!(message.contains("[0] OnFill parent="));
+        assert!(message.contains("[0.0] Trigger BTC-USD Below thresh=90000.00000000 nested=1"));
+        assert!(message.contains("[0.0.0] CancelAll BTC-USD"));
+        assert!(message.contains("Actions: 1\n"));
     }
 
     #[test]
