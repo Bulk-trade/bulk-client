@@ -10,7 +10,8 @@ usage() {
   cat >&2 <<EOF
 Usage: $0 <coin> <csv-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
-Replaces one coin's complete risk matrix from a risk-surface CSV file.
+Uploads one coin's raw risk cube from a CSV with duration and cvar(99):start/end columns.
+The executor calibrates it against its current risk and liquidator policies.
 EOF
 }
 

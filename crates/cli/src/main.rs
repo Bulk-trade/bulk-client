@@ -246,7 +246,7 @@ enum Command {
     // ── Admin ────────────────────────────────────────────────────────────
     /// Update risk configuration (JSON or file path).
     ///
-    /// Example: bulk risk-config '{"max_loss":15000,...}'
+    /// Example: bulk risk-config '{"settle_ccy":"USD","maxdeficit":100,"volume_scaler":1.5,"margin_buffer":0.05,"corr_discount":0.5}'
     /// Example: bulk risk-config risk.json
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
@@ -286,7 +286,7 @@ enum Command {
 
     /// Update liquidator configuration (JSON or file path).
     ///
-    /// Example: bulk liq-config '{"max_loss":15000,...}'
+    /// Example: bulk liq-config liquidator.json5
     /// Example: bulk liq-config liquidator.json
     #[command(name = "liq-config")]
     LiqConfig(LiquidatorConfigArgs),

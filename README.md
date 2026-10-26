@@ -61,7 +61,32 @@ Pricing JSON now uses `oracleSource`, accepting a name (`"Pyth"`, `"Bulk"`, or
 `"both"` value remain accepted. Rust uses `PricingAdmin::oracle_source` and
 combines sources with `OracleSource::Bulk | OracleSource::BIP`.
 
-Risk configuration accepts `eloss_timescale`, defaulting to `sqrt(3)` when omitted.
+Risk policy updates use `maxdeficit` (percentage points of maintenance margin consumed,
+from 0 through 100) and `volume_scaler` (a finite positive multiplier on minimum
+liquidation volume per minute, default 1.5). The shared fields are `settle_ccy`,
+`margin_buffer`, `corr_discount`, and `cascade_factor` (default 0.25). The executor
+recalibrates all installed risk matrices when policy changes. The obsolete
+`max_loss`, `eloss_floor`, `max_pliq`, and `eloss_timescale` fields are no longer used.
+
+```sh
+bulk risk-config '{"settle_ccy":"USD","maxdeficit":100,"volume_scaler":1.5,"margin_buffer":0.05,"corr_discount":0.5}'
+```
+
+### Raw risk uploads
+
+```sh
+scripts/update-risk-matrix.sh BTC btc-risk.csv -net testnet
+```
+
+The existing `config-risk-matrix` command submits the `configRisk` action (ordinal 25).
+Its opaque payload is now a bincode-serialized SDK `RiskCube`, containing raw observations
+rather than a calibrated `RiskMatrix`. CSV input requires `side`, `threshold`, `leverage`,
+`regime`, `duration` (seconds), `cvar(99):start`, `cvar(99):end`, `p`, and `liq`.
+Losses are signed percentages of maintenance margin consumed. The executor calibrates
+using its current risk policy and per-instrument minimum liquidation volume; no local
+calibration configuration is needed. Existing serialized matrix uploads are incompatible.
+Market creation uses the same raw-cube payload. The private SDK helper pins the reform
+SDK revision and requires access to its Git repository.
 
 ## Architecture
 

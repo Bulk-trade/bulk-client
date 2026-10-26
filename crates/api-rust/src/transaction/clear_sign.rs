@@ -338,15 +338,13 @@ impl ClearSignMessage {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig settle_ccy={} max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8} eloss_timescale={:.8}",
+            "UpdateRiskConfig settle_ccy={} maxdeficit={:.8} volume_scaler={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8}",
             action.settle_ccy,
-            action.max_loss,
-            action.eloss_floor,
-            action.max_pliq,
+            action.maxdeficit,
+            action.volume_scaler,
             action.margin_buffer,
             action.corr_discount,
-            action.cascade_factor,
-            action.eloss_timescale
+            action.cascade_factor
         ),
         Action::UpdateAccountPolicy(action) => format!(
             "UpdateAccountPolicy withdraw_fee_usd={:?} min_withdraw_usd={:?} min_external_transfer_usd={:?}",
