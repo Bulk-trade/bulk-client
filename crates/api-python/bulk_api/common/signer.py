@@ -26,6 +26,9 @@ TIME_IN_FORCE_MAP = {
 }
 
 
+TRANSACTION_VERSION = 12
+
+
 class SignatureDomain(IntEnum):
     """Stable one-byte network registry used only in signature preimages."""
 
@@ -59,7 +62,7 @@ class TransactionSigner:
         Sign a transaction with Ed25519
 
         Args:
-            tx: Transaction dict containing action, account, nonce
+            tx: Transaction dict containing actions and optional account and nonce
 
         Returns:
             Base58 encoded signature
@@ -68,8 +71,13 @@ class TransactionSigner:
         action = tx.get("actions", [])
         nonce = tx.get("nonce", int(time.time_ns() / 1000))
         account = tx.get("account", self.public_key)
-        signer = tx.get("signer", self.public_key)
+        tx["nonce"] = nonce
+        tx["account"] = account
+        tx["signer"] = self.public_key
         
+        if tx.get("version", TRANSACTION_VERSION) != TRANSACTION_VERSION:
+            raise ValueError("only transaction version 12 is supported")
+        tx["version"] = TRANSACTION_VERSION
         message = self.serialize_transaction(action, nonce, account, signature_domain)
         signed = self.signing_key.sign(message)
         
@@ -88,6 +96,8 @@ class TransactionSigner:
         Returns:
             True if signature is valid, raises on failure
         """
+        if tx.get("version") != TRANSACTION_VERSION:
+            raise ValueError("only transaction version 12 is supported")
         signature_b58 = tx.get("signature")
         if not signature_b58:
             raise ValueError("Transaction has no signature")
@@ -145,22 +155,13 @@ class TransactionSigner:
             account: Base58 encoded account public key
 
         Returns:
-            Binary serialized transaction
+            V12 signing preimage, including the numeric version and network
         """
         if not isinstance(signature_domain, SignatureDomain):
             raise ValueError("explicit SignatureDomain is required")
-        if any(TransactionSigner.action_contains_leaf_conditional(action) for action in actions):
-            schema = 4
-        elif any(TransactionSigner.action_has_builder_code(action) for action in actions):
-            schema = 3
-        elif any(TransactionSigner.action_has_explicit_slippage(action) for action in actions):
-            schema = 2
-        else:
-            schema = 0
-        parts = [b"\xff" * 8 + b"bulk-actions" + bytes([schema])] if schema else []
-        parts.append(TransactionSigner.write_u64(len(actions)))
+        parts = [TransactionSigner.write_u32(TRANSACTION_VERSION), TransactionSigner.write_u64(len(actions))]
         for action in actions:
-            parts.append(TransactionSigner.serialize_action(action, schema=schema))
+            parts.append(TransactionSigner.serialize_action(action))
 
         parts.append(TransactionSigner.write_u64(int(nonce)))
         parts.append(TransactionSigner.decode_and_validate_32_bytes(account))
@@ -168,51 +169,7 @@ class TransactionSigner:
         return b''.join(parts)
 
     @staticmethod
-    def action_has_explicit_slippage(action: dict) -> bool:
-        match action:
-            case {"m": order}:
-                return order.get("slippage") is not None
-            case {"trig": order}:
-                return any(TransactionSigner.action_has_explicit_slippage(child) for child in order["actions"])
-            case {"of": order}:
-                return TransactionSigner.action_has_explicit_slippage(order["trigger"]) or any(
-                    TransactionSigner.action_has_explicit_slippage(child) for child in order["actions"]
-                )
-            case _:
-                return False
-
-    @staticmethod
-    def action_contains_leaf_conditional(action: dict) -> bool:
-        match action:
-            case {"st": _} | {"tp": _} | {"rng": _} | {"trl": _}:
-                return True
-            case {"trig": order}:
-                return any(TransactionSigner.action_contains_leaf_conditional(child) for child in order["actions"])
-            case {"of": order}:
-                return TransactionSigner.action_contains_leaf_conditional(order["trigger"]) or any(
-                    TransactionSigner.action_contains_leaf_conditional(child) for child in order["actions"]
-                )
-            case _:
-                return False
-
-    @staticmethod
-    def action_has_builder_code(action: dict) -> bool:
-        match action:
-            case {"m": order} | {"l": order} | {"st": order} | {"tp": order} | {"rng": order} | {"trl": order}:
-                return order.get("builderCode") is not None
-            case {"trig": order}:
-                return any(TransactionSigner.action_has_builder_code(child) for child in order["actions"])
-            case {"of": order}:
-                return TransactionSigner.action_has_builder_code(order["trigger"]) or any(
-                    TransactionSigner.action_has_builder_code(child) for child in order["actions"]
-                )
-            case _:
-                return False
-
-    @staticmethod
-    def serialize_action(action: dict, v2: bool = False, *, schema: Optional[int] = None) -> bytes:
-        if schema is None:
-            schema = 2 if v2 else 0
+    def serialize_action(action: dict) -> bytes:
         match action:
             case {"m": order}:
                 if "commission" in order:
@@ -227,12 +184,9 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
                     TransactionSigner.write_builder_code(order.get('builderCode'))
-                    or (b'\x00' if schema in (2, 3, 4) else b''),
+                    or b'\x00',
                 ]
-                if schema in (2, 3, 4):
-                    parts.append(TransactionSigner.write_optional_fixedpoint(order.get('slippage')))
-                elif order.get('slippage') is not None:
-                    raise ValueError("explicit slippage requires V2 transaction framing")
+                parts.append(TransactionSigner.write_optional_fixedpoint(order.get('slippage')))
                 return b''.join(parts)
 
             case {"l": order}:
@@ -250,7 +204,7 @@ class TransactionSigner:
                     TransactionSigner.write_bool(order['r']),
                     TransactionSigner.write_bool(order.get('i', False)),
                     TransactionSigner.write_builder_code(order.get('builderCode'))
-                    or (b'\x00' if schema in (2, 3, 4) else b''),
+                    or b'\x00',
                 ])
 
             case {"st": order}:
@@ -311,7 +265,7 @@ class TransactionSigner:
                     TransactionSigner.write_fixedpoint(order['tr']),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action, schema=schema)
+                        TransactionSigner.serialize_action(action)
                         for action in order['actions']
                     ),
                 ])
@@ -338,10 +292,10 @@ class TransactionSigner:
                     raise ValueError("on-fill trigger must be a market or limit order")
                 return b''.join([
                     TransactionSigner.write_u32(10),
-                    TransactionSigner.serialize_action(trigger, schema=schema),
+                    TransactionSigner.serialize_action(trigger),
                     TransactionSigner.write_u64(len(order['actions'])),
                     *(
-                        TransactionSigner.serialize_action(action, schema=schema)
+                        TransactionSigner.serialize_action(action)
                         for action in order['actions']
                     ),
                 ])
@@ -442,6 +396,17 @@ class TransactionSigner:
                 return b''.join([
                     TransactionSigner.write_u32(41),
                     TransactionSigner.decode_and_validate_32_bytes(order['to']),
+                ])
+            case {"transfer": transfer}:
+                kind = {"internal": 0, "external": 1}[transfer.get("k", "internal")]
+                symbol = transfer.get("symbol")
+                return b''.join([
+                    TransactionSigner.write_u32(29),
+                    TransactionSigner.write_u32(kind),
+                    TransactionSigner.decode_and_validate_32_bytes(transfer["from"]),
+                    TransactionSigner.decode_and_validate_32_bytes(transfer["to"]),
+                    TransactionSigner.write_f64(transfer["marginAmount"]),
+                    b'\x00' if symbol is None else b'\x01' + TransactionSigner.write_string(symbol),
                 ])
             case _:
                 raise Exception("Unknown tx type")

@@ -1,86 +1,10 @@
 use crate::transaction::actions::Action;
-use crate::transaction::TransactionSigner;
-use serde::ser::{SerializeSeq, SerializeTuple};
+use crate::transaction::{TransactionSigner, TransactionVersion};
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use std::fmt::Debug;
 use std::str::FromStr;
-
-// ───── Signing Schema ────────────────────────────────────────────────────────────────────────────
-pub(crate) const SIGNABLE_ACTIONS_V2_PREFIX: &[u8; 21] =
-    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x02";
-pub(crate) const SIGNABLE_ACTIONS_V3_PREFIX: &[u8; 21] =
-    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x03";
-pub(crate) const SIGNABLE_ACTIONS_V4_PREFIX: &[u8; 21] =
-    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x04";
-pub(crate) const SIGNABLE_ACTIONS_V5_PREFIX: &[u8; 21] =
-    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x05";
-
-#[derive(Clone, Copy, PartialEq)]
-enum SignableSchema {
-    Legacy,
-    Embedded,
-    V2,
-    V3,
-    V4,
-}
-
-pub(crate) const SIGNABLE_ACTIONS_V6_PREFIX: &[u8; 21] =
-    b"\xff\xff\xff\xff\xff\xff\xff\xffbulk-actions\x06";
-
-fn action_contains_transfer(action: &Action) -> bool {
-    match action {
-        Action::Transfer(_) => true,
-        Action::Trigger(trigger) => trigger.actions.iter().any(action_contains_transfer),
-        Action::OnFill(on_fill) => {
-            action_contains_transfer(&on_fill.trigger)
-                || on_fill.actions.iter().any(action_contains_transfer)
-        }
-        Action::MultisigPropose(proposal) => proposal.actions.iter().any(action_contains_transfer),
-        _ => false,
-    }
-}
-
-/// Detects liquidator configuration updates at every action depth.
-fn action_contains_liquidator_update(action: &Action) -> bool {
-    match action {
-        Action::UpdateLiquidatorConfig(_) => true,
-        Action::Trigger(trigger) => trigger
-            .actions
-            .iter()
-            .any(action_contains_liquidator_update),
-        Action::OnFill(on_fill) => {
-            action_contains_liquidator_update(&on_fill.trigger)
-                || on_fill
-                    .actions
-                    .iter()
-                    .any(action_contains_liquidator_update)
-        }
-        Action::MultisigPropose(proposal) => proposal
-            .actions
-            .iter()
-            .any(action_contains_liquidator_update),
-        _ => false,
-    }
-}
-
-/// Detects leaf conditional actions at every depth before selecting fixed Option framing.
-fn action_contains_leaf_conditional(action: &Action) -> bool {
-    match action {
-        Action::Stop(_) | Action::TakeProfit(_) | Action::Range(_) | Action::Trailing(_) => true,
-        Action::Trigger(trigger) => trigger.actions.iter().any(action_contains_leaf_conditional),
-        Action::OnFill(on_fill) => {
-            action_contains_leaf_conditional(&on_fill.trigger)
-                || on_fill.actions.iter().any(action_contains_leaf_conditional)
-        }
-        Action::MultisigPropose(proposal) => proposal
-            .actions
-            .iter()
-            .any(action_contains_leaf_conditional),
-        _ => false,
-    }
-}
 
 fn validate_nested_actions(action: &Action) -> eyre::Result<()> {
     match action {
@@ -111,48 +35,6 @@ fn validate_nested_actions(action: &Action) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Detects builder codes at every action depth before selecting the signing schema.
-///
-/// # Arguments
-/// * `action` - Action and any nested actions to inspect.
-fn action_has_builder_code(action: &Action) -> bool {
-    match action {
-        Action::MarketOrder(order) => order.builder_code.is_some(),
-        Action::LimitOrder(order) => order.builder_code.is_some(),
-        Action::Stop(order) | Action::TakeProfit(order) => order.builder_code.is_some(),
-        Action::Range(order) => order.builder_code.is_some(),
-        Action::Trailing(order) => order.builder_code.is_some(),
-        Action::Trigger(trigger) => trigger.actions.iter().any(action_has_builder_code),
-        Action::OnFill(on_fill) => {
-            action_has_builder_code(&on_fill.trigger)
-                || on_fill.actions.iter().any(action_has_builder_code)
-        }
-        Action::MultisigPropose(proposal) => proposal.actions.iter().any(action_has_builder_code),
-        _ => false,
-    }
-}
-
-fn action_has_explicit_slippage(action: &Action) -> bool {
-    match action {
-        Action::MarketOrder(order) => order.slippage.is_some(),
-        Action::Stop(order) | Action::TakeProfit(order) => order.slippage.is_some(),
-        Action::Range(order) => order.sl_slippage.is_some() || order.tp_slippage.is_some(),
-        Action::Trailing(order) => order.slippage.is_some(),
-        Action::Trigger(trigger) => trigger.actions.iter().any(action_has_explicit_slippage),
-        Action::OnFill(on_fill) => {
-            action_has_explicit_slippage(&on_fill.trigger)
-                || on_fill.actions.iter().any(action_has_explicit_slippage)
-        }
-        Action::MultisigPropose(proposal) => {
-            proposal.actions.iter().any(action_has_explicit_slippage)
-        }
-        _ => false,
-    }
-}
-
-// ───── Signature Domain ──────────────────────────────────────────────────────────────────────────
-/// Stable signature-domain registry. Zero is deliberately unassigned so a
-/// missing or legacy domain cannot silently select a live network.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum SignatureDomain {
@@ -195,6 +77,8 @@ impl FromStr for SignatureDomain {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
+    /// Schema used for wire encoding and signatures.
+    pub version: TransactionVersion,
     // list of actions in tx
     pub actions: Vec<Action>,
     // tx nonce
@@ -245,6 +129,7 @@ impl Transaction {
             TxSignatureMode::Raw => {
                 self.signature = signer.sign_transaction_bytes(
                     Self::raw_signable_bytes(
+                        self.version,
                         signature_domain,
                         self.account,
                         self.nonce,
@@ -270,6 +155,7 @@ impl Transaction {
         Ok(self.signature.verify(
             &self.signer.to_bytes(),
             Self::raw_signable_bytes(
+                self.version,
                 signature_domain,
                 self.account,
                 self.nonce,
@@ -283,18 +169,20 @@ impl Transaction {
 
     /// Encodes the stable transaction payload for raw signing.
     ///
-    /// * Select the legacy or versioned action schema.
+    /// * Prefix the numeric V12 version and encode the fixed action schema.
     /// * Serialize the actions and append the transaction context.
     ///
     /// # Arguments
+    /// * `version` - Explicit transaction schema (V12).
     /// * `signature_domain` - Network domain appended to the payload.
     /// * `account` - Account bound to the signature.
     /// * `nonce` - Transaction nonce bound to the signature.
-    /// * `actions` - Actions encoded in the compatible signing schema.
+    /// * `actions` - Actions encoded using the fixed V12 layout.
     ///
     /// # Returns
     /// The signable bytes, or an action encoding error.
     pub(crate) fn raw_signable_bytes(
+        version: TransactionVersion,
         signature_domain: SignatureDomain,
         account: Pubkey,
         nonce: u64,
@@ -304,458 +192,12 @@ impl Transaction {
             validate_nested_actions(action)?;
         }
         let mut serialized = Vec::new();
-        if actions.iter().any(action_contains_transfer) {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V6_PREFIX);
-            bincode::serialize_into(&mut serialized, actions)?;
-        } else if actions.iter().any(action_contains_liquidator_update) {
-            serialized.extend_from_slice(SIGNABLE_ACTIONS_V5_PREFIX);
-            bincode::serialize_into(&mut serialized, actions)?;
-        } else {
-            let schema = if actions.iter().any(action_contains_leaf_conditional) {
-                SignableSchema::V4
-            } else if actions.iter().any(action_has_builder_code) {
-                SignableSchema::V3
-            } else if actions.iter().any(action_has_explicit_slippage) {
-                SignableSchema::V2
-            } else {
-                SignableSchema::Legacy
-            };
-            if schema == SignableSchema::V4 {
-                serialized.extend_from_slice(SIGNABLE_ACTIONS_V4_PREFIX);
-                bincode::serialize_into(&mut serialized, actions)?;
-            } else if schema == SignableSchema::V3 {
-                serialized.extend_from_slice(SIGNABLE_ACTIONS_V3_PREFIX);
-                bincode::serialize_into(&mut serialized, actions)?;
-            } else {
-                if schema == SignableSchema::V2 {
-                    serialized.extend_from_slice(SIGNABLE_ACTIONS_V2_PREFIX);
-                }
-                bincode::serialize_into(&mut serialized, &RawSignableActions(actions, schema))?;
-            }
-        }
+        serialized.extend_from_slice(&version.number().to_le_bytes());
+        bincode::serialize_into(&mut serialized, actions)?;
         serialized.extend_from_slice(&nonce.to_le_bytes());
         serialized.extend_from_slice(account.as_ref());
         serialized.push(signature_domain as u8);
         Ok(serialized)
-    }
-}
-
-// ───── Action Signing ────────────────────────────────────────────────────────────────────────────
-struct RawSafeF64(f64);
-
-impl Serialize for RawSafeF64 {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        crate::msgs::fixed_point::serialize(&self.0, serializer)
-    }
-}
-
-struct RawSignableMarketOrder<'a>(&'a crate::msgs::MarketOrder, SignableSchema);
-
-impl Serialize for RawSignableMarketOrder<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(
-            5 + usize::from(self.1 != SignableSchema::Legacy || self.0.builder_code.is_some())
-                + usize::from(self.1 == SignableSchema::V2),
-        )?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_buy)?;
-        tuple.serialize_element(&RawSafeF64(self.0.size))?;
-        tuple.serialize_element(&self.0.reduce_only)?;
-        tuple.serialize_element(&self.0.iso)?;
-        if self.1 != SignableSchema::Legacy || self.0.builder_code.is_some() {
-            tuple.serialize_element(&self.0.builder_code)?;
-        }
-        if self.1 == SignableSchema::V2 {
-            tuple.serialize_element(&self.0.slippage.map(RawSafeF64))?;
-        }
-        tuple.end()
-    }
-}
-
-struct RawSignableLimitOrder<'a>(&'a crate::msgs::LimitOrder, SignableSchema);
-
-impl Serialize for RawSignableLimitOrder<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(
-            7 + usize::from(self.1 != SignableSchema::Legacy || self.0.builder_code.is_some()),
-        )?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_buy)?;
-        tuple.serialize_element(&RawSafeF64(self.0.price))?;
-        tuple.serialize_element(&RawSafeF64(self.0.size))?;
-        tuple.serialize_element(&self.0.tif)?;
-        tuple.serialize_element(&self.0.reduce_only)?;
-        tuple.serialize_element(&self.0.iso)?;
-        if self.1 != SignableSchema::Legacy || self.0.builder_code.is_some() {
-            tuple.serialize_element(&self.0.builder_code)?;
-        }
-        tuple.end()
-    }
-}
-
-// ───── Conditional Order Signing ─────────────────────────────────────────────────────────────────
-struct RawSignableStopOrTP<'a>(&'a crate::msgs::conditional::StopOrTP);
-
-impl Serialize for RawSignableStopOrTP<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple =
-            serializer.serialize_tuple(6 + usize::from(self.0.builder_code.is_some()))?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_above)?;
-        tuple.serialize_element(&RawSafeF64(self.0.size))?;
-        tuple.serialize_element(&RawSafeF64(self.0.threshold))?;
-        tuple.serialize_element(&self.0.limit.map(RawSafeF64))?;
-        tuple.serialize_element(&self.0.iso)?;
-        if self.0.builder_code.is_some() {
-            tuple.serialize_element(&self.0.builder_code)?;
-        }
-        tuple.end()
-    }
-}
-
-struct RawSignableRange<'a>(&'a crate::msgs::conditional::Range);
-
-impl Serialize for RawSignableRange<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple =
-            serializer.serialize_tuple(8 + usize::from(self.0.builder_code.is_some()))?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_buy)?;
-        tuple.serialize_element(&RawSafeF64(self.0.size))?;
-        tuple.serialize_element(&RawSafeF64(self.0.collar_min))?;
-        tuple.serialize_element(&RawSafeF64(self.0.collar_max))?;
-        tuple.serialize_element(&self.0.limit_min.map(RawSafeF64))?;
-        tuple.serialize_element(&self.0.limit_max.map(RawSafeF64))?;
-        tuple.serialize_element(&self.0.iso)?;
-        if self.0.builder_code.is_some() {
-            tuple.serialize_element(&self.0.builder_code)?;
-        }
-        tuple.end()
-    }
-}
-
-struct RawSignableTrailing<'a>(&'a crate::msgs::conditional::Trailing);
-
-impl Serialize for RawSignableTrailing<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple =
-            serializer.serialize_tuple(7 + usize::from(self.0.builder_code.is_some()))?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_buy)?;
-        tuple.serialize_element(&RawSafeF64(self.0.size))?;
-        tuple.serialize_element(&self.0.trail_bps)?;
-        tuple.serialize_element(&self.0.step_bps)?;
-        tuple.serialize_element(&self.0.limit.map(RawSafeF64))?;
-        tuple.serialize_element(&self.0.iso)?;
-        if self.0.builder_code.is_some() {
-            tuple.serialize_element(&self.0.builder_code)?;
-        }
-        tuple.end()
-    }
-}
-
-struct RawSignableTrigger<'a>(&'a crate::msgs::conditional::Trigger, SignableSchema);
-
-impl Serialize for RawSignableTrigger<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut tuple = serializer.serialize_tuple(5)?;
-        tuple.serialize_element(&self.0.symbol)?;
-        tuple.serialize_element(&self.0.is_above)?;
-        tuple.serialize_element(&RawSafeF64(self.0.threshold))?;
-        tuple.serialize_element(&RawSignableActions(&self.0.actions, self.1))?;
-        tuple.end()
-    }
-}
-
-struct RawSignableOnFill<'a>(&'a crate::msgs::conditional::OnFill, SignableSchema);
-
-impl Serialize for RawSignableOnFill<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if !matches!(
-            self.0.trigger.as_ref(),
-            Action::MarketOrder(_) | Action::LimitOrder(_)
-        ) {
-            return Err(serde::ser::Error::custom(
-                "on-fill trigger must be a market or limit order",
-            ));
-        }
-        let mut tuple = serializer.serialize_tuple(2)?;
-        tuple.serialize_element(&RawSignableAction(&self.0.trigger, self.1))?;
-        tuple.serialize_element(&RawSignableActions(&self.0.actions, self.1))?;
-        tuple.end()
-    }
-}
-
-// ───── Action Dispatch ───────────────────────────────────────────────────────────────────────────
-struct RawSignableActions<'a>(&'a [Action], SignableSchema);
-
-impl Serialize for RawSignableActions<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for action in self.0 {
-            seq.serialize_element(&RawSignableAction(action, self.1))?;
-        }
-        seq.end()
-    }
-}
-
-struct RawSignableAction<'a>(&'a Action, SignableSchema);
-
-impl Serialize for RawSignableAction<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            Action::MarketOrder(action) => serializer.serialize_newtype_variant(
-                "Action",
-                0,
-                "MarketOrder",
-                &RawSignableMarketOrder(action, self.1),
-            ),
-            Action::LimitOrder(action) => serializer.serialize_newtype_variant(
-                "Action",
-                1,
-                "LimitOrder",
-                &RawSignableLimitOrder(action, self.1),
-            ),
-            Action::ModifyOrder(action) => {
-                serializer.serialize_newtype_variant("Action", 2, "ModifyOrder", action)
-            }
-            Action::Cancel(action) => {
-                serializer.serialize_newtype_variant("Action", 3, "Cancel", action)
-            }
-            Action::CancelAll(action) => {
-                serializer.serialize_newtype_variant("Action", 4, "CancelAll", action)
-            }
-            Action::Stop(action) => serializer.serialize_newtype_variant(
-                "Action",
-                5,
-                "Stop",
-                &RawSignableStopOrTP(action),
-            ),
-            Action::TakeProfit(action) => serializer.serialize_newtype_variant(
-                "Action",
-                6,
-                "TakeProfit",
-                &RawSignableStopOrTP(action),
-            ),
-            Action::Range(action) => serializer.serialize_newtype_variant(
-                "Action",
-                7,
-                "Range",
-                &RawSignableRange(action),
-            ),
-            Action::Trigger(action) => serializer.serialize_newtype_variant(
-                "Action",
-                8,
-                "Trigger",
-                &RawSignableTrigger(action, self.1),
-            ),
-            Action::Trailing(action) => serializer.serialize_newtype_variant(
-                "Action",
-                9,
-                "Trailing",
-                &RawSignableTrailing(action),
-            ),
-            Action::OnFill(action) => serializer.serialize_newtype_variant(
-                "Action",
-                10,
-                "OnFill",
-                &RawSignableOnFill(action, self.1),
-            ),
-            Action::Price(action) => {
-                serializer.serialize_newtype_variant("Action", 11, "Price", action)
-            }
-            Action::Corrs(action) => {
-                serializer.serialize_newtype_variant("Action", 12, "Corrs", action)
-            }
-            Action::PythOracle(action) => {
-                serializer.serialize_newtype_variant("Action", 13, "PythOracle", action)
-            }
-            Action::Beacon(action) => {
-                serializer.serialize_newtype_variant("Action", 14, "Beacon", action)
-            }
-            Action::Join(action) => {
-                serializer.serialize_newtype_variant("Action", 15, "Join", action)
-            }
-            Action::Faucet(action) => {
-                serializer.serialize_newtype_variant("Action", 16, "Faucet", action)
-            }
-            Action::AgentWalletCreation(action) => {
-                serializer.serialize_newtype_variant("Action", 17, "AgentWalletCreation", action)
-            }
-            Action::UpdateUserSettings(action) => {
-                serializer.serialize_newtype_variant("Action", 18, "UpdateUserSettings", action)
-            }
-            Action::WhitelistFaucet(action) => {
-                serializer.serialize_newtype_variant("Action", 19, "WhitelistFaucet", action)
-            }
-            Action::AddMarket(action) => {
-                serializer.serialize_newtype_variant("Action", 20, "AddMarket", action)
-            }
-            Action::ConfigFairPrice(action) => {
-                serializer.serialize_newtype_variant("Action", 21, "ConfigFairPrice", action)
-            }
-            Action::ConfigVolatility(action) => {
-                serializer.serialize_newtype_variant("Action", 22, "ConfigVolatility", action)
-            }
-            Action::ConfigSecurity(action) => {
-                serializer.serialize_newtype_variant("Action", 23, "ConfigSecurity", action)
-            }
-            Action::ConfigRegime(action) => {
-                serializer.serialize_newtype_variant("Action", 24, "ConfigRegime", action)
-            }
-            Action::ConfigRisk(action) => {
-                serializer.serialize_newtype_variant("Action", 25, "ConfigRisk", action)
-            }
-            Action::ConfigFeePolicy(action) => {
-                serializer.serialize_newtype_variant("Action", 26, "ConfigFeePolicy", action)
-            }
-            Action::CreateSubAccount(action) => {
-                serializer.serialize_newtype_variant("Action", 27, "CreateSubAccount", action)
-            }
-            Action::RemoveSubAccount(action) => {
-                serializer.serialize_newtype_variant("Action", 28, "RemoveSubAccount", action)
-            }
-            Action::Transfer(action) => {
-                serializer.serialize_newtype_variant("Action", 29, "Transfer", action)
-            }
-            Action::CreateMultisig(action) => {
-                serializer.serialize_newtype_variant("Action", 30, "CreateMultisig", action)
-            }
-            Action::MultisigPropose(action) => {
-                serializer.serialize_newtype_variant(
-                    "Action",
-                    31,
-                    "MultisigPropose",
-                    &(
-                        action.multisig.to_bytes(),
-                        RawSignableActions(
-                            &action.actions,
-                            if self.1 == SignableSchema::V2 {
-                                SignableSchema::V2
-                            } else {
-                                // Historic proposals used tagged builder options, but no slippage field.
-                                SignableSchema::Embedded
-                            },
-                        ),
-                        action.proposal_lifetime_secs,
-                    ),
-                )
-            }
-            Action::MultisigApprove(action) => {
-                serializer.serialize_newtype_variant("Action", 32, "MultisigApprove", action)
-            }
-            Action::MultisigReject(action) => {
-                serializer.serialize_newtype_variant("Action", 33, "MultisigReject", action)
-            }
-            Action::MultisigCancel(action) => {
-                serializer.serialize_newtype_variant("Action", 34, "MultisigCancel", action)
-            }
-            Action::MultisigExecute(action) => {
-                serializer.serialize_newtype_variant("Action", 35, "MultisigExecute", action)
-            }
-            Action::UpdateMultisigPolicy(action) => {
-                serializer.serialize_newtype_variant("Action", 36, "UpdateMultisigPolicy", action)
-            }
-            Action::RenameSubAccount(action) => {
-                serializer.serialize_newtype_variant("Action", 37, "RenameSubAccount", action)
-            }
-            Action::UpdateValidatorSet(action) => {
-                serializer.serialize_newtype_variant("Action", 38, "UpdateValidatorSet", action)
-            }
-            Action::UpdateRiskConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 39, "UpdateRiskConfig", action)
-            }
-            Action::ApproveCommissionFee(action) => {
-                serializer.serialize_newtype_variant("Action", 40, "ApproveCommissionFee", action)
-            }
-            Action::RevokeCommissionFee(action) => {
-                serializer.serialize_newtype_variant("Action", 41, "RevokeCommissionFee", action)
-            }
-            Action::RewardSettlement(action) => {
-                serializer.serialize_newtype_variant("Action", 42, "RewardSettlement", action)
-            }
-            Action::UpdateLiquidatorConfig(action) => {
-                serializer.serialize_newtype_variant("Action", 43, "UpdateLiquidatorConfig", action)
-            }
-            Action::Deposit(action) => {
-                serializer.serialize_newtype_variant("Action", 44, "Deposit", action)
-            }
-            Action::Withdraw(action) => {
-                serializer.serialize_newtype_variant("Action", 45, "Withdraw", action)
-            }
-            Action::WithdrawConfirmation(action) => {
-                serializer.serialize_newtype_variant("Action", 46, "WithdrawConfirmation", action)
-            }
-            Action::NonceCommitment(action) => {
-                serializer.serialize_newtype_variant("Action", 47, "NonceCommitment", action)
-            }
-            Action::PartialSignature(action) => {
-                serializer.serialize_newtype_variant("Action", 48, "PartialSignature", action)
-            }
-            Action::WithdrawSubmitted(action) => {
-                serializer.serialize_newtype_variant("Action", 49, "WithdrawSubmitted", action)
-            }
-            Action::WithdrawFailed(action) => {
-                serializer.serialize_newtype_variant("Action", 50, "WithdrawFailed", action)
-            }
-            Action::DkgRound1(action) => {
-                serializer.serialize_newtype_variant("Action", 51, "DkgRound1", action)
-            }
-            Action::InitializeVault(action) => {
-                serializer.serialize_newtype_variant("Action", 52, "InitializeVault", action)
-            }
-            Action::UpdateFrostGroup(action) => {
-                serializer.serialize_newtype_variant("Action", 53, "UpdateFrostGroup", action)
-            }
-            Action::DkgFinished(action) => {
-                serializer.serialize_newtype_variant("Action", 54, "DkgFinished", action)
-            }
-            Action::SolanaBlockAnchor(action) => {
-                serializer.serialize_newtype_variant("Action", 55, "SolanaBlockAnchor", action)
-            }
-            Action::ConfigMakerRebateTier(action) => {
-                serializer.serialize_newtype_variant("Action", 56, "ConfigMakerRebateTier", action)
-            }
-            Action::MarketAdmin(action) => {
-                serializer.serialize_newtype_variant("Action", 57, "MarketAdmin", action)
-            }
-            Action::PricingAdmin(action) => {
-                serializer.serialize_newtype_variant("Action", 58, "PricingAdmin", action)
-            }
-            Action::FrostWithdrawStart(action) => {
-                serializer.serialize_newtype_variant("Action", 59, "FrostWithdrawStart", action)
-            }
-            Action::PreDepositCredit(action) => {
-                serializer.serialize_newtype_variant("Action", 60, "PreDepositCredit", action)
-            }
-            Action::UpdateAccountPolicy(action) => {
-                serializer.serialize_newtype_variant("Action", 61, "UpdateAccountPolicy", action)
-            }
-            Action::ActivateProtocolVersion(action) => serializer.serialize_newtype_variant(
-                "Action",
-                62,
-                "ActivateProtocolVersion",
-                action,
-            ),
-            Action::RevokePendingActivation(action) => serializer.serialize_newtype_variant(
-                "Action",
-                63,
-                "RevokePendingActivation",
-                action,
-            ),
-            Action::ConfigFunding(action) => {
-                serializer.serialize_newtype_variant("Action", 64, "ConfigFunding", action)
-            }
-            Action::UserAdmin(action) => {
-                serializer.serialize_newtype_variant("Action", 65, "UserAdmin", action)
-            }
-            Action::Reserved67(_) => Err(serde::ser::Error::custom("reserved action ordinal 67")),
-            Action::HarvestProviderFees(action) => {
-                serializer.serialize_newtype_variant("Action", 68, "HarvestProviderFees", action)
-            }
-            Action::StartPreDepositDatasetMigration(action) => serializer
-                .serialize_newtype_variant("Action", 66, "StartPreDepositDatasetMigration", action),
-        }
     }
 }
 
@@ -781,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn leaf_conditionals_use_v4_with_or_without_builder_code() {
+    fn leaf_conditionals_use_v12_with_or_without_builder_code() {
         use serde_json::json;
 
         let account = Pubkey::new_from_array([1; 32]);
@@ -793,25 +235,35 @@ mod tests {
         ];
         for mut value in cases {
             let action: Action = serde_json::from_value(value.clone()).unwrap();
-            let without_builder =
-                Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
-                    .unwrap();
-            assert!(without_builder.starts_with(SIGNABLE_ACTIONS_V4_PREFIX));
+            let without_builder = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
+                SignatureDomain::Devnet,
+                account,
+                42,
+                &[action],
+            )
+            .unwrap();
+            assert!(without_builder.starts_with(&12u32.to_le_bytes()));
 
             let kind = value.as_object().unwrap().keys().next().unwrap().clone();
             value[&kind]["builderCode"] =
                 json!({"to":Pubkey::new_from_array([7;32]).to_string(),"fee":5});
             let action: Action = serde_json::from_value(value).unwrap();
-            let with_builder =
-                Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &[action])
-                    .unwrap();
-            assert!(with_builder.starts_with(SIGNABLE_ACTIONS_V4_PREFIX));
+            let with_builder = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
+                SignatureDomain::Devnet,
+                account,
+                42,
+                &[action],
+            )
+            .unwrap();
+            assert!(with_builder.starts_with(&12u32.to_le_bytes()));
             assert_ne!(without_builder, with_builder);
         }
     }
 
     #[test]
-    fn v4_conditionals_preserve_multi_action_boundaries() {
+    fn v12_conditionals_preserve_multi_action_boundaries() {
         let account = Pubkey::new_from_array([1; 32]);
         let actions: Vec<Action> = serde_json::from_value(serde_json::json!([
             {"st":{"c":"BTC-USD","d":false,"sz":1.0,"tr":90.0,"lim":null,"i":false}},
@@ -820,15 +272,21 @@ mod tests {
         ]))
         .unwrap();
 
-        let mut expected = SIGNABLE_ACTIONS_V4_PREFIX.to_vec();
+        let mut expected = 12u32.to_le_bytes().to_vec();
         bincode::serialize_into(&mut expected, &actions).unwrap();
         expected.extend_from_slice(&42_u64.to_le_bytes());
         expected.extend_from_slice(account.as_ref());
         expected.push(SignatureDomain::Devnet as u8);
 
         assert_eq!(
-            Transaction::raw_signable_bytes(SignatureDomain::Devnet, account, 42, &actions)
-                .unwrap(),
+            Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
+                SignatureDomain::Devnet,
+                account,
+                42,
+                &actions
+            )
+            .unwrap(),
             expected,
         );
         let bytes = bincode::serialize(&actions).unwrap();
@@ -843,6 +301,7 @@ mod tests {
         for vector in fixtures["vectors"].as_array().unwrap() {
             let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
             let actual = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
                 SignatureDomain::Devnet,
                 Pubkey::default(),
                 42,
@@ -873,6 +332,7 @@ mod tests {
         for vector in fixtures["vectors"].as_array().unwrap() {
             let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
             let signable = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
                 SignatureDomain::Devnet,
                 Pubkey::default(),
                 42,
@@ -896,13 +356,14 @@ mod tests {
         for vector in fixtures["vectors"].as_array().unwrap() {
             let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
             let signable = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
                 SignatureDomain::Devnet,
                 Pubkey::default(),
                 42,
                 &actions,
             )
             .unwrap();
-            assert!(signable.starts_with(SIGNABLE_ACTIONS_V6_PREFIX));
+            assert!(signable.starts_with(&12u32.to_le_bytes()));
             assert_eq!(
                 bytes_hex(&signable),
                 vector["signable_hex"].as_str().unwrap()
@@ -917,7 +378,7 @@ mod tests {
                 },
             )
             .unwrap();
-            assert!(message.contains("version_u8(6)"));
+            assert!(message.contains("transaction_version_le_u32"));
         }
     }
 
@@ -927,6 +388,7 @@ mod tests {
             serde_json::from_str(include_str!("fixtures/sdk-signing-vectors.json")).unwrap();
         for vector in fixtures["vectors"].as_array().unwrap() {
             let actual = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
                 SignatureDomain::Devnet,
                 vector["account"].as_str().unwrap().parse().unwrap(),
                 vector["nonce"].as_str().unwrap().parse().unwrap(),
@@ -993,14 +455,14 @@ mod tests {
         assert_eq!(
             bytes_hex(
                 &Transaction::raw_signable_bytes(
-                    SignatureDomain::Testnet,
+                    TransactionVersion::CURRENT, SignatureDomain::Testnet,
                     Pubkey::default(),
                     7,
                     &[action],
                 )
                 .expect("serialize trigger")
             ),
-            "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "0c00000001000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 
@@ -1033,14 +495,14 @@ mod tests {
         assert_eq!(
             bytes_hex(
                 &Transaction::raw_signable_bytes(
-                    SignatureDomain::Testnet,
+                    TransactionVersion::CURRENT, SignatureDomain::Testnet,
                     Pubkey::default(),
                     7,
                     &[action],
                 )
                 .expect("serialize on-fill")
             ),
-            "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "0c00000001000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 
@@ -1064,6 +526,7 @@ mod tests {
 
         assert!(
             Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
                 SignatureDomain::Testnet,
                 Pubkey::default(),
                 7,
@@ -1085,6 +548,7 @@ mod tests {
     #[test]
     fn update_liquidator_config_uses_sdk_ordinal_43() {
         let signable = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Devnet,
             Pubkey::default(),
             0,
@@ -1092,8 +556,8 @@ mod tests {
         )
         .expect("signable bytes");
 
-        assert!(signable.starts_with(SIGNABLE_ACTIONS_V5_PREFIX));
-        let ordinal_offset = SIGNABLE_ACTIONS_V5_PREFIX.len() + 8;
+        assert!(signable.starts_with(&12u32.to_le_bytes()));
+        let ordinal_offset = 12u32.to_le_bytes().len() + 8;
         assert_eq!(
             u32::from_le_bytes(
                 signable[ordinal_offset..ordinal_offset + 4]
@@ -1105,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn liquidator_updates_use_v5_at_any_depth_and_bind_apply_reserve() {
+    fn liquidator_updates_use_v12_at_any_depth_and_bind_apply_reserve() {
         let liquidator = Action::UpdateLiquidatorConfig(LiqConfig {
             instruments: vec![LiqConfigByInstrument {
                 symbol: "BTC-USD".to_string(),
@@ -1117,13 +581,14 @@ mod tests {
         let account = Pubkey::new_from_array([1; 32]);
 
         let direct = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Devnet,
             account,
             42,
             std::slice::from_ref(&liquidator),
         )
         .unwrap();
-        assert!(direct.starts_with(SIGNABLE_ACTIONS_V5_PREFIX));
+        assert!(direct.starts_with(&12u32.to_le_bytes()));
 
         let nested = Action::MultisigPropose(MultisigPropose {
             multisig: Pubkey::new_from_array([2; 32]),
@@ -1132,6 +597,7 @@ mod tests {
             meta: ActionMeta::default(),
         });
         let mut transaction = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![nested],
             nonce: 42,
             account,
@@ -1174,6 +640,7 @@ mod tests {
             apply_reserve: true,
         };
         let mut transaction = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![Action::UpdateLiquidatorConfig(LiqConfig {
                 cross_exposure: 15e6,
                 scoring_skew: 0.5,
@@ -1194,13 +661,14 @@ mod tests {
 
         assert_eq!(
             transaction.signature.to_string(),
-            "3qZAVH4CYuTzQLRTJnXR1LycyfxgrTPVnCkM5G1H3iZx38wYNinKczFcevdeZtQbJFP5tTEJ3bozMNHE55n4NBqn"
+            "5J6EVwoRi6unyEZ3Zf686wKv4KtB1b3X2etGiPKMQyNmB1h96ds6MuGy4HRTsBSpoNjtPmg6iWM8wRAWEaofeMVy"
         );
     }
 
     #[test]
     fn market_admin_uses_sdk_ordinal_57() {
         let signable = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Devnet,
             Pubkey::default(),
             0,
@@ -1213,12 +681,13 @@ mod tests {
         )
         .expect("signable bytes");
 
-        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 57);
+        assert_eq!(u32::from_le_bytes(signable[12..16].try_into().unwrap()), 57);
     }
 
     #[test]
     fn update_account_policy_uses_sdk_ordinal_61() {
         let signable = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Devnet,
             Pubkey::default(),
             0,
@@ -1233,7 +702,7 @@ mod tests {
         )
         .expect("signable bytes");
 
-        assert_eq!(u32::from_le_bytes(signable[8..12].try_into().unwrap()), 61);
+        assert_eq!(u32::from_le_bytes(signable[12..16].try_into().unwrap()), 61);
     }
 
     #[test]
@@ -1274,6 +743,7 @@ mod tests {
     fn signature_domain_changes_only_the_signable_suffix() {
         let (tx, _) = make_limit_order_tx();
         let mainnet = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Mainnet,
             tx.account,
             tx.nonce,
@@ -1281,6 +751,7 @@ mod tests {
         )
         .expect("mainnet bytes");
         let testnet = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Testnet,
             tx.account,
             tx.nonce,
@@ -1320,6 +791,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 42,
             account,
@@ -1441,6 +913,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 43,
             account,
@@ -1452,9 +925,10 @@ mod tests {
     }
 
     #[test]
-    fn market_order_without_slippage_keeps_legacy_signable_bytes() {
+    fn market_order_without_slippage_uses_fixed_v12_fields() {
         let (tx, _) = make_market_order_tx();
         let current = Transaction::raw_signable_bytes(
+            TransactionVersion::CURRENT,
             SignatureDomain::Devnet,
             tx.account,
             tx.nonce,
@@ -1462,7 +936,7 @@ mod tests {
         )
         .expect("serialize current market signing payload");
 
-        let mut legacy = Vec::new();
+        let mut legacy = 12u32.to_le_bytes().to_vec();
         legacy.extend_from_slice(&1u64.to_le_bytes());
         legacy.extend_from_slice(&0u32.to_le_bytes());
         legacy.extend_from_slice(&7u64.to_le_bytes());
@@ -1471,6 +945,8 @@ mod tests {
         legacy.extend_from_slice(&25_000_000u64.to_le_bytes());
         legacy.push(0);
         legacy.push(0);
+        legacy.push(0); // absent builder code
+        legacy.push(0); // absent slippage
         legacy.extend_from_slice(&43u64.to_le_bytes());
         legacy.extend_from_slice(tx.account.as_ref());
         legacy.push(SignatureDomain::Devnet as u8);
@@ -1555,6 +1031,7 @@ mod tests {
         let account = signer.public_key();
         let to = Pubkey::new_unique();
         let mut tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![
                 Action::ApproveCommissionFee(ApproveCommissionFee {
                     to,
@@ -1616,6 +1093,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 42,
             account,
@@ -1681,6 +1159,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 1776678783594,
             account,
@@ -1752,6 +1231,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 42,
             account,
@@ -1781,6 +1261,7 @@ mod tests {
         });
 
         let tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: vec![action],
             nonce: 42,
             account,

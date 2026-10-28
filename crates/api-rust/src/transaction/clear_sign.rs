@@ -61,7 +61,13 @@ impl ClearSignMessage {
         actions: &[Action],
         options: ClearSignMessageOptions,
     ) -> eyre::Result<String> {
-        let signable = Transaction::raw_signable_bytes(signature_domain, account, nonce, actions)?;
+        let signable = Transaction::raw_signable_bytes(
+            super::TransactionVersion::CURRENT,
+            signature_domain,
+            account,
+            nonce,
+            actions,
+        )?;
         Ok(Self::render_message(
             signature_domain,
             account,
@@ -83,6 +89,11 @@ impl ClearSignMessage {
         let mut message = String::with_capacity(256 + actions.len().saturating_mul(96));
         let _ = writeln!(message, "Bulk Exchange Transaction");
         let _ = writeln!(message, "Network: {signature_domain}");
+        let _ = writeln!(
+            message,
+            "Version: {}",
+            super::TransactionVersion::CURRENT.number()
+        );
         let _ = writeln!(message, "Account: {account}");
         let _ = writeln!(message, "Nonce: {nonce}");
         let _ = writeln!(message, "Actions: {}", actions.len());
@@ -91,28 +102,7 @@ impl ClearSignMessage {
             let _ = writeln!(
                 message,
                 "Signable-Schema: {}",
-                if signable.starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V6_PREFIX)
-                {
-                    "u64_max_le||bulk-actions_utf8||version_u8(6)||bincode(actions_with_iso_transfer_symbol)||nonce_le_u64||account_bytes||signature_domain_u8"
-                } else if signable
-                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V5_PREFIX)
-                {
-                    "u64_max_le||bulk-actions_utf8||version_u8(5)||bincode(actions_with_current_liquidator_config)||nonce_le_u64||account_bytes||signature_domain_u8"
-                } else if signable
-                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V4_PREFIX)
-                {
-                    "u64_max_le||bulk-actions_utf8||version_u8(4)||bincode(actions_with_conditional_slippage_options)||nonce_le_u64||account_bytes||signature_domain_u8"
-                } else if signable
-                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V3_PREFIX)
-                {
-                    "u64_max_le||bulk-actions_utf8||version_u8(3)||bincode(actions_with_builder_options)||nonce_le_u64||account_bytes||signature_domain_u8"
-                } else if signable
-                    .starts_with(crate::transaction::transaction::SIGNABLE_ACTIONS_V2_PREFIX)
-                {
-                    "u64_max_le||bulk-actions_utf8||version_u8(2)||bincode(actions)||nonce_le_u64||account_bytes||signature_domain_u8"
-                } else {
-                    "bincode(commission_signable_actions)||nonce_le_u64||account_bytes||signature_domain_u8"
-                }
+                "transaction_version_le_u32||bincode(actions)||nonce_le_u64||account_bytes||signature_domain_u8"
             );
         }
         for (index, action) in actions.iter().enumerate() {
@@ -338,13 +328,15 @@ impl ClearSignMessage {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig settle_ccy={} maxdeficit={:.8} volume_scaler={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8}",
+            "UpdateRiskConfig settle_ccy={} max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8} eloss_timescale={:.8}",
             action.settle_ccy,
-            action.maxdeficit,
-            action.volume_scaler,
+            action.max_loss,
+            action.eloss_floor,
+            action.max_pliq,
             action.margin_buffer,
             action.corr_discount,
-            action.cascade_factor
+            action.cascade_factor,
+            action.eloss_timescale
         ),
         Action::UpdateAccountPolicy(action) => format!(
             "UpdateAccountPolicy withdraw_fee_usd={:?} min_withdraw_usd={:?} min_external_transfer_usd={:?}",
@@ -800,8 +792,8 @@ mod tests {
         )
         .expect("build legacy clear-sign message");
 
-        assert!(message.contains("Signable-Schema: u64_max_le||bulk-actions_utf8||version_u8(2)"));
-        assert!(without_slippage.contains("Signable-Schema: bincode(commission_signable_actions)"));
+        assert!(message.contains("Signable-Schema: transaction_version_le_u32"));
+        assert!(without_slippage.contains("Signable-Schema: transaction_version_le_u32"));
         assert!(message.contains("slippage=25.50000000bps"));
         assert!(!without_slippage.contains("slippage="));
         assert_ne!(

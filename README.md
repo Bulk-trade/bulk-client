@@ -61,22 +61,12 @@ Pricing JSON now uses `oracleSource`, accepting a name (`"Pyth"`, `"Bulk"`, or
 `"both"` value remain accepted. Rust uses `PricingAdmin::oracle_source` and
 combines sources with `OracleSource::Bulk | OracleSource::BIP`.
 
-Risk policy updates use `maxdeficit` (percentage points of maintenance margin consumed,
-from 0 through 100) and `volume_scaler` (a finite positive multiplier on minimum
-liquidation volume per minute, default 1.5). The shared fields are `settle_ccy`,
-`margin_buffer`, `corr_discount`, and `cascade_factor` (default 0.25). The executor
-recalibrates all installed risk matrices when policy changes. The obsolete
-`max_loss`, `eloss_floor`, `max_pliq`, and `eloss_timescale` fields are no longer used.
+Transactions created by this client use numeric `version: 12`. Signing bytes are
+`version_le_u32 || bincode(actions) || nonce_le_u64 || account_bytes || signature_domain_u8`.
+Only V12 is accepted by the client; the SDK and server retain V11 compatibility.
 
-```sh
-bulk risk-config '{"settle_ccy":"USD","maxdeficit":100,"volume_scaler":1.5,"margin_buffer":0.05,"corr_discount":0.5}'
-```
-
-### Raw risk uploads
-
-```sh
-scripts/update-risk-matrix.sh BTC btc-risk.csv -net testnet
-```
+Risk configuration on `jon/iso-reform` uses `max_loss`, `eloss_floor`, `max_pliq`,
+`margin_buffer`, `corr_discount`, `cascade_factor`, and `eloss_timescale`.
 
 The existing `config-risk-matrix` command submits the `configRisk` action (ordinal 25).
 Its opaque payload is now a bincode-serialized SDK `RiskCube`, containing raw observations

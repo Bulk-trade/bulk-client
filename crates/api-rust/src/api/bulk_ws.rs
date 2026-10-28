@@ -455,6 +455,7 @@ impl BulkWsClient {
 
         // Build + sign the transaction
         let mut tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions,
             nonce,
             account,
@@ -532,6 +533,7 @@ impl BulkWsClient {
 
         // Build + sign the transaction
         let mut tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions: actions.iter().map(|a| a.clone().into()).collect(),
             nonce,
             account,
