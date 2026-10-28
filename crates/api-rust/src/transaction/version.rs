@@ -61,6 +61,9 @@ mod tests {
         }
         let tx = serde_json::json!({"version":12,"actions":[],"nonce":42,"account":"11111111111111111111111111111111","signer":"11111111111111111111111111111111","signature":"1111111111111111111111111111111111111111111111111111111111111111"});
         let tx: crate::transaction::Transaction = serde_json::from_value(tx).unwrap();
+        assert!(serde_json::to_string(&tx)
+            .unwrap()
+            .starts_with(r#"{"version":12,"actions":"#));
         let bytes = bincode::serialize(&tx).unwrap();
         assert_eq!(&bytes[..4], &12u32.to_le_bytes());
         assert!(bincode::deserialize::<crate::transaction::Transaction>(&bytes[4..]).is_err());

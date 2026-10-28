@@ -77,7 +77,10 @@ class TransactionSigner:
         
         if tx.get("version", TRANSACTION_VERSION) != TRANSACTION_VERSION:
             raise ValueError("only transaction version 12 is supported")
-        tx["version"] = TRANSACTION_VERSION
+        # Keep the version first on the wire, including when supplied by the caller.
+        ordered_tx = {"version": TRANSACTION_VERSION, **tx}
+        tx.clear()
+        tx.update(ordered_tx)
         message = self.serialize_transaction(action, nonce, account, signature_domain)
         signed = self.signing_key.sign(message)
         
