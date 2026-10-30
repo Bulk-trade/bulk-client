@@ -314,6 +314,35 @@ mod tests {
     }
 
     #[test]
+    fn market_creation_and_suspension_share_one_admin_proposal() {
+        use bulk_client::msgs::{MarketAction, MarketAdmin};
+
+        let wrapped = wrap_admin_actions(vec![
+            Action::AddMarket(AddMarket {
+                symbol: "SPACEX-USD".into(),
+                meta: Default::default(),
+            }),
+            Action::MarketAdmin(MarketAdmin {
+                symbol: "SPACEX-USD".into(),
+                action: MarketAction::Suspend,
+                price: None,
+                meta: Default::default(),
+            }),
+        ]);
+        let [Action::MultisigPropose(proposal)] = wrapped.as_slice() else {
+            panic!("expected one administrative proposal");
+        };
+        assert_eq!(proposal.multisig, Pubkey::from_str(ADMIN_MULTISIG).unwrap());
+        let [Action::AddMarket(add), Action::MarketAdmin(suspend)] = proposal.actions.as_slice()
+        else {
+            panic!("expected creation followed by suspension");
+        };
+        assert_eq!(add.symbol, suspend.symbol);
+        assert_eq!(suspend.action, MarketAction::Suspend);
+        assert_eq!(suspend.price, None);
+    }
+
+    #[test]
     fn leaves_ordinary_actions_unwrapped() {
         let wrapped = wrap_admin_actions(vec![Action::CancelAll(CancelAll {
             symbols: Vec::new(),

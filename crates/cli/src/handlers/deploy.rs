@@ -48,19 +48,36 @@ pub async fn handle_corrs(
     submit_actions(api, submit, vec![Action::Corrs(matrix)]).await
 }
 
+/// Creates a market book and suspends it in the same administrative proposal.
+///
+/// # Arguments
+/// * `api` - Authenticated Bulk HTTP client.
+/// * `args` - Symbol of the market to create in a suspended state.
+/// * `submit` - Transaction preview and confirmation options.
+///
+/// # Returns
+/// An error when transaction submission fails.
 pub async fn handle_add_market(
     api: &mut BulkHttpClient,
     args: AddMarketArgs,
     submit: &SubmitOptions,
 ) -> eyre::Result<()> {
-    eprintln!("Adding market {}", args.symbol);
+    eprintln!("Adding and suspending market {}", args.symbol);
     submit_actions(
         api,
         submit,
-        vec![Action::AddMarket(AddMarket {
-            symbol: args.symbol.into(),
-            meta: Default::default(),
-        })],
+        vec![
+            Action::AddMarket(AddMarket {
+                symbol: args.symbol.clone().into(),
+                meta: Default::default(),
+            }),
+            Action::MarketAdmin(MarketAdmin {
+                symbol: args.symbol.into(),
+                action: MarketAction::Suspend,
+                price: None,
+                meta: Default::default(),
+            }),
+        ],
     )
     .await
 }

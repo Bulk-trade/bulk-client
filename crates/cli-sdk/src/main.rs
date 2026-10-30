@@ -1,7 +1,8 @@
 use bulk_cli_sdk::{
-    config_risk_action, config_security_action, create_market_actions, market_liquidator_action,
+    config_risk_action, config_security_actions, create_market_actions,
+    create_named_market_actions, market_liquidator_action,
 };
-use bulk_client::msgs::{MultisigPropose, Response};
+use bulk_client::msgs::{MarketAction, MarketAdmin, MultisigPropose, Response};
 use bulk_client::parts::{make_nonce, HttpConfig};
 use bulk_client::transaction::{
     Action, ActionMeta, ClearSignMessage, SignatureDomain, TransactionSigner,
@@ -66,25 +67,34 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Submit all market configuration actions in one admin proposal.
+    CreateBip1(CreateBip1Args),
+
+    /// Submit a market proposal using symbol-specific models and risk configuration.
     CreateMarket(CreateMarketArgs),
 
     /// Replace one coin's complete risk surface from a CSV file.
     #[command(name = "config-risk-matrix")]
     ConfigRiskMatrix(ConfigRiskMatrixArgs),
 
-    /// Replace one complete security or currency definition.
+    /// Replace security or currency definitions in one admin multisig proposal.
     #[command(name = "config-security")]
     ConfigSecurity(ConfigSecurityArgs),
 }
 
 #[derive(Args, Debug)]
-struct CreateMarketArgs {
-    /// Underlier currency name; the traded instrument is SYMBOL-USD.
-    symbol: String,
+struct CreateBip1Args {
+    #[command(flatten)]
+    market: CreateMarketArgs,
     /// BIP1 reference tier.
     #[arg(value_parser = ["low", "medium", "high"])]
     tier: String,
-    /// Root directory containing securities, model references, and risk references.
+}
+
+#[derive(Args, Debug)]
+struct CreateMarketArgs {
+    /// Underlier currency name; the traded instrument and model filenames use SYMBOL.
+    symbol: String,
+    /// Root directory containing securities, models, and risk configurations.
     #[arg(long)]
     config_dir: PathBuf,
     /// Executor JSON5 file supplying funding defaults and pair overrides.
@@ -109,7 +119,7 @@ struct ConfigRiskMatrixArgs {
 
 #[derive(Args, Debug)]
 struct ConfigSecurityArgs {
-    /// Inline JSON/JSON5 or a path containing one security definition.
+    /// Inline JSON/JSON5 or a file containing one security definition or an array.
     json: String,
 }
 
@@ -414,10 +424,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_create_market_without_signer_for_dry_run() {
+    fn parses_create_bip1_without_signer_for_dry_run() {
         let cli = Cli::try_parse_from([
             "bulk-sdk",
-            "create-market",
+            "create-bip1",
             "PAPER",
             "high",
             "--config-dir",
@@ -428,15 +438,15 @@ mod tests {
             "--skip-currency",
         ])
         .unwrap();
-        let Command::CreateMarket(args) = cli.command else {
-            panic!("expected CreateMarket");
+        let Command::CreateBip1(args) = cli.command else {
+            panic!("expected CreateBip1");
         };
-        assert!(args.dry_run && args.skip_currency);
-        assert_eq!(args.symbol, "PAPER");
+        assert!(args.market.dry_run && args.market.skip_currency);
+        assert_eq!(args.market.symbol, "PAPER");
         assert_eq!(args.tier, "high");
         assert!(Cli::try_parse_from([
             "bulk-sdk",
-            "create-market",
+            "create-bip1",
             "PAPER",
             "invalid",
             "--config-dir",
@@ -500,43 +510,74 @@ mod tests {
     }
 }
 
+/// Builds market actions, applies the local liquidator policy, and suspends the new pair.
+async fn prepare_market_actions(
+    api_url: &str,
+    args: &CreateMarketArgs,
+    tier: Option<&str>,
+) -> eyre::Result<Vec<Action>> {
+    let mut actions = match tier {
+        Some(tier) => create_market_actions(
+            &args.config_dir,
+            &args.executor_config,
+            &args.symbol,
+            tier,
+            args.skip_currency,
+        )?,
+        None => create_named_market_actions(
+            &args.config_dir,
+            &args.executor_config,
+            &args.symbol,
+            args.skip_currency,
+        )?,
+    };
+    let api = BulkHttpClient::new(&HttpConfig {
+        base_url: api_url.trim_end_matches('/').to_owned(),
+        signer: None,
+        signature_domain: None,
+        default_timeout: Duration::from_secs(120),
+    })?;
+    let config = api.get_liquidator_config().await?;
+    actions.push(market_liquidator_action(
+        config,
+        &std::fs::read_to_string(&args.executor_config)?,
+        &format!("{}-USD", args.symbol),
+    )?);
+    actions.push(Action::MarketAdmin(MarketAdmin {
+        symbol: format!("{}-USD", args.symbol).into(),
+        action: MarketAction::Suspend,
+        price: None,
+        meta: Default::default(),
+    }));
+    Ok(actions)
+}
+
 // ───── Entrypoint ──────────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
-    let actions = match cli.command {
-        Command::CreateMarket(args) => {
-            let mut actions = create_market_actions(
-                &args.config_dir,
-                &args.executor_config,
-                &args.symbol,
-                &args.tier,
-                args.skip_currency,
-            )?;
-            let api = BulkHttpClient::new(&HttpConfig {
-                base_url: cli.api_url.trim_end_matches('/').to_owned(),
-                signer: None,
-                signature_domain: None,
-                default_timeout: Duration::from_secs(120),
-            })?;
-            let config = api.get_liquidator_config().await?;
-            actions.push(market_liquidator_action(
-                config,
-                &format!("{}-USD", args.symbol),
-            )?);
-            if args.dry_run {
-                println!("{}", serde_json::to_string_pretty(&actions)?);
-                return Ok(());
-            }
-            actions
+    let (actions, dry_run) = match cli.command {
+        Command::CreateBip1(args) => (
+            prepare_market_actions(&cli.api_url, &args.market, Some(&args.tier)).await?,
+            args.market.dry_run,
+        ),
+        Command::CreateMarket(args) => (
+            prepare_market_actions(&cli.api_url, &args, None).await?,
+            args.dry_run,
+        ),
+        Command::ConfigRiskMatrix(args) => {
+            (vec![config_risk_action(&args.coin, &args.csv)?], false)
         }
-        Command::ConfigRiskMatrix(args) => vec![config_risk_action(&args.coin, &args.csv)?],
         Command::ConfigSecurity(args) => {
             let json = read_inline_or_file(&args.json)?;
-            vec![config_security_action(&json)?]
+            (config_security_actions(&json)?, false)
         }
     };
+    if dry_run {
+        println!("{}", serde_json::to_string_pretty(&actions)?);
+        return Ok(());
+    }
 
     let signature_domain = cli
         .signature_domain

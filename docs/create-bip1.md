@@ -1,6 +1,6 @@
-# Create a market proposal
+# Create a BIP1 market proposal
 
-`bulk-sdk create-market` reads the configuration tree and submits one proposal to the
+`bulk-sdk create-bip1` reads the configuration tree and submits one proposal to the
 existing protocol admin multisig. Config discovery, reference substitution, validation,
 binary encoding, signing, and submission all run in Rust. No manifest or Python is required.
 
@@ -17,7 +17,7 @@ cargo build --manifest-path crates/cli-sdk/Cargo.toml --bin bulk-sdk
 Validate without a signer (requires the target API to read its current liquidator config):
 
 ```sh
-crates/cli-sdk/target/debug/bulk-sdk create-market PAPER high \
+crates/cli-sdk/target/debug/bulk-sdk create-bip1 PAPER high \
   --config-dir ../bulk-sdk/config \
   --executor-config ../bulk-sdk/config/executor-testnet.json5 \
   --api-url http://64.130.50.69:12000/api/v1 \
@@ -27,7 +27,7 @@ crates/cli-sdk/target/debug/bulk-sdk create-market PAPER high \
 Submit to staging/devnet:
 
 ```sh
-crates/cli-sdk/target/debug/bulk-sdk create-market PAPER high \
+crates/cli-sdk/target/debug/bulk-sdk create-bip1 PAPER high \
   --config-dir ../bulk-sdk/config \
   --executor-config ../bulk-sdk/config/executor-testnet.json5 \
   --api-url http://64.130.50.69:12000/api/v1 \
@@ -40,9 +40,10 @@ shows the canonical transaction and requests confirmation. `--yes` skips confirm
 for a large risk matrix. `--dry-run` still prints every encoded action for inspection.
 
 Action order is currency, perpetual, volatility, fair price, regime, currency risk matrix,
-funding, `AddMarket`, and `UpdateLiquidatorConfig`. Use `--skip-currency` if the underlier already exists on the target
-exchange; there is no automatic existence detection. This yields eight actions instead
-of nine. The command submits the proposal; multisig approval and execution follow the
+funding, `AddMarket`, `UpdateLiquidatorConfig`, and finally `MarketAdmin(Suspend)`.
+The market starts suspended. Use `--skip-currency` if the underlier already exists on the target
+exchange; there is no automatic existence detection. This yields nine actions instead
+of ten. The command submits the proposal; multisig approval and execution follow the
 normal protocol policy.
 
 Choose `low`, `medium`, or `high`. Models come from
@@ -58,7 +59,7 @@ contain every funding parameter; partial overrides are not merged. The SDK valid
 funding against the configured perpetual before submission.
 
 The former Python wrapper and `market-proposal` manifest command have been replaced by
-`create-market`. Each invocation reads the current configs and submits a fresh proposal;
+`create-bip1`. Each invocation reads the current configs and submits a fresh proposal;
 do not blindly retry after an uncertain response.
 
 Run tests with:

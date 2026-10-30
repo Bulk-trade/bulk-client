@@ -10,7 +10,7 @@ usage() {
   cat >&2 <<EOF
 Usage: $0 <symbol> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
-Creates a market book after its configuration has been deployed.
+Creates and suspends a market book in one admin multisig proposal after its configuration has been deployed.
 EOF
 }
 

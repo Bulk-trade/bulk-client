@@ -36,6 +36,41 @@ pub fn config_risk_action(coin: &str, csv: &str) -> eyre::Result<Action> {
     opaque_action(matrix, Action::ConfigRisk, "risk surface")
 }
 
+/// Builds security-configuration actions for one administrative proposal.
+///
+/// * Accepts one definition or an array and preserves the input order.
+/// * Validates every definition before returning any actions.
+///
+/// # Arguments
+/// * `json` - Inline JSON/JSON5 containing a security definition or an array of definitions.
+///
+/// # Returns
+/// An error when parsing or serialization fails, or the array is empty.
+pub fn config_security_actions(json: &str) -> eyre::Result<Vec<Action>> {
+    let value: serde_json::Value =
+        json5::from_str(json).map_err(|error| eyre::eyre!("invalid security config: {error}"))?;
+    let definitions = match value {
+        serde_json::Value::Array(definitions) => definitions,
+        definition => vec![definition],
+    };
+    if definitions.is_empty() {
+        eyre::bail!("security config array must not be empty");
+    }
+    definitions
+        .into_iter()
+        .enumerate()
+        .map(|(index, definition)| {
+            // SDK order types deserialize through borrowed strings, which an owned
+            // Value deserializer cannot supply. Parse from text to retain borrowing.
+            let json = serde_json::to_string(&definition)?;
+            let security: Security = serde_json::from_str(&json).map_err(|error| {
+                eyre::eyre!("invalid security config at index {index}: {error}")
+            })?;
+            opaque_action(security, Action::ConfigSecurity, "security config")
+        })
+        .collect()
+}
+
 /// Builds a security-configuration action using the native SDK security type.
 ///
 /// # Arguments
@@ -72,20 +107,54 @@ pub fn create_market_actions(
     tier: &str,
     skip_currency: bool,
 ) -> eyre::Result<Vec<Action>> {
-    let plan = read_market_plan(config_dir, executor_config, symbol, tier, skip_currency)?;
+    let plan = read_market_plan(
+        config_dir,
+        executor_config,
+        symbol,
+        Some(tier),
+        skip_currency,
+    )?;
     build_market_actions(plan)
 }
 
-/// Build a liquidator update by copying the current wildcard policy to a new pair.
+/// Builds a market proposal from symbol-specific models and risk configuration.
+///
+/// * Reads the currency, perpetual, named models, risk surface, and funding configuration.
+/// * Validates the configuration and builds the ordered market actions.
+///
+/// # Arguments
+/// * `config_dir` - Root of the securities, models, and risk configuration tree.
+/// * `executor_config` - Executor JSON5 file supplying funding defaults and overrides.
+/// * `symbol` - Underlier currency name used for model and risk filenames.
+/// * `skip_currency` - Whether the currency already exists on the exchange.
+///
+/// # Returns
+/// An error when a required file is missing or its configuration is invalid.
+pub fn create_named_market_actions(
+    config_dir: &Path,
+    executor_config: &Path,
+    symbol: &str,
+    skip_currency: bool,
+) -> eyre::Result<Vec<Action>> {
+    let plan = read_market_plan(config_dir, executor_config, symbol, None, skip_currency)?;
+    build_market_actions(plan)
+}
+
+/// Builds a liquidator update, replacing the pair policy with its local configuration.
+///
+/// * Uses the local pair override or local wildcard, falling back to the live wildcard.
+/// * Preserves live global settings and every unrelated instrument policy.
 ///
 /// # Arguments
 /// * `config` - Current JSON returned by the liquidator configuration API.
+/// * `executor_config` - Local executor JSON5 supplying the new instrument policy.
 /// * `symbol` - Traded pair name, such as PAPER-USD.
 ///
 /// # Returns
-/// A full configuration update, or an error for a missing wildcard or existing pair.
+/// A full configuration update, or an error for invalid configuration or a missing policy.
 pub fn market_liquidator_action(
     mut config: serde_json::Value,
+    executor_config: &str,
     symbol: &str,
 ) -> eyre::Result<Action> {
     if let Some(serde_json::Value::Object(instruments)) = config.get_mut("instruments") {
@@ -102,24 +171,33 @@ pub fn market_liquidator_action(
         config["instruments"] = serde_json::Value::Array(entries);
     }
     let mut config: bulk_client::msgs::liquidator::LiqConfig = serde_json::from_value(config)?;
-    if config
-        .instruments
-        .iter()
-        .any(|entry| entry.symbol == symbol)
-    {
-        eyre::bail!("liquidator configuration already contains {symbol}");
-    }
-    let mut matches = config
-        .instruments
-        .iter()
-        .filter(|entry| entry.symbol == "*");
-    let mut policy = matches
-        .next()
-        .ok_or_else(|| eyre::eyre!("liquidator configuration has no wildcard '*' policy"))?
-        .clone();
-    if matches.next().is_some() {
-        eyre::bail!("liquidator configuration has multiple wildcard policies");
-    }
+    let local: serde_json::Value = json5::from_str(executor_config)?;
+    let policies = local
+        .get("liquidator")
+        .and_then(|value| value.get("instruments"));
+    let selected = policies.and_then(|value| value.get(symbol).or_else(|| value.get("*")));
+    let mut policy = if let Some(selected) = selected {
+        let mut selected = selected.clone();
+        selected
+            .as_object_mut()
+            .ok_or_else(|| eyre::eyre!("local liquidator policy for {symbol} must be an object"))?
+            .insert("symbol".into(), serde_json::Value::String(symbol.into()));
+        serde_json::from_value(selected)?
+    } else {
+        let mut matches = config
+            .instruments
+            .iter()
+            .filter(|entry| entry.symbol == "*");
+        let policy = matches
+            .next()
+            .ok_or_else(|| eyre::eyre!("liquidator configuration has no wildcard '*' policy"))?
+            .clone();
+        if matches.next().is_some() {
+            eyre::bail!("liquidator configuration has multiple wildcard policies");
+        }
+        policy
+    };
+    config.instruments.retain(|entry| entry.symbol != symbol);
     policy.symbol = symbol.into();
     config.instruments.push(policy);
     Ok(Action::UpdateLiquidatorConfig(config))
@@ -131,7 +209,7 @@ fn read_market_plan(
     config_dir: &Path,
     executor_config: &Path,
     symbol: &str,
-    tier: &str,
+    tier: Option<&str>,
     skip_currency: bool,
 ) -> eyre::Result<MarketPlan> {
     if symbol.is_empty()
@@ -142,7 +220,7 @@ fn read_market_plan(
     {
         eyre::bail!("symbol must be an uppercase currency name, e.g. PAPER");
     }
-    if !matches!(tier, "low" | "medium" | "high") {
+    if tier.is_some_and(|tier| !matches!(tier, "low" | "medium" | "high")) {
         eyre::bail!("tier must be low, medium, or high");
     }
     let securities_dir = config_dir.join("securities");
@@ -161,17 +239,20 @@ fn read_market_plan(
         securities.push(currency);
     }
     securities.push(perpetual);
-    let risk_csv = config_dir.join("risk/ref").join(format!("{tier}.csv"));
+    let risk_csv = match tier {
+        Some(tier) => config_dir.join("risk/ref").join(format!("{tier}.csv")),
+        None => config_dir.join("risk").join(format!("{symbol}.csv")),
+    };
     if !risk_csv.is_file() {
-        eyre::bail!("missing risk reference: {}", risk_csv.display());
+        eyre::bail!("missing risk configuration: {}", risk_csv.display());
     }
     Ok(MarketPlan {
         symbol: symbol.into(),
         securities_dir,
         securities,
-        volatility: read_reference(config_dir, "volatility", tier, symbol)?,
-        fairprice: read_reference(config_dir, "fairprice", tier, symbol)?,
-        regime: read_reference(config_dir, "regime", tier, symbol)?,
+        volatility: read_market_model(config_dir, "volatility", tier, symbol)?,
+        fairprice: read_market_model(config_dir, "fairprice", tier, symbol)?,
+        regime: read_market_model(config_dir, "regime", tier, symbol)?,
         risk_csv,
         executor_config: read_config(executor_config)?,
     })
@@ -203,6 +284,24 @@ fn select_security_definition(
         eyre::bail!("expected exactly one {kind} named {name}");
     }
     Ok(definition)
+}
+
+/// Reads a named model directly or expands a BIP1 tier reference.
+fn read_market_model(
+    config_dir: &Path,
+    kind: &str,
+    tier: Option<&str>,
+    symbol: &str,
+) -> eyre::Result<String> {
+    match tier {
+        Some(tier) => read_reference(config_dir, kind, tier, symbol),
+        None => read_config(
+            &config_dir
+                .join("models")
+                .join(kind)
+                .join(format!("{symbol}.json5")),
+        ),
+    }
 }
 
 fn read_reference(config_dir: &Path, kind: &str, tier: &str, symbol: &str) -> eyre::Result<String> {
@@ -386,6 +485,55 @@ mod tests {
     use super::*;
 
     #[test]
+    fn security_config_accepts_single_and_array_in_order() {
+        let first = r#"{type:'Currency',name:'SPACEX',pyth:3314,dollarQuoted:true,
+            dollarEquivalent:false,priceBound:50.0,sid:155,decimals:8}"#;
+        let second = first.replace("SPACEX", "SNDK").replace("155", "156");
+        let array = format!("[// Preserve JSON5 support\n{first},{second},]");
+        for (input, expected) in [
+            (first.to_owned(), vec![first]),
+            (array, vec![first, &second]),
+        ] {
+            let actions = config_security_actions(&input).unwrap();
+            assert_eq!(actions.len(), expected.len());
+            for (action, definition) in actions.into_iter().zip(expected) {
+                let Action::ConfigSecurity(actual) = action else {
+                    panic!("expected ConfigSecurity");
+                };
+                let Action::ConfigSecurity(expected) = config_security_action(definition).unwrap()
+                else {
+                    panic!("expected ConfigSecurity");
+                };
+                assert_eq!(actual.payload, expected.payload);
+            }
+        }
+        let error = config_security_actions(&format!("[{first},{{type:'Invalid'}}]")).unwrap_err();
+        assert!(error.to_string().contains("index 1"));
+    }
+
+    #[test]
+    fn security_config_accepts_perpetual_order_types_in_mixed_batch() {
+        let currency = r#"{"type":"Currency","name":"SPACEX","pyth":3314,"dollarQuoted":true,"dollarEquivalent":false,"priceBound":50.0,"sid":155,"decimals":8}"#;
+        let perpetual = r#"{"type":"Perpetual","name":"SPACEX-USD","aliases":["FXP-SPACEX-USD-BULK"],"sid":28,"decimals":8,"venue":"Bulk","marginMode":"Cross","pricePrecision":3,"sizePrecision":4,"minNotional":50.0,"leverage":{"min":2.0,"max":10.0,"notional_0":100000.0,"notional_half":300000.0},"maxDepth":5000.0,"max_impact":400,"slippage":100,"stop_slippage":200,"pccy":"SPACEX","qccy":"USD","funding":"1hr","ordertypes":["Limit","Market"],"tif":["GTC","IOC"]}"#;
+        for input in [perpetual.to_owned(), format!("[{currency},{perpetual}]")] {
+            let actions = config_security_actions(&input).unwrap();
+            let Action::ConfigSecurity(action) = actions.last().unwrap() else {
+                panic!("expected ConfigSecurity");
+            };
+            let expected: Security = serde_json::from_str(perpetual).unwrap();
+            assert_eq!(action.payload, bincode::serialize(&expected).unwrap());
+            assert_eq!(actions.len(), if input.starts_with('[') { 2 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn security_config_rejects_empty_arrays_and_invalid_input() {
+        for input in ["[]", "null", "42", "{}", "[[]]", "[", "invalid"] {
+            assert!(config_security_actions(input).is_err(), "accepted {input}");
+        }
+    }
+
+    #[test]
     fn liquidator_copies_wildcard_and_preserves_current_policies() {
         use bulk_client::msgs::liquidator::{ExecutionMode, LiqConfig, LiqConfigByInstrument};
         let wildcard = LiqConfigByInstrument {
@@ -412,7 +560,7 @@ mod tests {
         });
         for raw in [array.clone(), object] {
             let Action::UpdateLiquidatorConfig(updated) =
-                market_liquidator_action(raw, "FOO-USD").unwrap()
+                market_liquidator_action(raw, "{}", "FOO-USD").unwrap()
             else {
                 panic!("wrong action")
             };
@@ -435,16 +583,50 @@ mod tests {
                 );
             }
         }
-        assert!(market_liquidator_action(array.clone(), "BTC-USD").is_err());
+        let mut pair_policy = existing.clone();
+        pair_policy.max_exposure = 321.0;
+        pair_policy.volume_min = 143.0;
+        let mut default_policy = wildcard.clone();
+        default_policy.max_exposure = 654.0;
+        let local = serde_json::json!({"liquidator": {"instruments": {
+            "BTC-USD": pair_policy,
+            "*": default_policy
+        }}})
+        .to_string();
+        for target in ["BTC-USD", "FOO-USD"] {
+            let Action::UpdateLiquidatorConfig(updated) =
+                market_liquidator_action(array.clone(), &local, target).unwrap()
+            else {
+                panic!("wrong action")
+            };
+            let policies: Vec<_> = updated
+                .instruments
+                .iter()
+                .filter(|p| p.symbol == target)
+                .collect();
+            assert_eq!(policies.len(), 1);
+            assert_eq!(
+                policies[0].max_exposure,
+                if target == "BTC-USD" { 321.0 } else { 654.0 }
+            );
+            if target == "BTC-USD" {
+                assert_eq!(policies[0].volume_min, 143.0);
+            }
+            assert_eq!(updated.cross_exposure, config.cross_exposure);
+            assert_eq!(
+                serde_json::to_value(&updated.instruments[0]).unwrap(),
+                serde_json::to_value(&wildcard).unwrap()
+            );
+        }
         let mut missing = array.clone();
         missing["instruments"] = serde_json::json!([]);
-        assert!(market_liquidator_action(missing, "FOO-USD").is_err());
+        assert!(market_liquidator_action(missing, "{}", "FOO-USD").is_err());
         let mut duplicate = array;
         duplicate["instruments"]
             .as_array_mut()
             .unwrap()
             .push(serde_json::to_value(wildcard).unwrap());
-        assert!(market_liquidator_action(duplicate, "FOO-USD").is_err());
+        assert!(market_liquidator_action(duplicate, "{}", "FOO-USD").is_err());
     }
 
     #[test]
@@ -479,7 +661,7 @@ mod tests {
                 )
                 .unwrap();
             }
-            let plan = read_market_plan(&root, &executor, "FOO", tier, false).unwrap();
+            let plan = read_market_plan(&root, &executor, "FOO", Some(tier), false).unwrap();
             assert_eq!(plan.securities.len(), 2);
             assert_eq!(plan.securities[0]["type"], "Currency");
             assert_eq!(plan.securities[1]["type"], "Perpetual");
@@ -489,16 +671,16 @@ mod tests {
             assert!(plan.risk_csv.ends_with(format!("{tier}.csv")));
         }
         assert_eq!(
-            read_market_plan(&root, &executor, "FOO", "low", true)
+            read_market_plan(&root, &executor, "FOO", Some("low"), true)
                 .unwrap()
                 .securities
                 .len(),
             1
         );
-        assert!(read_market_plan(&root, &executor, "BAR", "low", false).is_err());
-        assert!(read_market_plan(&root, &executor, "../FOO", "low", false).is_err());
+        assert!(read_market_plan(&root, &executor, "BAR", Some("low"), false).is_err());
+        assert!(read_market_plan(&root, &executor, "../FOO", Some("low"), false).is_err());
         std::fs::remove_file(root.join("models/regime/ref/low.json5")).unwrap();
-        assert!(read_market_plan(&root, &executor, "FOO", "low", false).is_err());
+        assert!(read_market_plan(&root, &executor, "FOO", Some("low"), false).is_err());
         std::fs::remove_dir_all(&root).unwrap();
     }
 

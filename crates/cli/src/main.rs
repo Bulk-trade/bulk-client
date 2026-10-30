@@ -295,7 +295,7 @@ enum Command {
     #[command(name = "corrs")]
     Corrs(CorrsArgs),
 
-    /// Create a market book after configs are in place.
+    /// Create and suspend a market book in one admin proposal after configs are in place.
     #[command(name = "add-market")]
     AddMarket(AddMarketArgs),
 

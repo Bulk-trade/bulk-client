@@ -86,6 +86,7 @@ bulk_admin_run() {
   local package
   local binary
   local signer_args=()
+  local dry_run=false
   shift
 
   if ! command -v cargo >/dev/null 2>&1; then
@@ -93,7 +94,18 @@ bulk_admin_run() {
     return 1
   fi
 
-  if [[ "${BULK_ADMIN_USE_LEDGER}" == true ]]; then
+  if [[ "${command}" == create-market || "${command}" == create-bip1 ]]; then
+    local argument
+    for argument in "$@"; do
+      if [[ "${argument}" == --dry-run ]]; then
+        dry_run=true
+      fi
+    done
+  fi
+
+  if [[ "${dry_run}" == true ]]; then
+    : # Market dry runs validate and fetch config without a signer.
+  elif [[ "${BULK_ADMIN_USE_LEDGER}" == true ]]; then
     signer_args=(--ledger --ledger-derivation-path 0/0)
   else
     if [[ -z "${BULK_PRIVATE_KEY:-}" ]]; then
@@ -116,7 +128,7 @@ bulk_admin_run() {
   echo "Verify the signer, account, nonce, and action in the preview before confirming." >&2
 
   case "${command}" in
-    config-risk-matrix|config-security)
+    config-risk-matrix|config-security|create-market|create-bip1)
       manifest_path="${PROJECT_ROOT}/crates/cli-sdk/Cargo.toml"
       package="bulk-cli-sdk"
       binary="bulk-sdk"

@@ -10,7 +10,8 @@ usage() {
   cat >&2 <<EOF
 Usage: $0 <json-or-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
 
-Updates one complete security or currency definition from inline JSON/JSON5 or a file.
+Updates complete security or currency definitions from inline JSON/JSON5 or a file.
+Accepts one object or an array; all updates go into one admin multisig proposal.
 EOF
 }
 
