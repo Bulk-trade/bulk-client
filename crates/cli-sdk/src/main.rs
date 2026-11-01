@@ -103,7 +103,7 @@ struct CreateMarketArgs {
     /// Omit the currency action when the underlier already exists on the exchange.
     #[arg(long)]
     skip_currency: bool,
-    /// Fetch current liquidator config, validate, and print actions without a signer.
+    /// Read executor config, validate, and print actions without a signer.
     #[arg(long)]
     dry_run: bool,
 }
@@ -511,8 +511,7 @@ mod tests {
 }
 
 /// Builds market actions, applies the local liquidator policy, and suspends the new pair.
-async fn prepare_market_actions(
-    api_url: &str,
+fn prepare_market_actions(
     args: &CreateMarketArgs,
     tier: Option<&str>,
 ) -> eyre::Result<Vec<Action>> {
@@ -531,15 +530,7 @@ async fn prepare_market_actions(
             args.skip_currency,
         )?,
     };
-    let api = BulkHttpClient::new(&HttpConfig {
-        base_url: api_url.trim_end_matches('/').to_owned(),
-        signer: None,
-        signature_domain: None,
-        default_timeout: Duration::from_secs(120),
-    })?;
-    let config = api.get_liquidator_config().await?;
     actions.push(market_liquidator_action(
-        config,
         &std::fs::read_to_string(&args.executor_config)?,
         &format!("{}-USD", args.symbol),
     )?);
@@ -559,13 +550,10 @@ async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
     let (actions, dry_run) = match cli.command {
         Command::CreateBip1(args) => (
-            prepare_market_actions(&cli.api_url, &args.market, Some(&args.tier)).await?,
+            prepare_market_actions(&args.market, Some(&args.tier))?,
             args.market.dry_run,
         ),
-        Command::CreateMarket(args) => (
-            prepare_market_actions(&cli.api_url, &args, None).await?,
-            args.dry_run,
-        ),
+        Command::CreateMarket(args) => (prepare_market_actions(&args, None)?, args.dry_run),
         Command::ConfigRiskMatrix(args) => {
             (vec![config_risk_action(&args.coin, &args.csv)?], false)
         }

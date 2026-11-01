@@ -140,23 +140,23 @@ pub fn create_named_market_actions(
     build_market_actions(plan)
 }
 
-/// Builds a liquidator update, replacing the pair policy with its local configuration.
+/// Builds a full liquidator update from the executor configuration.
 ///
-/// * Uses the local pair override or local wildcard, falling back to the live wildcard.
-/// * Preserves live global settings and every unrelated instrument policy.
+/// * Preserves local global settings and every unrelated instrument policy.
+/// * Uses the local pair override or copies the local wildcard for the new pair.
 ///
 /// # Arguments
-/// * `config` - Current JSON returned by the liquidator configuration API.
-/// * `executor_config` - Local executor JSON5 supplying the new instrument policy.
+/// * `executor_config` - Executor JSON5 containing the full liquidator configuration.
 /// * `symbol` - Traded pair name, such as PAPER-USD.
 ///
 /// # Returns
 /// A full configuration update, or an error for invalid configuration or a missing policy.
-pub fn market_liquidator_action(
-    mut config: serde_json::Value,
-    executor_config: &str,
-    symbol: &str,
-) -> eyre::Result<Action> {
+pub fn market_liquidator_action(executor_config: &str, symbol: &str) -> eyre::Result<Action> {
+    let executor: serde_json::Value = json5::from_str(executor_config)?;
+    let mut config = executor
+        .get("liquidator")
+        .ok_or_else(|| eyre::eyre!("executor configuration has no liquidator configuration"))?
+        .clone();
     if let Some(serde_json::Value::Object(instruments)) = config.get_mut("instruments") {
         let entries = std::mem::take(instruments)
             .into_iter()
@@ -171,18 +171,12 @@ pub fn market_liquidator_action(
         config["instruments"] = serde_json::Value::Array(entries);
     }
     let mut config: bulk_client::msgs::liquidator::LiqConfig = serde_json::from_value(config)?;
-    let local: serde_json::Value = json5::from_str(executor_config)?;
-    let policies = local
-        .get("liquidator")
-        .and_then(|value| value.get("instruments"));
-    let selected = policies.and_then(|value| value.get(symbol).or_else(|| value.get("*")));
-    let mut policy = if let Some(selected) = selected {
-        let mut selected = selected.clone();
-        selected
-            .as_object_mut()
-            .ok_or_else(|| eyre::eyre!("local liquidator policy for {symbol} must be an object"))?
-            .insert("symbol".into(), serde_json::Value::String(symbol.into()));
-        serde_json::from_value(selected)?
+    let mut policy = if let Some(policy) = config
+        .instruments
+        .iter()
+        .find(|entry| entry.symbol == symbol)
+    {
+        policy.clone()
     } else {
         let mut matches = config
             .instruments
@@ -534,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn liquidator_copies_wildcard_and_preserves_current_policies() {
+    fn liquidator_uses_full_executor_config_and_preserves_policies() {
         use bulk_client::msgs::liquidator::{ExecutionMode, LiqConfig, LiqConfigByInstrument};
         let wildcard = LiqConfigByInstrument {
             symbol: "*".into(),
@@ -559,9 +553,11 @@ mod tests {
             "*": wildcard, "BTC-USD": existing
         });
         for raw in [array.clone(), object] {
-            let Action::UpdateLiquidatorConfig(updated) =
-                market_liquidator_action(raw, "{}", "FOO-USD").unwrap()
-            else {
+            let Action::UpdateLiquidatorConfig(updated) = market_liquidator_action(
+                &serde_json::json!({"liquidator": raw}).to_string(),
+                "FOO-USD",
+            )
+            .unwrap() else {
                 panic!("wrong action")
             };
             assert_eq!(updated.cross_exposure, config.cross_exposure);
@@ -588,14 +584,14 @@ mod tests {
         pair_policy.volume_min = 143.0;
         let mut default_policy = wildcard.clone();
         default_policy.max_exposure = 654.0;
-        let local = serde_json::json!({"liquidator": {"instruments": {
+        let local = serde_json::json!({"liquidator": {"cross_exposure": 87654.0, "scoring_skew": 0.5, "toxicity": 12.0, "instruments": {
             "BTC-USD": pair_policy,
             "*": default_policy
         }}})
         .to_string();
         for target in ["BTC-USD", "FOO-USD"] {
             let Action::UpdateLiquidatorConfig(updated) =
-                market_liquidator_action(array.clone(), &local, target).unwrap()
+                market_liquidator_action(&local, target).unwrap()
             else {
                 panic!("wrong action")
             };
@@ -612,21 +608,32 @@ mod tests {
             if target == "BTC-USD" {
                 assert_eq!(policies[0].volume_min, 143.0);
             }
-            assert_eq!(updated.cross_exposure, config.cross_exposure);
-            assert_eq!(
-                serde_json::to_value(&updated.instruments[0]).unwrap(),
-                serde_json::to_value(&wildcard).unwrap()
-            );
+            assert_eq!(updated.cross_exposure, 87654.0);
+            let preserved_wildcard = updated
+                .instruments
+                .iter()
+                .find(|p| p.symbol == "*")
+                .unwrap();
+            assert_eq!(preserved_wildcard.max_exposure, 654.0);
         }
+        assert!(market_liquidator_action("{}", "FOO-USD").is_err());
         let mut missing = array.clone();
         missing["instruments"] = serde_json::json!([]);
-        assert!(market_liquidator_action(missing, "{}", "FOO-USD").is_err());
+        assert!(market_liquidator_action(
+            &serde_json::json!({"liquidator": missing}).to_string(),
+            "FOO-USD"
+        )
+        .is_err());
         let mut duplicate = array;
         duplicate["instruments"]
             .as_array_mut()
             .unwrap()
             .push(serde_json::to_value(wildcard).unwrap());
-        assert!(market_liquidator_action(duplicate, "{}", "FOO-USD").is_err());
+        assert!(market_liquidator_action(
+            &serde_json::json!({"liquidator": duplicate}).to_string(),
+            "FOO-USD"
+        )
+        .is_err());
     }
 
     #[test]
