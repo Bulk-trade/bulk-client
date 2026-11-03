@@ -29,7 +29,7 @@ def test_transaction_signature_is_bound_to_one_domain():
     assert "signatureDomain" not in transaction
 
 
-def test_faucet_signature_matches_rust_testnet_vector():
+def test_faucet_signature_matches_v12_testnet_vector():
     signer = TransactionSigner(
         "4XmiBPzjsmugYJtYFmgh8GWYKQEjt2CtT1MqfZKi8pm4tevpthqRePiACfNoUz4DWtxsxtVYHzBYD8PR7qHC21Kc"
     )
@@ -48,7 +48,7 @@ def test_faucet_signature_matches_rust_testnet_vector():
     signer.sign_transaction(transaction, SignatureDomain.TESTNET)
 
     assert transaction["signature"] == (
-        "67jDi1jnoefhfYCXFPG2DuACbnA1ChwaDp9Ucz68KphaCMbvq7dudJ4y3h6rx7G1JV1nQNMeQyYcjLK2viFoNyir"
+        "4nJd9pSRcT4C8vFakCAcEY3yPRVSzsdbgp8vKnHX6ePrgdoeYCa5oSycDxkgeiSEHKmGMy9JXkwwSkbPMsoWmDwr"
     )
 
 

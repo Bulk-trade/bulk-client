@@ -11,3 +11,6 @@ pub use clear_sign::{ClearSignMessage, ClearSignMessageOptions};
 pub use ledger::{LedgerDeviceInfo, LedgerResolveInfo};
 pub use signer::*;
 pub use transaction::*;
+
+mod version;
+pub use version::TransactionVersion;

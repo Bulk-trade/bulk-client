@@ -72,7 +72,7 @@ enum Command {
     /// Submit a market proposal using symbol-specific models and risk configuration.
     CreateMarket(CreateMarketArgs),
 
-    /// Replace one coin's complete risk surface from a CSV file.
+    /// Upload one coin's raw risk cube; the executor calibrates it using current policy.
     #[command(name = "config-risk-matrix")]
     ConfigRiskMatrix(ConfigRiskMatrixArgs),
 
@@ -113,7 +113,7 @@ struct ConfigRiskMatrixArgs {
     /// Registered SDK security name, for example BTC.
     coin: String,
 
-    /// Path to the risk-surface CSV file.
+    /// Path to raw risk observations with duration and cvar(99):start/end columns.
     csv: String,
 }
 

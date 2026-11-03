@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 bincode = "1.3.3"
 bulk-client = { path = "../api-rust", features = ["ledger"] }
-bulk-sdk-core = { path = "../../../bulk-sdk/core" }
+bulk-sdk-core = { git = "ssh://git@github.com/Bulk-trade/bulk-sdk.git", rev = "f2eba9a9d334a68ce9b908f8301eb68d80f06ca4" }
 clap = { version = "4.5.58", features = ["derive", "env"] }
 eyre = "0.6"
 json5 = "1.3.1"

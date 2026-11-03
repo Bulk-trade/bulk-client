@@ -481,6 +481,7 @@ impl BulkHttpClient {
         let nonce = nonce.unwrap_or_else(make_nonce);
         // Build + sign the transaction
         let mut tx = Transaction {
+            version: crate::transaction::TransactionVersion::CURRENT,
             actions,
             nonce,
             account: account,

@@ -250,15 +250,12 @@ def test_conditional_builder_code_and_slippage_use_fixed_option_framing():
         old_action = order.to_api()
         assert "builderCode" not in old_action[kind]
         old_bytes = signer.TransactionSigner.serialize_action(old_action)
-        old_v2 = signer.TransactionSigner.serialize_action(old_action, v2=True)
-        assert old_v2 == old_bytes
 
         order.builder_code = builder
         with_builder = order.to_api()
         assert with_builder[kind]["builderCode"] == {"to": PUBKEY, "fee": 5}
         encoded = signer.TransactionSigner.serialize_action(with_builder)
         assert encoded != old_bytes
-        assert signer.TransactionSigner.serialize_action(with_builder, v2=True) == encoded
         assert b"\x01" + bytes(32) + b"\x05" in encoded
 
         with_builder[kind]["builderCode"] = None
@@ -313,7 +310,7 @@ def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     trigger_bytes = signer.TransactionSigner.serialize_transaction(
         [trigger], 7, PUBKEY, signer.SignatureDomain.TESTNET
     )
-    expected_trigger = "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    expected_trigger = "0c00000001000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
     assert trigger_bytes.hex() == expected_trigger, trigger_bytes.hex()
 
     on_fill = {
@@ -337,7 +334,7 @@ def test_python_trigger_and_on_fill_signing_match_current_sdk_vectors():
     on_fill_bytes = signer.TransactionSigner.serialize_transaction(
         [on_fill], 7, PUBKEY, signer.SignatureDomain.TESTNET
     )
-    expected_on_fill = "ffffffffffffffff62756c6b2d616374696f6e730301000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+    expected_on_fill = "0c00000001000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
     assert on_fill_bytes.hex() == expected_on_fill, on_fill_bytes.hex()
 
 
@@ -377,7 +374,7 @@ def test_python_signer_rejects_top_level_trigger_iso_only():
     })
 
 
-def test_market_order_slippage_preserves_legacy_signing_and_binds_new_value():
+def test_market_order_slippage_uses_v12_options_and_binds_new_value():
     signer = load_signer()
     legacy_action = {
         "m": {
@@ -397,6 +394,8 @@ def test_market_order_slippage_preserves_legacy_signing_and_binds_new_value():
         struct.pack("<Q", 125_000_000),
         bytes([0]),
         bytes([1]),
+        bytes([0]),  # absent builder code
+        bytes([0]),  # absent slippage
     ])
     assert legacy == expected
 
@@ -406,8 +405,8 @@ def test_market_order_slippage_preserves_legacy_signing_and_binds_new_value():
             "slippage": "25.5",
         }
     }
-    encoded = signer.TransactionSigner.serialize_action(with_slippage, v2=True)
-    assert encoded == legacy + b"\x00\x01" + struct.pack("<Q", 2_550_000_000)
+    encoded = signer.TransactionSigner.serialize_action(with_slippage)
+    assert encoded == legacy[:-1] + b"\x01" + struct.pack("<Q", 2_550_000_000)
 
 
 def test_market_order_model_defaults_to_100_bps_and_can_omit_for_legacy():

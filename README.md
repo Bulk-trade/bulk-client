@@ -61,7 +61,22 @@ Pricing JSON now uses `oracleSource`, accepting a name (`"Pyth"`, `"Bulk"`, or
 `"both"` value remain accepted. Rust uses `PricingAdmin::oracle_source` and
 combines sources with `OracleSource::Bulk | OracleSource::BIP`.
 
-Risk configuration accepts `eloss_timescale`, defaulting to `sqrt(3)` when omitted.
+Transactions created by this client use numeric `version: 12`. Signing bytes are
+`version_le_u32 || bincode(actions) || nonce_le_u64 || account_bytes || signature_domain_u8`.
+Only V12 is accepted by the client; the SDK and server retain V11 compatibility.
+
+Risk configuration on `jon/iso-reform` uses `max_loss`, `eloss_floor`, `max_pliq`,
+`margin_buffer`, `corr_discount`, `cascade_factor`, and `eloss_timescale`.
+
+The existing `config-risk-matrix` command submits the `configRisk` action (ordinal 25).
+Its opaque payload is now a bincode-serialized SDK `RiskCube`, containing raw observations
+rather than a calibrated `RiskMatrix`. CSV input requires `side`, `threshold`, `leverage`,
+`regime`, `duration` (seconds), `cvar(99):start`, `cvar(99):end`, `p`, and `liq`.
+Losses are signed percentages of maintenance margin consumed. The executor calibrates
+using its current risk policy and per-instrument minimum liquidation volume; no local
+calibration configuration is needed. Existing serialized matrix uploads are incompatible.
+Market creation uses the same raw-cube payload. The private SDK helper pins the reform
+SDK revision and requires access to its Git repository.
 
 ## Architecture
 

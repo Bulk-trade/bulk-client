@@ -108,6 +108,7 @@ pub enum Action {
     // ConfigRegime = ordinal(24)
     ConfigRegime(OpaqueAction),
     // ConfigRisk = ordinal(25)
+    /// Raw bincode-serialized SDK RiskCube; calibration is performed by the executor.
     #[serde(alias = "configRiskMatrix")]
     ConfigRisk(OpaqueAction),
     // ConfigFeePolicy = ordinal(26)
