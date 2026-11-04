@@ -10,7 +10,7 @@ usage() {
   cat >&2 <<EOF
 Usage: $0 <symbol> --config-dir <dir> --executor-config <file>
           [--skip-currency] [--dry-run] [-ledger] [-url <api-url>]
-          [-net <mainnet|testnet|devnet>]
+          [-net <mainnet|testnet|devnet|local>]
 
 Uses models/{volatility,fairprice,regime}/<symbol>.json5 and risk/<symbol>.csv.
 Submits all market configuration actions in one admin multisig proposal.
