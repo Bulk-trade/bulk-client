@@ -10,7 +10,7 @@ TEST_ACCOUNT="B7DJjX4WtcimU4oUvnabHrDNu1YGnBdU1UfK78KdA2T2"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <k> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <k> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Sets the global open-order limit to <k>. The staging max-order test account
 ${TEST_ACCOUNT}

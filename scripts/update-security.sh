@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <json-or-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <json-or-file> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Updates complete security or currency definitions from inline JSON/JSON5 or a file.
 Accepts one object or an array; all updates go into one admin multisig proposal.

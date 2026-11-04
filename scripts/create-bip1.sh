@@ -10,7 +10,7 @@ usage() {
   cat >&2 <<EOF
 Usage: $0 <symbol> <low|medium|high> --config-dir <dir> --executor-config <file>
           [--skip-currency] [--dry-run] [-ledger] [-url <api-url>]
-          [-net <mainnet|testnet|devnet>]
+          [-net <mainnet|testnet|devnet|local>]
 
 Uses ref/{low,medium,high}.json5 models and the matching risk/ref/*.csv.
 Submits all market configuration actions in one admin multisig proposal.

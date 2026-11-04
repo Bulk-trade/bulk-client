@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Queries the current account funding policy.
 EOF

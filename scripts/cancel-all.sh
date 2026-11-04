@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Options:
   -ledger         Sign with a Ledger using derivation path 0/0.

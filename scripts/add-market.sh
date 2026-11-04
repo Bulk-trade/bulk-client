@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <symbol> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <symbol> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Creates and suspends a market book in one admin multisig proposal after its configuration has been deployed.
 EOF

@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <pubkey> <k> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet>]
+Usage: $0 <pubkey> <k> [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Sets an account-specific open-order limit to <k> without changing the global limit.
 EOF
