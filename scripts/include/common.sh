@@ -66,7 +66,7 @@ bulk_admin_parse_common_args() {
   if [[ -z "${BULK_ADMIN_API_URL}" ]]; then
     case "${BULK_ADMIN_NETWORK}" in
       local)
-        BULK_ADMIN_API_URL="http://localhost:16000/api/v1"
+        BULK_ADMIN_API_URL="http://localhost:12000/api/v1"
         ;;
       testnet)
         BULK_ADMIN_API_URL="https://exchange-api.bulk.trade/api/v1"
