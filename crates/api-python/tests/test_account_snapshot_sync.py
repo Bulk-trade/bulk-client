@@ -1,7 +1,7 @@
 import unittest
 
 from bulk_api.api.bulk_ws import BulkWebSocketClient
-from bulk_api.common import Side
+from bulk_api.common import OrderStatus, Side, Topic
 from bulk_api.common.inventory import Inventory
 from bulk_api.messages.account import OrderState
 
@@ -21,6 +21,38 @@ SHORT_ORDER = {
 
 
 class AccountSnapshotSync(unittest.IsolatedAsyncioTestCase):
+    def test_unknown_wire_status_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Unknown order status unknown"):
+            OrderState.from_api({**SHORT_ORDER, "status": "unknown"})
+
+    async def test_terminal_wire_updates_clear_cached_orders_and_emit_events(self):
+        statuses = {
+            "modified": "MODIFIED",
+            "triggered": "TRIGGERED",
+            "siblingCancelled": "SIBLING_CANCELLED",
+            "triggerFailed": "TRIGGER_FAILED",
+            "canceled": "CANCELLED",
+            "canceledRiskLimit": "CANCELLED_RISKLIMIT",
+            "canceledSelfCrossing": "CANCELLED_SELFCROSSING",
+            "canceledReduceOnly": "CANCELLED_REDUCEONLY",
+            "canceledIOC": "CANCELLED_IOC",
+        }
+        for wire_status, member_name in statuses.items():
+            with self.subTest(status=wire_status):
+                client = BulkWebSocketClient()
+                events = []
+                client.on(Topic.ORDER, events.append)
+                await client._handle_order_update(SHORT_ORDER)
+                self.assertIn("sell-1", client.open_orders)
+                events.clear()
+
+                await client._handle_order_update({**SHORT_ORDER, "status": wire_status})
+
+                self.assertNotIn("sell-1", client.open_orders)
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].status, OrderStatus[member_name])
+                self.assertTrue(events[0].status.is_terminal())
+
     def test_both_order_shapes_preserve_sell_fields(self):
         full = OrderState.from_api(FULL_ORDER)
         self.assertEqual(full, OrderState.from_api(SHORT_ORDER))
