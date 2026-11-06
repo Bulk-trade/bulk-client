@@ -51,6 +51,10 @@ class OrderStatus(Enum):
     REJECTED_RISKLIMIT = 13
     REJECTED_INVALID = 14
     CANCEL_REJECT = 15
+    MODIFIED = 16
+    TRIGGERED = 17
+    SIBLING_CANCELLED = 18
+    TRIGGER_FAILED = 19
 
     def __str__(self):
         """Convert to string for API"""
@@ -82,23 +86,25 @@ class OrderStatus(Enum):
                 return OrderStatus.RESTING
             case "working":
                 return OrderStatus.WORKING
+            case "modified":
+                return OrderStatus.MODIFIED
             case "filled":
                 return OrderStatus.FILLED
             case "partiallyFilled":
                 return OrderStatus.PARTIALLY_FILLED
-            case "cancelled":
+            case "cancelled" | "canceled":
                 return OrderStatus.CANCELLED
-            case "cancelledRiskLimit":
+            case "cancelledRiskLimit" | "canceledRiskLimit":
                 return OrderStatus.CANCELLED_RISKLIMIT
             case "cancelAllRejected":
                 return OrderStatus.CANCEL_REJECT
             case "cancelOneRejected":
                 return OrderStatus.CANCEL_REJECT
-            case "cancelledSelfCrossing":
+            case "cancelledSelfCrossing" | "canceledSelfCrossing":
                 return OrderStatus.CANCELLED_SELFCROSSING
-            case "cancelledReduceOnly":
+            case "cancelledReduceOnly" | "canceledReduceOnly":
                 return OrderStatus.CANCELLED_REDUCEONLY
-            case "cancelledIOC":
+            case "cancelledIOC" | "canceledIOC":
                 return OrderStatus.CANCELLED_IOC
             case "rejectedCrossing":
                 return OrderStatus.REJECTED_CROSSING
@@ -108,5 +114,11 @@ class OrderStatus(Enum):
                 return OrderStatus.REJECTED_RISKLIMIT
             case "rejectedInvalid":
                 return OrderStatus.REJECTED_INVALID
+            case "triggered":
+                return OrderStatus.TRIGGERED
+            case "siblingCancelled":
+                return OrderStatus.SIBLING_CANCELLED
+            case "triggerFailed":
+                return OrderStatus.TRIGGER_FAILED
             case _:
                 raise ValueError(f"Unknown order status {s}")
