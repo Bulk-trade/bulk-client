@@ -18,7 +18,7 @@ EOF
 bulk_admin_parse_common_args "$@"
 set -- ${BULK_ADMIN_ARGS[@]+"${BULK_ADMIN_ARGS[@]}"}
 
-multisig="ADM1N11111111111111111111111111111111113D"
+multisig="ADM1N11111111111111111111111111111111111113D"
 positional_args=()
 while (( $# > 0 )); do
   case "$1" in
