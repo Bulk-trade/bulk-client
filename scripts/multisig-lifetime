@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/include/common.sh"
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 <lifetime-seconds> [-key <multisig-pubkey>] [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
+
+Proposes updating a multisig's proposal lifetime. Defaults to the admin multisig.
+Lifetime is required in seconds (172800 = 48 hours). Requires multisig approval and execution.
+EOF
+}
+
+bulk_admin_parse_common_args "$@"
+set -- ${BULK_ADMIN_ARGS[@]+"${BULK_ADMIN_ARGS[@]}"}
+
+multisig="ADM1N11111111111111111111111111111111113D"
+positional_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    -key)
+      if (( $# < 2 )) || [[ -z "$2" || "$2" == -* ]]; then
+        echo "error: -key requires a multisig public key" >&2
+        exit 2
+      fi
+      multisig="$2"
+      shift 2
+      ;;
+    *)
+      positional_args+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- ${positional_args[@]+"${positional_args[@]}"}
+
+if (( $# != 1 )); then
+  echo "error: multisig-lifetime requires one lifetime in seconds" >&2
+  usage
+  exit 2
+fi
+
+lifetime="$1"
+if [[ ! "${lifetime}" =~ ^[0-9]+$ ]]; then
+  echo "error: lifetime must be an integer number of seconds" >&2
+  exit 2
+fi
+
+bulk_admin_run update-multisig "${multisig}" --lifetime "${lifetime}"
