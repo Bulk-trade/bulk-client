@@ -275,6 +275,8 @@ impl ClearSignMessage {
                 Self::fmt_opt(action.price)
             )
         }
+        Action::Rotate(action) => format!("Rotate category={:?} mode={:?} keys={}", action.category, action.mode, action.keys.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")),
+        Action::Reserved69(_) => "Reserved action ordinal 69".to_owned(),
         Action::Reserved67(_) => "Reserved action ordinal 67".to_owned(),
         Action::HarvestProviderFees(action) => format!("HarvestProviderFees provider={} percentage={:?}", action.provider, action.percentage),
         Action::PricingAdmin(action) => {

@@ -749,6 +749,10 @@ impl Serialize for RawSignableAction<'_> {
             Action::UserAdmin(action) => {
                 serializer.serialize_newtype_variant("Action", 65, "UserAdmin", action)
             }
+            Action::Rotate(action) => {
+                serializer.serialize_newtype_variant("Action", 70, "Rotate", action)
+            }
+            Action::Reserved69(_) => Err(serde::ser::Error::custom("reserved action ordinal 69")),
             Action::Reserved67(_) => Err(serde::ser::Error::custom("reserved action ordinal 67")),
             Action::HarvestProviderFees(action) => {
                 serializer.serialize_newtype_variant("Action", 68, "HarvestProviderFees", action)

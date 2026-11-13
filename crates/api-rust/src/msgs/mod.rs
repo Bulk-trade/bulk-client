@@ -231,3 +231,71 @@ pub(crate) mod opt_fixed_point {
         }
     }
 }
+
+pub(crate) mod serde_pubkey_vec {
+    use serde::ser::SerializeSeq;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use solana_pubkey::Pubkey;
+    use std::str::FromStr;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PubkeyInput {
+        String(String),
+        Bytes([u8; 32]),
+    }
+
+    /// Serializes controller keys as base58 strings in JSON and fixed bytes on the wire.
+    ///
+    /// # Arguments
+    /// * `val` - Controller keys to encode.
+    /// * `serializer` - Target serializer.
+    ///
+    /// # Returns
+    /// The serialized sequence or a serialization error.
+    pub fn serialize<S: Serializer>(val: &Vec<Pubkey>, serializer: S) -> Result<S::Ok, S::Error> {
+        let human_readable = serializer.is_human_readable();
+        let mut seq = serializer.serialize_seq(Some(val.len()))?;
+        if human_readable {
+            for pubkey in val {
+                seq.serialize_element(&pubkey.to_string())?;
+            }
+        } else {
+            for pubkey in val {
+                seq.serialize_element(pubkey.as_array())?;
+            }
+        }
+        seq.end()
+    }
+
+    /// Reads controller keys from JSON strings or byte arrays, or binary fixed bytes.
+    ///
+    /// # Arguments
+    /// * `deserializer` - Source deserializer.
+    ///
+    /// # Returns
+    /// The decoded keys or an error for malformed input.
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<Pubkey>, D::Error> {
+        if deserializer.is_human_readable() {
+            let values = Vec::<PubkeyInput>::deserialize(deserializer)?;
+            let mut out = Vec::with_capacity(values.len());
+            for value in values {
+                match value {
+                    PubkeyInput::String(s) => out.push(
+                        Pubkey::from_str(&s)
+                            .map_err(|e| serde::de::Error::custom(e.to_string()))?,
+                    ),
+                    PubkeyInput::Bytes(bytes) => out.push(Pubkey::from(bytes)),
+                }
+            }
+            Ok(out)
+        } else {
+            Ok(Vec::<[u8; 32]>::deserialize(deserializer)?
+                .into_iter()
+                .map(Pubkey::from)
+                .collect())
+        }
+    }
+}

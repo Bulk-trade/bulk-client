@@ -355,3 +355,23 @@ export BULK_API_URL="https://exchange-api.bulk.trade/api/v1"
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
+
+### Rotate controller keys
+
+`bulk rotate <category> <mode> [keys...]` proposes a controller-key update through
+the configured protocol admin multisig. Categories are `pythOracle`, `oracle`,
+and `liquidator`; modes are `replace` and `append`.
+
+```sh
+bulk rotate oracle append <BASE58_PUBKEY>
+bulk rotate pythOracle replace <BASE58_PUBKEY>,<BASE58_PUBKEY>
+bulk rotate liquidator replace
+```
+
+Separate keys with commas or spaces. The script wrapper supports the same format:
+`scripts/rotate.sh oracle append <PUBKEY_1>,<PUBKEY_2> -ledger -net testnet`.
+
+An empty `replace` clears the selected set; an empty `append` leaves it unchanged.
+The update takes effect when the approved proposal executes. The Rust library
+exposes `Rotate`, `RotateCategory`, and `RotateMode`, with `Action::Rotate` at SDK
+wire ordinal 70.

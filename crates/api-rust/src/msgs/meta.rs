@@ -419,3 +419,54 @@ mod tests {
         assert!(update.tier_changes.is_empty());
     }
 }
+
+/// Controller authorization set selected by a [`Rotate`] administrative action.
+///
+/// Exactly one category is updated per action; all other authorization sets are preserved.
+/// Variant order defines wire ordinals and must remain stable. JSON uses camel-case names.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RotateCategory {
+    /// Keys authorized to submit Pyth oracle updates (`pythOracle` in JSON).
+    PythOracle,
+    /// Keys authorized to submit internal oracle updates (`oracle` in JSON).
+    Oracle,
+    /// Liquidator controller keys (`liquidator` in JSON).
+    /// The protocol admin multisig retains its existing liquidator authority.
+    Liquidator,
+}
+
+/// How a [`Rotate`] action applies its key list to the selected authorization set.
+///
+/// Variant order defines wire ordinals and must remain stable. JSON uses camel-case names.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RotateMode {
+    /// Discard the selected set and install the supplied keys. An empty list clears the set.
+    Replace,
+    /// Add the supplied keys while retaining existing keys. An empty list leaves the set unchanged.
+    Append,
+}
+
+/// Updates one controller authorization set through the configured protocol admin multisig.
+///
+/// Direct submissions, fee-admin proposals, and proposals from other multisigs are rejected.
+/// The update takes effect when the approved admin proposal executes and is persisted in
+/// executor snapshots and config state commitments. Other authorization categories are unchanged.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rotate {
+    /// The single controller authorization set to update.
+    pub category: RotateCategory,
+    /// Whether to replace the selected key set or append to it.
+    pub mode: RotateMode,
+    /// Controller public keys to install or add, encoded as base58 strings in JSON.
+    #[serde(with = "crate::msgs::serde_pubkey_vec")]
+    pub keys: Vec<Pubkey>,
+    /// Executor-linked ownership and request metadata; omitted from the serialized action payload.
+    #[serde(skip)]
+    pub meta: ActionMeta,
+}
