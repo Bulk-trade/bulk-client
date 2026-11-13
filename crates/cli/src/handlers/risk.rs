@@ -220,3 +220,26 @@ mod tests {
         assert_eq!(config.instruments[0].reserve, 65.0);
     }
 }
+
+/// Submits a controller key rotation through the administrative multisig.
+///
+/// # Arguments
+/// * `api` - HTTP client used to submit the proposal.
+/// * `args` - Authorization category, update mode, and controller keys.
+/// * `submit` - Preview and confirmation behavior.
+///
+/// # Returns
+/// An error if the rotation cannot be parsed or submitted.
+pub async fn handle_rotate(
+    api: &mut BulkHttpClient,
+    args: crate::commands::RotateArgs,
+    submit: &SubmitOptions,
+) -> eyre::Result<()> {
+    let rotation = bulk_client::msgs::Rotate {
+        category: serde_json::from_value(serde_json::Value::String(args.category))?,
+        mode: serde_json::from_value(serde_json::Value::String(args.mode))?,
+        keys: args.keys,
+        meta: Default::default(),
+    };
+    submit_actions(api, submit, vec![Action::Rotate(rotation)]).await
+}
