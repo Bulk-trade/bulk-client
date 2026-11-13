@@ -68,3 +68,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 
 [build]
 incremental = true
+
+[[test]]
+name = "rotate"
+path = "integration/rotate.rs"

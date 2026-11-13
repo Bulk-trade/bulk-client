@@ -66,3 +66,17 @@ pub struct LiquidatorConfigArgs {
     // Json or filename containing liquidator config json
     pub(crate) json: String,
 }
+
+/// Rotates one controller authorization set through the protocol admin multisig.
+#[derive(clap::Args, Debug)]
+pub struct RotateArgs {
+    /// Authorization set to update.
+    #[arg(value_parser = ["pythOracle", "oracle", "liquidator"])]
+    pub(crate) category: String,
+    /// Replace the set (empty keys clears it) or append keys.
+    #[arg(value_parser = ["replace", "append"])]
+    pub(crate) mode: String,
+    /// Controller public keys to install or add, separated by commas or spaces.
+    #[arg(value_delimiter = ',')]
+    pub(crate) keys: Vec<solana_pubkey::Pubkey>,
+}

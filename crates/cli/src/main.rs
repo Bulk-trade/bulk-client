@@ -7,7 +7,7 @@ use crate::commands::{
     ConfigCommand, ConfigFeesArgs, ConfigMakerArgs, CorrsArgs, CreateMultisigArgs,
     CreateSubAccountArgs, DepositArgs, FaucetArgs, FundingConfigArgs, HarvestProviderFeesArgs,
     LedgerInfoArgs, LiquidatorConfigArgs, MarketAdminArgs, ModifyArgs, MultisigProposalArgs,
-    PlaceArgs, PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs,
+    PlaceArgs, PricingAdminArgs, RangeArgs, RemoveSubAccountArgs, RiskConfigArgs, RotateArgs,
     StopArgs, TakeProfitArgs, TrailingArgs, TransferArgs, UpdateLeverageArgs,
     UpdateMultisigPolicyArgs, UserAdminArgs, WithdrawIntentArgs,
 };
@@ -32,7 +32,7 @@ use crate::handlers::multisig::{
 use crate::handlers::orders::{handle_modify, handle_place};
 use crate::handlers::risk::{
     handle_account_policy, handle_funding_config, handle_liquidator_config, handle_risk_config,
-    handle_user_admin,
+    handle_rotate, handle_user_admin,
 };
 use crate::handlers::solana::{handle_deposit, handle_withdraw_intent};
 use bulk_client::parts::HttpConfig;
@@ -272,6 +272,9 @@ enum Command {
     #[command(name = "user-admin")]
     UserAdmin(UserAdminArgs),
 
+    /// Rotate controller keys through the protocol admin multisig.
+    Rotate(RotateArgs),
+
     /// Configure global or per-market rolling-volume trading fees.
     ///
     /// Example: bulk config-fees fee-policy.json5
@@ -329,6 +332,7 @@ impl Command {
                 | Command::PricingAdmin(_)
                 | Command::UpdateFunding(_)
                 | Command::UserAdmin(_)
+                | Command::Rotate(_)
                 | Command::HarvestProviderFees(_)
         )
     }
@@ -499,6 +503,7 @@ async fn main() -> eyre::Result<()> {
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
         Command::UpdateFunding(args) => handle_funding_config(&mut api, args, &submit).await,
         Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
+        Command::Rotate(args) => handle_rotate(&mut api, args, &submit).await,
         Command::UserAdmin(args) => handle_user_admin(&mut api, args, &submit).await,
         Command::ConfigFees(args) => handle_config_fees(&mut api, args, &submit).await,
         Command::ConfigMaker(args) => handle_config_maker(&mut api, args, &submit).await,
@@ -533,6 +538,49 @@ fn keypair_from_private_key(key_b58: &str) -> eyre::Result<Keypair> {
 mod tests {
     use super::*;
     use solana_signer::Signer;
+
+    #[test]
+    fn parse_rotate() {
+        for category in ["pythOracle", "oracle", "liquidator"] {
+            for mode in ["replace", "append"] {
+                let cli = Cli::try_parse_from(["bulk", "rotate", category, mode]).unwrap();
+                assert!(cli.command.uses_deploy_timeout());
+                let Command::Rotate(args) = cli.command else {
+                    panic!("expected rotate")
+                };
+                assert_eq!(args.category, category);
+                assert_eq!(args.mode, mode);
+                assert!(args.keys.is_empty());
+            }
+        }
+        assert!(Cli::try_parse_from(["bulk", "rotate", "invalid", "replace"]).is_err());
+        assert!(Cli::try_parse_from(["bulk", "rotate", "oracle", "invalid"]).is_err());
+        assert!(Cli::try_parse_from(["bulk", "rotate", "oracle", "append", "invalid"]).is_err());
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "rotate",
+            "oracle",
+            "append",
+            "11111111111111111111111111111111",
+        ])
+        .unwrap();
+        let Command::Rotate(args) = cli.command else {
+            panic!("expected rotate")
+        };
+        assert_eq!(args.keys, vec![solana_pubkey::Pubkey::default()]);
+        let cli = Cli::try_parse_from([
+            "bulk",
+            "rotate",
+            "oracle",
+            "replace",
+            "11111111111111111111111111111111,11111111111111111111111111111111",
+        ])
+        .unwrap();
+        let Command::Rotate(args) = cli.command else {
+            panic!("expected rotate")
+        };
+        assert_eq!(args.keys, vec![solana_pubkey::Pubkey::default(); 2]);
+    }
 
     #[test]
     fn parse_new_sdk_actions_and_bip_sources() {

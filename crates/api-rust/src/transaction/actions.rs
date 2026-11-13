@@ -12,9 +12,10 @@ use crate::msgs::{
     Faucet, FrostWithdrawStart, HarvestProviderFees, InitializeVault, Join, LimitOrder,
     MarketAdmin, MarketOrder, Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature,
     PreDepositCredit, Price, PricingAdmin, PythOracle, RevokeCommissionFee,
-    RevokePendingActivation, RewardSettlement, SolanaBlockAnchor, StartPreDepositDatasetMigration,
-    UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings, UpdateValidatorSet, UserAdmin,
-    WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed, WithdrawSubmitted,
+    RevokePendingActivation, RewardSettlement, Rotate, SolanaBlockAnchor,
+    StartPreDepositDatasetMigration, UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings,
+    UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
+    WithdrawSubmitted,
 };
 use serde::ser::{SerializeTuple, Serializer};
 use serde::{Deserialize, Serialize};
@@ -248,6 +249,11 @@ pub enum Action {
     // HarvestProviderFees = ordinal(68)
     #[serde(rename = "harvestProviderFees")]
     HarvestProviderFees(HarvestProviderFees),
+    /// Reserved SDK rebate allocation action at ordinal 69.
+    #[doc(hidden)]
+    Reserved69(ReservedAction),
+    // Rotate = ordinal(70)
+    Rotate(Rotate),
 }
 
 macro_rules! dispatch {
@@ -328,6 +334,8 @@ macro_rules! dispatch {
             Action::StartPreDepositDatasetMigration($x) => $body,
             Action::Reserved67(reserved) => match *reserved {},
             Action::HarvestProviderFees($x) => $body,
+            Action::Reserved69(reserved) => match *reserved {},
+            Action::Rotate($x) => $body,
         }
     };
 }
@@ -353,6 +361,7 @@ impl Action {
                 | Action::UpdateAccountPolicy(_)
                 | Action::ConfigFunding(_)
                 | Action::UserAdmin(_)
+                | Action::Rotate(_)
                 | Action::ActivateProtocolVersion(_)
                 | Action::RevokePendingActivation(_)
                 | Action::StartPreDepositDatasetMigration(_)
@@ -816,3 +825,5 @@ mod tests {
         assert!(revocation.is_admin_multisig_action());
     }
 }
+
+impl_action_from!(Rotate, Rotate);
