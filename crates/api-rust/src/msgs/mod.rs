@@ -1,3 +1,10 @@
+pub(crate) mod sdk_safe_f64;
+pub mod external_fill;
+pub mod external_order_state;
+pub mod rebates;
+pub use external_fill::*;
+pub use external_order_state::*;
+pub use rebates::*;
 pub mod account;
 pub mod conditional;
 pub mod history;
@@ -56,10 +63,7 @@ pub(crate) mod serde_hash {
             let s = String::deserialize(deserializer)?;
             Hash::from_str(&s).map_err(|e| serde::de::Error::custom(e.to_string()))
         } else {
-            let bytes = <Vec<u8>>::deserialize(deserializer)?;
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("expected 32 bytes for Hash"))?;
+            let arr = <[u8; 32]>::deserialize(deserializer)?;
             Ok(Hash::new_from_array(arr))
         }
     }

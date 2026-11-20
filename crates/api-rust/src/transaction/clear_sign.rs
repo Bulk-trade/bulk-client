@@ -266,8 +266,27 @@ impl ClearSignMessage {
             )
         }
         Action::Rotate(action) => format!("Rotate category={:?} mode={:?} keys={}", action.category, action.mode, action.keys.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")),
-        Action::Reserved69(_) => "Reserved action ordinal 69".to_owned(),
-        Action::Reserved67(_) => "Reserved action ordinal 67".to_owned(),
+        Action::OnStart(action) => format!("OnStart mode={:?}", action.mode),
+        Action::RebatePoolAllocation(action) => format!(
+            "RebatePoolAllocation allocations={}",
+            action.allocations.iter().map(|(symbol, amount)| {
+                match crate::msgs::rebates::RebatePoolAllocation::allocation_units(*amount) {
+                    Ok(units) => format!("{symbol}:{}.{:06}", units / 1_000_000, units % 1_000_000),
+                    // Signing serialization rejects invalid amounts before rendering this text.
+                    Err(_) => format!("{symbol}:invalid"),
+                }
+            }).collect::<Vec<_>>().join(",")
+        ),
+        Action::ExternalFill(fill) => format!(
+            "ExternalFill stamp={} account={} venue={} order_id={} side={} symbol={} amount={} price={} fees_usd={}",
+            fill.stamp, fill.account, fill.venue, fill.order_id, fill.side, fill.symbol,
+            fill.amount, fill.price, fill.fees
+        ),
+        Action::ExternalOrderState(report) => format!(
+            "ExternalOrderState stamp={} account={} order_id={} side={} symbol={} price={} vwap={} amount={} amount_done={} status={:?} reason={:?}",
+            report.stamp, report.account, report.order_id, report.side, report.symbol, report.price,
+            report.vwap, report.amount, report.amount_done, report.status, report.reason
+        ),
         Action::HarvestProviderFees(action) => format!("HarvestProviderFees provider={} percentage={:?}", action.provider, action.percentage),
         Action::PricingAdmin(action) => {
             format!("PricingAdmin {} {:?}", action.instrument, action.oracle_source)
@@ -330,15 +349,13 @@ impl ClearSignMessage {
             action.admin_sigs.len()
         ),
         Action::UpdateRiskConfig(action) => format!(
-            "UpdateRiskConfig settle_ccy={} max_loss={:.8} eloss_floor={:.8} max_pliq={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8} eloss_timescale={:.8}",
+            "UpdateRiskConfig settle_ccy={} maxdeficit={:.8} volume_scaler={:.8} margin_buffer={:.8} corr_discount={:.8} cascade_factor={:.8}",
             action.settle_ccy,
-            action.max_loss,
-            action.eloss_floor,
-            action.max_pliq,
+            action.maxdeficit,
+            action.volume_scaler,
             action.margin_buffer,
             action.corr_discount,
-            action.cascade_factor,
-            action.eloss_timescale
+            action.cascade_factor
         ),
         Action::UpdateAccountPolicy(action) => format!(
             "UpdateAccountPolicy withdraw_fee_usd={:?} min_withdraw_usd={:?} min_external_transfer_usd={:?}",
@@ -347,8 +364,8 @@ impl ClearSignMessage {
             action.min_external_transfer_usd
         ),
         Action::UserAdmin(action) => format!(
-            "UserAdmin pubkey={} maxorders={:?} globalMaxorders={:?}",
-            action.pubkey, action.maxorders, action.global_maxorders
+            "UserAdmin pubkey={} maxorders={:?} globalMaxorders={:?} disabled={:?}",
+            action.pubkey, action.maxorders, action.global_maxorders, action.disabled
         ),
         Action::ApproveCommissionFee(action) => {
             format!(

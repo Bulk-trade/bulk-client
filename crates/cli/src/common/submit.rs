@@ -393,6 +393,7 @@ mod tests {
             pubkey: target,
             maxorders: Some(500),
             global_maxorders: Some(10_000),
+            disabled: None,
             meta: ActionMeta::default(),
         })]);
 

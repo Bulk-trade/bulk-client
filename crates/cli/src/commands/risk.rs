@@ -36,10 +36,11 @@ pub struct AccountPolicyArgs {
 #[derive(clap::Args, Debug)]
 #[command(group(
     clap::ArgGroup::new("account_limit")
-        .required(true)
+        .required(false)
         .multiple(false)
         .args(["maxorders", "use_global"])
 ))]
+#[command(group(clap::ArgGroup::new("user_update").required(true).multiple(true).args(["maxorders", "use_global", "global_maxorders", "disabled"])))]
 pub struct UserAdminArgs {
     /// Logical account whose open-order override is updated.
     pub(crate) pubkey: solana_pubkey::Pubkey,
@@ -55,6 +56,9 @@ pub struct UserAdminArgs {
     /// Also replace the executor-wide fallback limit.
     #[arg(long)]
     pub(crate) global_maxorders: Option<usize>,
+    /// Disable or re-enable the account without changing an omitted enablement setting.
+    #[arg(long, action = clap::ArgAction::Set)]
+    pub(crate) disabled: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +75,7 @@ pub struct LiquidatorConfigArgs {
 #[derive(clap::Args, Debug)]
 pub struct RotateArgs {
     /// Authorization set to update.
-    #[arg(value_parser = ["pythOracle", "oracle", "liquidator"])]
+    #[arg(value_parser = ["pythOracle", "oracle", "liquidator", "router"])]
     pub(crate) category: String,
     /// Replace the set (empty keys clears it) or append keys.
     #[arg(value_parser = ["replace", "append"])]

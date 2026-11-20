@@ -20,6 +20,7 @@ class Topic(Enum):
     """
     TICKER = "ticker"
     TRADES = "trades"
+    ORDER_REQUESTS = "orderRequests"
     L2SNAPSHOT = "l2_snapshot"
     L2DELTA = "l2_delta"
     CANDLE = "candle"

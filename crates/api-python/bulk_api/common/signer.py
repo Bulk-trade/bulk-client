@@ -411,6 +411,62 @@ class TransactionSigner:
                     TransactionSigner.write_f64(transfer["marginAmount"]),
                     b'\x00' if symbol is None else b'\x01' + TransactionSigner.write_string(symbol),
                 ])
+            case {"externalFill": report} | {"externalOrderState": report}:
+                is_fill = "externalFill" in action
+                side = {"Buy": 0, "Sell": 1}[report["side"]]
+                parts = [TransactionSigner.write_u32(71 if is_fill else 72),
+                         TransactionSigner.write_u64(int(report["stamp"])),
+                         TransactionSigner.decode_and_validate_32_bytes(report["account"])]
+                if is_fill:
+                    parts.append(TransactionSigner.write_string(report["venue"]))
+                parts.extend([TransactionSigner.decode_and_validate_32_bytes(report["order_id"]),
+                              TransactionSigner.write_u8(side), TransactionSigner.write_string(report["symbol"])])
+                fields = ["amount", "price", "fees"] if is_fill else ["price", "vwap", "amount", "amount_done"]
+                for field in fields:
+                    value = float(report[field])
+                    if not math.isfinite(value) or value <= 0 or value * 1e8 >= 2**64:
+                        raise ValueError("SDK report values must be positive, finite, and representable")
+                    fixed = TransactionSigner.round_half_away_from_zero(value * 1e8)
+                    if fixed <= 0 or fixed >= 2**64 - 1:
+                        raise ValueError("SDK report value rounds to invalid units")
+                    parts.append(TransactionSigner.write_u64(fixed))
+                if not is_fill:
+                    statuses = ["pending", "placed", "resting", "working", "modified", "filled", "partiallyFilled", "cancelled", "cancelledRiskLimit", "cancelledSelfCrossing", "cancelledReduceOnly", "cancelledIOC", "rejectedInvalid", "rejectedRiskLimit", "rejectedCrossing", "rejectedDuplicate"]
+                    parts.append(TransactionSigner.write_u32(statuses.index(report["status"])))
+                    reason = report.get("reason")
+                    parts.append(b'\x00' if reason is None else b'\x01' + TransactionSigner.write_string(reason))
+                return b''.join(parts)
+            case {"risk": policy}:
+                if any(field in policy for field in ["max_loss", "eloss_floor", "max_pliq", "eloss_timescale"]):
+                    raise ValueError("V13 risk policy uses maxdeficit and volume_scaler")
+                return b''.join([TransactionSigner.write_u32(39), TransactionSigner.write_string(policy["settle_ccy"])] +
+                    [TransactionSigner.write_f64(policy.get(field, default)) for field, default in
+                     [("maxdeficit", None), ("volume_scaler", 1.5), ("margin_buffer", None), ("corr_discount", None), ("cascade_factor", 0.25)]])
+            case {"userAdmin": report}:
+                parts = [TransactionSigner.write_u32(65), TransactionSigner.decode_and_validate_32_bytes(report["pubkey"])]
+                for field in ["maxorders", "globalMaxorders"]:
+                    value = report.get(field)
+                    parts.append(b'\x00' if value is None else b'\x01' + TransactionSigner.write_u64(value))
+                disabled = report.get("disabled")
+                parts.append(b'\x00' if disabled is None else b'\x01' + TransactionSigner.write_bool(disabled))
+                return b''.join(parts)
+            case {"rotate": report}:
+                keys = report["keys"]
+                return b''.join([TransactionSigner.write_u32(70),
+                    TransactionSigner.write_u32(["pythOracle", "oracle", "liquidator", "router"].index(report["category"])),
+                    TransactionSigner.write_u32(["replace", "append"].index(report["mode"])),
+                    TransactionSigner.write_u64(len(keys))] + [TransactionSigner.decode_and_validate_32_bytes(key) for key in keys])
+            case {"onStart": report}:
+                return TransactionSigner.write_u32(67) + TransactionSigner.write_u32(["PostOnly", "All"].index(report.get("mode", "PostOnly")))
+            case {"rebatePoolAllocation": report}:
+                values = sorted(report["allocations"].items())
+                parts = [TransactionSigner.write_u32(69), TransactionSigner.write_u64(len(values))]
+                for symbol, amount in values:
+                    amount = float(amount)
+                    if not math.isfinite(amount) or amount < 0 or amount * 1e6 >= 2**64:
+                        raise ValueError("invalid rebate allocation")
+                    parts.extend([TransactionSigner.write_string(symbol), TransactionSigner.write_u64(TransactionSigner.round_half_away_from_zero(amount * 1e6))])
+                return b''.join(parts)
             case _:
                 raise Exception("Unknown tx type")
         

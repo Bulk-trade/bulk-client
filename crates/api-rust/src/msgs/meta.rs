@@ -435,6 +435,8 @@ pub enum RotateCategory {
     /// Liquidator controller keys (`liquidator` in JSON).
     /// The protocol admin multisig retains its existing liquidator authority.
     Liquidator,
+    /// Accounts authorized to report external fills and order states.
+    Router,
 }
 
 /// How a [`Rotate`] action applies its key list to the selected authorization set.

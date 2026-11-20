@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/include/common.sh"
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <pythOracle|oracle|liquidator> <replace|append> [pubkey[,pubkey...]] [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
+Usage: $0 <pythOracle|oracle|liquidator|router> <replace|append> [pubkey[,pubkey...]] [-ledger] [-url <api-url>] [-net <mainnet|testnet|devnet|local>]
 
 Proposes a controller-key update through the protocol admin multisig.
 Separate multiple public keys with commas or spaces.
@@ -28,9 +28,9 @@ if (( $# < 2 )); then
 fi
 
 case "$1" in
-  pythOracle|oracle|liquidator) ;;
+  pythOracle|oracle|liquidator|router) ;;
   *)
-    echo "error: category must be one of: pythOracle, oracle, liquidator" >&2
+    echo "error: category must be one of: pythOracle, oracle, liquidator, router" >&2
     exit 2
     ;;
 esac

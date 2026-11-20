@@ -901,6 +901,15 @@ impl BulkWsClient {
         self.subscribe(subs).await
     }
 
+    /// Subscribe to live outbound order requests across all instruments.
+    ///
+    /// # Returns
+    /// An error if the subscription cannot be queued. No historical snapshot is sent.
+    pub async fn subscribe_order_requests(&self) -> eyre::Result<()> {
+        self.subscribe(vec![SubscriptionRequest::new("orderRequests", json!({}))])
+            .await
+    }
+
     /// Subscribe to L2 snapshots for `symbol`.
     ///
     /// # Arguments
@@ -1174,6 +1183,17 @@ impl Actor {
                     debug!("Ticker: {} mark={:.2}", ticker.symbol, ticker.mark_price);
                 } else {
                     error!("Could not parse ticker event: {:?}", ticker_v);
+                }
+            }
+
+            "orderRequests" => {
+                match serde_json::from_value::<Vec<crate::msgs::OrderRequest>>(
+                    data["data"]["requests"].clone(),
+                ) {
+                    Ok(requests) => {
+                        self.emit(Topic::OrderRequests, &Event::OrderRequests(requests))
+                    }
+                    Err(error) => error!("Could not parse order requests: {error}"),
                 }
             }
 
@@ -1491,6 +1511,65 @@ impl Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn global_order_requests_subscribe_and_deliver_typed_payloads() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut socket = tokio_tungstenite::accept_async(listener.accept().await.unwrap().0)
+                .await
+                .unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let Message::Text(text) = message {
+                    let request: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    if request["method"] == "subscribe"
+                        && request["subscription"]
+                            .as_array()
+                            .is_some_and(|items| items.contains(&json!({"type":"orderRequests"})))
+                    {
+                        socket.send(Message::Text(json!({"type":"orderRequests","topic":"orderRequests","data":{"requests":[
+                            {"stamp":123,"orderId":"11111111111111111111111111111111","symbol":"FX-BTC-USD-EXT","side":"Buy","price":100000.0,"size":0.25},
+                            {"stamp":124,"orderId":"11111111111111111111111111111111","symbol":"FX-SOL-USD-EXT","side":"Sell","price":150.0,"size":2.0}
+                        ]}}).to_string().into())).await.unwrap();
+                        break;
+                    }
+                }
+            }
+            while let Some(message) = socket.next().await {
+                if matches!(message, Ok(Message::Close(_)) | Err(_)) {
+                    break;
+                }
+            }
+        });
+        let client = BulkWsClient::connect(WSConfig {
+            url: format!("ws://{address}"),
+            track_account: false,
+            track_ticker: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let (send, mut receive) = mpsc::channel(1);
+        client
+            .on(Topic::OrderRequests, move |event| {
+                if let Event::OrderRequests(requests) = event {
+                    let _ = send.try_send(requests.clone());
+                }
+            })
+            .await;
+        client.subscribe_order_requests().await.unwrap();
+        let requests = time::timeout(Duration::from_secs(2), receive.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].symbol, "FX-BTC-USD-EXT");
+        assert_eq!(requests[0].side, crate::common::side::Side::Buy);
+        assert_eq!(requests[1].symbol, "FX-SOL-USD-EXT");
+        client.shutdown().await;
+        server.await.unwrap();
+    }
 
     #[tokio::test]
     async fn order_updates_publish_resting_and_terminal_state_without_margin_updates() {

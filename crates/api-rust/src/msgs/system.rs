@@ -264,6 +264,9 @@ pub struct UserAdmin {
     pub maxorders: Option<usize>,
     /// New global fallback, or `None` to leave the current global value unchanged.
     pub global_maxorders: Option<usize>,
+    /// Optional account disablement; omitted values retain the current setting.
+    #[serde(default)]
+    pub disabled: Option<bool>,
 
     #[serde(skip)]
     pub meta: ActionMeta,
@@ -336,4 +339,22 @@ mod tests {
         assert!(value.get("ss").is_some());
         assert!(value.get("b").is_none());
     }
+}
+
+/// Scope of startup order cleanup. Variant order matches the SDK wire layout.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClearAllMode {
+    #[default]
+    PostOnly,
+    All,
+}
+
+/// Operator startup-maintenance payload; executor authorization still applies.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnStart {
+    #[serde(default)]
+    pub mode: ClearAllMode,
+    #[serde(skip)]
+    pub meta: ActionMeta,
 }

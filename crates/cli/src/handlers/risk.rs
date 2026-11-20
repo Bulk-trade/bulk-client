@@ -117,6 +117,7 @@ pub async fn handle_user_admin(
             pubkey: args.pubkey,
             maxorders,
             global_maxorders: args.global_maxorders,
+            disabled: args.disabled,
             meta: Default::default(),
         })],
     )

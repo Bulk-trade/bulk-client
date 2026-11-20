@@ -8,6 +8,9 @@ use std::str::FromStr;
 
 fn validate_nested_actions(action: &Action) -> eyre::Result<()> {
     match action {
+        Action::ExternalOrderState(report) if report.status as u8 >= 16 => {
+            eyre::bail!("external reports require an SDK order status, not a conditional notification status");
+        }
         Action::Trigger(trigger) => {
             for child in &trigger.actions {
                 validate_nested_actions(child)?;
@@ -292,6 +295,52 @@ mod tests {
         let bytes = bincode::serialize(&actions).unwrap();
         let decoded: Vec<Action> = bincode::deserialize(&bytes).unwrap();
         assert_eq!(decoded.len(), 3);
+    }
+
+    #[test]
+    fn v13_actions_match_sdk_bytes_and_clear_sign_messages() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/sdk-v13-vectors.json")).unwrap();
+        for vector in fixtures["vectors"].as_array().unwrap() {
+            let actions: Vec<Action> = serde_json::from_value(vector["actions"].clone()).unwrap();
+            let actual = Transaction::raw_signable_bytes(
+                TransactionVersion::CURRENT,
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+            )
+            .unwrap();
+            let hex = actual
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            assert_eq!(
+                hex,
+                vector["signable_hex"].as_str().unwrap(),
+                "{}",
+                vector["name"]
+            );
+            let text = crate::transaction::ClearSignMessage::canonical_message(
+                SignatureDomain::Devnet,
+                Pubkey::default(),
+                42,
+                &actions,
+            )
+            .unwrap();
+            assert_eq!(
+                text,
+                vector["clear_sign"].as_str().unwrap(),
+                "{}",
+                vector["name"]
+            );
+            let restored: Vec<Action> =
+                bincode::deserialize(&bincode::serialize(&actions).unwrap()).unwrap();
+            assert_eq!(
+                serde_json::to_value(restored).unwrap(),
+                serde_json::to_value(actions).unwrap()
+            );
+        }
     }
 
     #[test]

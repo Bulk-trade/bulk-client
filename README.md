@@ -65,8 +65,9 @@ Transactions created by this client use numeric `version: 12`. Signing bytes are
 `version_le_u32 || bincode(actions) || nonce_le_u64 || account_bytes || signature_domain_u8`.
 Only V12 is accepted by the client; the SDK and server retain V11 compatibility.
 
-Risk configuration on `jon/iso-reform` uses `max_loss`, `eloss_floor`, `max_pliq`,
-`margin_buffer`, `corr_discount`, `cascade_factor`, and `eloss_timescale`.
+V13 risk configuration uses `settle_ccy`, `maxdeficit`, `volume_scaler`,
+`margin_buffer`, `corr_discount`, and `cascade_factor`. The old `max_loss`,
+`eloss_floor`, `max_pliq`, and `eloss_timescale` fields are removed.
 
 The existing `config-risk-matrix` command submits the `configRisk` action (ordinal 25).
 Its opaque payload is now a bincode-serialized SDK `RiskCube`, containing raw observations
@@ -390,3 +391,51 @@ An empty `replace` clears the selected set; an empty `append` leaves it unchange
 The update takes effect when the approved proposal executes. The Rust library
 exposes `Rotate`, `RotateCategory`, and `RotateMode`, with `Action::Rotate` at SDK
 wire ordinal 70.
+
+## V13 action compatibility
+
+This branch targets SDK `a67b19f542fa32fd4bfe7843072d38b848fe11fa`. The transaction
+wire version remains **12**; V13 names the release/snapshot generation, not a new transaction version.
+
+| Action | V13 change |
+|---|---|
+| `risk` (39) | `maxdeficit` and `volume_scaler` replace four expected-loss controls |
+| `userAdmin` (65) | Adds optional `disabled`; `None` retains current enablement |
+| `onStart` (67) | Replaces a reserved client slot; operator startup maintenance payload |
+| `rebatePoolAllocation` (69) | Replaces a reserved slot; sorted absolute reserves in USD micro-units |
+| `rotate` (70) | Adds `router` as authorization category 3 |
+| `externalFill` (71) | Router report converted into a normal taker fill; fees are USD |
+| `externalOrderState` (72) | Router report published as a normal IOC order state |
+| `configRisk` / `configRiskMatrix` (25) | Existing aliases; opaque payload is the raw SDK `RiskCube` |
+| `transfer` (29) | Existing V12 optional ISO symbol encoding retained |
+
+The client carries forward controller rotation from V11 and preserves all existing action ordinals.
+`UserAdmin` is available through `bulk user-admin PUBKEY --disabled true` (or `false`).
+Omitting `--maxorders` / selecting `--use-global` restores the global order-limit fallback,
+including when changing enablement; supply `--maxorders` to retain a specific override.
+New actions can be submitted using `bulk action-json FILE` or inline action JSON; administrative
+actions use the existing multisig proposal path. `onStart` is an operator payload, not a router privilege.
+
+Rust exports `ExternalFill`, `ExternalOrderState`, `OnStart`, and `RebatePoolAllocation` from `bulk_client::msgs`.
+Python exports external report dataclasses from `bulk_api.messages.external` and supports
+`await client.submit_external_reports(reports)` with a router signer.
+
+### Global order requests
+
+Rust: `client.subscribe_order_requests().await?`, then handle `Topic::OrderRequests` /
+`Event::OrderRequests`. Python: `await client.subscribe_order_requests()`, then handle
+`Topic.ORDER_REQUESTS`. The wire subscription is `{"type":"orderRequests"}`, with no symbol
+filter. Every request includes its canonical symbol and base58 order ID. This is live-only;
+routers must deduplicate and reconcile after reconnecting.
+
+### Wire constraints and verification
+
+External reports use SDK side ordinals (`Buy=0`, `Sell=1`), distinct from order-entry booleans.
+Their numeric fields use the SDK's positive eight-decimal fixed-point codec. In this SDK revision,
+zero or negative fees, vwap, and amount_done cannot be serialized; this client matches that contract
+rather than generating rejected signatures. Conditional-only order statuses cannot be submitted as
+external order reports. Existing response-side conditional statuses remain available.
+
+Signing bytes and clear-sign descriptions are checked against SDK-generated V13 vectors, including
+nested administration actions. Python checks its supported direct-action families against the same
+vectors; nested multisig submission remains outside the Python action API.

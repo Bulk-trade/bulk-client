@@ -249,6 +249,29 @@ class BulkWebSocketClient:
         subs = [SubscriptionRequest("trades", {"symbol": sym}) for sym in symbols]
         await self._subscribe(subs)
 
+    async def subscribe_order_requests(self):
+        """Subscribe to live order requests across all instruments, without a replay snapshot."""
+        await self._subscribe([SubscriptionRequest("orderRequests", {})])
+
+    async def submit_external_reports(self, reports, timeout=None):
+        """Submit external execution/state reports signed by the configured router account."""
+        if not self.signer or not self.is_connected:
+            raise RuntimeError("A connected client with a router signer is required")
+        self.request_id += 1
+        request_id = self.request_id
+        actions = [report.to_api() if hasattr(report, "to_api") else report for report in reports]
+        if any(set(action) not in ({"externalFill"}, {"externalOrderState"}) for action in actions):
+            raise ValueError("submit_external_reports accepts only external reports")
+        tx = self.signer.sign_transaction({"actions": actions, "nonce": str(time.time_ns()),
+            "account": self.signer.public_key}, self.signature_domain)
+        future = asyncio.get_running_loop().create_future()
+        self.pending_requests[request_id] = future
+        try:
+            await self.ws.send(json.dumps({"method": "post", "request": {"type": "action", "payload": tx}, "id": request_id}))
+            return await asyncio.wait_for(future, timeout=self.default_timeout if timeout is None else timeout)
+        finally:
+            self.pending_requests.pop(request_id, None)
+
     async def subscribe_orderbook_snapshot(self, symbol: str, nlevels: Optional[int] = None):
         """Subscribe to orderbook snapshots and initialize OrderBook"""
         params = {"symbol": symbol}
@@ -718,6 +741,10 @@ class BulkWebSocketClient:
                 self._handle_subscription_response(data)
             case "ticker":
                 await self._handle_ticker(data)
+            case "orderRequests":
+                from bulk_api.messages.external import OrderRequest
+                requests = [OrderRequest.from_api(item) for item in data["data"]["requests"]]
+                await self._emit_event(Topic.ORDER_REQUESTS, requests)
             case "trades":
                 await self._handle_trades(data)
             case "l2Snapshot":

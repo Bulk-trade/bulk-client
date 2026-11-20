@@ -12,6 +12,7 @@ use serde_json::Value;
 pub enum Topic {
     Ticker,
     Trades,
+    OrderRequests,
     L2Snapshot,
     L2Delta,
     Candle,
@@ -36,6 +37,7 @@ pub enum Topic {
 pub enum Event {
     Ticker(Ticker),
     Trades(Vec<Fill>),
+    OrderRequests(Vec<crate::msgs::OrderRequest>),
     L2Snapshot(L2Snapshot),
     L2Delta(L2Snapshot),
     Candle(Candle),
@@ -59,6 +61,7 @@ impl Event {
         match self {
             Event::Ticker(_) => Topic::Ticker,
             Event::Trades(_) => Topic::Trades,
+            Event::OrderRequests(_) => Topic::OrderRequests,
             Event::L2Snapshot(_) => Topic::L2Snapshot,
             Event::L2Delta(_) => Topic::L2Delta,
             Event::Candle(_) => Topic::Candle,

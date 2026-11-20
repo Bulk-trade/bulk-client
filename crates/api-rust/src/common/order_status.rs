@@ -53,7 +53,7 @@ impl OrderStatus {
             OrderStatus::Placed => false,
             OrderStatus::Resting => false,
             OrderStatus::Working => false,
-            OrderStatus::Modified => true,
+            OrderStatus::Modified => false,
             OrderStatus::Filled => true,
             OrderStatus::PartiallyFilled => true,
             OrderStatus::Cancelled => true,
@@ -130,7 +130,47 @@ impl<'de> Deserialize<'de> for OrderStatus {
     where
         D: serde::Deserializer<'de>,
     {
+        if !deserializer.is_human_readable() {
+            let ordinal = u32::deserialize(deserializer)?;
+            const NAMES: &[&str] = &[
+                "pending",
+                "placed",
+                "resting",
+                "working",
+                "modified",
+                "filled",
+                "partiallyFilled",
+                "cancelled",
+                "cancelledRiskLimit",
+                "cancelledSelfCrossing",
+                "cancelledReduceOnly",
+                "cancelledIOC",
+                "rejectedInvalid",
+                "rejectedRiskLimit",
+                "rejectedCrossing",
+                "rejectedDuplicate",
+                "triggered",
+                "siblingCancelled",
+                "triggerFailed",
+            ];
+            let name = NAMES
+                .get(ordinal as usize)
+                .ok_or_else(|| serde::de::Error::custom("invalid order status ordinal"))?;
+            return Self::try_from(*name).map_err(serde::de::Error::custom);
+        }
         let s = String::deserialize(deserializer)?;
         OrderStatus::try_from(s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for OrderStatus {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            let name = format!("{self:?}");
+            let wire = name[..1].to_ascii_lowercase() + &name[1..];
+            serializer.serialize_str(&wire)
+        } else {
+            serializer.serialize_u32(*self as u32)
+        }
     }
 }

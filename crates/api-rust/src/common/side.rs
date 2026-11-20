@@ -85,3 +85,29 @@ impl<'de> Deserialize<'de> for Side {
         Ok(if value { Side::Buy } else { Side::Sell })
     }
 }
+
+/// SDK direction encoding for external reports, distinct from order-entry `is_buy` booleans.
+pub(crate) mod sdk_wire {
+    use super::Side;
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(side: &Side, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(if *side == Side::Buy { "Buy" } else { "Sell" })
+        } else {
+            serializer.serialize_u8(*side as u8)
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Side, D::Error> {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .parse()
+                .map_err(serde::de::Error::custom)
+        } else {
+            match u8::deserialize(deserializer)? {
+                0 => Ok(Side::Buy),
+                1 => Ok(Side::Sell),
+                _ => Err(serde::de::Error::custom("invalid SDK side ordinal")),
+            }
+        }
+    }
+}
