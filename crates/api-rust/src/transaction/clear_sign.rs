@@ -266,8 +266,17 @@ impl ClearSignMessage {
             )
         }
         Action::Rotate(action) => format!("Rotate category={:?} mode={:?} keys={}", action.category, action.mode, action.keys.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")),
-        Action::Reserved69(_) => "Reserved action ordinal 69".to_owned(),
-        Action::Reserved67(_) => "Reserved action ordinal 67".to_owned(),
+        Action::OnStart(action) => format!("OnStart mode={:?}", action.mode),
+        Action::RebatePoolAllocation(action) => format!(
+            "RebatePoolAllocation allocations={}",
+            action.allocations.iter().map(|(symbol, amount)| {
+                match crate::msgs::rebates::RebatePoolAllocation::allocation_units(*amount) {
+                    Ok(units) => format!("{symbol}:{}.{:06}", units / 1_000_000, units % 1_000_000),
+                    // Signing serialization rejects invalid amounts before rendering this text.
+                    Err(_) => format!("{symbol}:invalid"),
+                }
+            }).collect::<Vec<_>>().join(",")
+        ),
         Action::HarvestProviderFees(action) => format!("HarvestProviderFees provider={} percentage={:?}", action.provider, action.percentage),
         Action::PricingAdmin(action) => {
             format!("PricingAdmin {} {:?}", action.instrument, action.oracle_source)

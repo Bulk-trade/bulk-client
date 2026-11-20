@@ -10,9 +10,9 @@ use crate::msgs::{
     ActivateProtocolVersion, AddMarket, AgentWalletCreation, ApproveCommissionFee, Beacon,
     CancelAll, CancelOrder, ConfigFunding, ConfigMakerRebateTier, Deposit, DkgFinished, DkgRound1,
     Faucet, FrostWithdrawStart, HarvestProviderFees, InitializeVault, Join, LimitOrder,
-    MarketAdmin, MarketOrder, Matrix, ModifyOrder, NonceCommitment, OpaqueAction, PartialSignature,
-    PreDepositCredit, Price, PricingAdmin, PythOracle, RevokeCommissionFee,
-    RevokePendingActivation, RewardSettlement, Rotate, SolanaBlockAnchor,
+    MarketAdmin, MarketOrder, Matrix, ModifyOrder, NonceCommitment, OnStart, OpaqueAction,
+    PartialSignature, PreDepositCredit, Price, PricingAdmin, PythOracle, RebatePoolAllocation,
+    RevokeCommissionFee, RevokePendingActivation, RewardSettlement, Rotate, SolanaBlockAnchor,
     StartPreDepositDatasetMigration, UpdateAccountPolicy, UpdateFrostGroup, UpdateUserSettings,
     UpdateValidatorSet, UserAdmin, WhitelistFaucet, Withdraw, WithdrawConfirmation, WithdrawFailed,
     WithdrawSubmitted,
@@ -30,10 +30,6 @@ pub struct ActionMeta {
     pub seqno: u32,
     pub hash: Option<Hash>,
 }
-
-#[doc(hidden)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ReservedAction {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -243,15 +239,13 @@ pub enum Action {
     // StartPreDepositDatasetMigration = ordinal(66)
     #[serde(rename = "startPreDepositDatasetMigration")]
     StartPreDepositDatasetMigration(StartPreDepositDatasetMigration),
-    // Preserve ordinal 68 without exposing the SDK-internal startup action.
-    #[doc(hidden)]
-    Reserved67(ReservedAction),
+    /// Startup maintenance at SDK ordinal 67.
+    OnStart(OnStart),
     // HarvestProviderFees = ordinal(68)
     #[serde(rename = "harvestProviderFees")]
     HarvestProviderFees(HarvestProviderFees),
-    /// Reserved SDK rebate allocation action at ordinal 69.
-    #[doc(hidden)]
-    Reserved69(ReservedAction),
+    /// Absolute rebate reserve allocations at SDK ordinal 69.
+    RebatePoolAllocation(RebatePoolAllocation),
     // Rotate = ordinal(70)
     Rotate(Rotate),
 }
@@ -332,9 +326,9 @@ macro_rules! dispatch {
             Action::ConfigFunding($x) => $body,
             Action::UserAdmin($x) => $body,
             Action::StartPreDepositDatasetMigration($x) => $body,
-            Action::Reserved67(reserved) => match *reserved {},
+            Action::OnStart($x) => $body,
             Action::HarvestProviderFees($x) => $body,
-            Action::Reserved69(reserved) => match *reserved {},
+            Action::RebatePoolAllocation($x) => $body,
             Action::Rotate($x) => $body,
         }
     };
@@ -362,6 +356,7 @@ impl Action {
                 | Action::ConfigFunding(_)
                 | Action::UserAdmin(_)
                 | Action::Rotate(_)
+                | Action::RebatePoolAllocation(_)
                 | Action::ActivateProtocolVersion(_)
                 | Action::RevokePendingActivation(_)
                 | Action::StartPreDepositDatasetMigration(_)
@@ -637,7 +632,10 @@ mod tests {
         let bytes = bincode::serialize(&action).unwrap();
         assert_eq!(&bytes[..4], &68_u32.to_le_bytes());
         assert!(action.is_fee_admin_multisig_action());
-        assert!(serde_json::from_str::<Action>(r#"{"onStart":{}}"#).is_err());
+        assert!(matches!(
+            serde_json::from_str::<Action>(r#"{"onStart":{}}"#).unwrap(),
+            Action::OnStart(_)
+        ));
         assert!(serde_json::from_str::<Action>(r#"{"reserved67":{}}"#).is_err());
     }
 
@@ -827,3 +825,6 @@ mod tests {
 }
 
 impl_action_from!(Rotate, Rotate);
+
+impl_action_from!(OnStart, OnStart);
+impl_action_from!(RebatePoolAllocation, RebatePoolAllocation);

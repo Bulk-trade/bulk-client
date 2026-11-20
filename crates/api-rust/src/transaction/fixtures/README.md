@@ -12,3 +12,5 @@ administration, provider fee harvesting, optional subaccount margin, and ISO tra
 Rust checks every vector and order IDs. Python checks its supported action families.
 To regenerate, deserialize each recorded actions array into SDK actions and call
 that revision's V12 signing API with the recorded account, nonce, and network.
+
+`sdk-v12-vectors.json` pins SDK V12 action signing bytes and full clear-sign messages, generated directly from revision `e9b0257b3ea8d9319337801bba8717b1b6784317`. V12 vectors intentionally exclude V13-only disabled flags, router keys, and external reports.

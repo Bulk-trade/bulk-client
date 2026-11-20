@@ -411,6 +411,33 @@ class TransactionSigner:
                     TransactionSigner.write_f64(transfer["marginAmount"]),
                     b'\x00' if symbol is None else b'\x01' + TransactionSigner.write_string(symbol),
                 ])
+            case {"risk": policy}:
+                return b''.join([TransactionSigner.write_u32(39), TransactionSigner.write_string(policy["settle_ccy"])] +
+                    [TransactionSigner.write_f64(policy.get(field, default)) for field, default in
+                     [("max_loss", None), ("eloss_floor", None), ("max_pliq", None), ("margin_buffer", None), ("corr_discount", None), ("cascade_factor", 0.25), ("eloss_timescale", math.sqrt(6))]])
+            case {"userAdmin": report}:
+                parts = [TransactionSigner.write_u32(65), TransactionSigner.decode_and_validate_32_bytes(report["pubkey"])]
+                for field in ["maxorders", "globalMaxorders"]:
+                    value = report.get(field)
+                    parts.append(b'\x00' if value is None else b'\x01' + TransactionSigner.write_u64(value))
+                return b''.join(parts)
+            case {"rotate": report}:
+                keys = report["keys"]
+                return b''.join([TransactionSigner.write_u32(70),
+                    TransactionSigner.write_u32(["pythOracle", "oracle", "liquidator"].index(report["category"])),
+                    TransactionSigner.write_u32(["replace", "append"].index(report["mode"])),
+                    TransactionSigner.write_u64(len(keys))] + [TransactionSigner.decode_and_validate_32_bytes(key) for key in keys])
+            case {"onStart": report}:
+                return TransactionSigner.write_u32(67) + TransactionSigner.write_u32(["PostOnly", "All"].index(report.get("mode", "PostOnly")))
+            case {"rebatePoolAllocation": report}:
+                values = sorted(report["allocations"].items())
+                parts = [TransactionSigner.write_u32(69), TransactionSigner.write_u64(len(values))]
+                for symbol, amount in values:
+                    amount = float(amount)
+                    if not math.isfinite(amount) or amount < 0 or amount * 1e6 >= 2**64:
+                        raise ValueError("invalid rebate allocation")
+                    parts.extend([TransactionSigner.write_string(symbol), TransactionSigner.write_u64(TransactionSigner.round_half_away_from_zero(amount * 1e6))])
+                return b''.join(parts)
             case _:
                 raise Exception("Unknown tx type")
         

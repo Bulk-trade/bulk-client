@@ -72,7 +72,7 @@ enum Command {
     /// Submit a market proposal using symbol-specific models and risk configuration.
     CreateMarket(CreateMarketArgs),
 
-    /// Upload one coin's raw risk cube; the executor calibrates it using current policy.
+    /// Upload one coin's V12 risk matrix; the executor calibrates it using current policy.
     #[command(name = "config-risk-matrix")]
     ConfigRiskMatrix(ConfigRiskMatrixArgs),
 

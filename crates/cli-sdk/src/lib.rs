@@ -3,7 +3,7 @@ use bulk_client::msgs::{AddMarket, ConfigFunding, OpaqueAction};
 use bulk_client::transaction::Action;
 use bulk_sdk_core::data::models::{BarModelConfig, TickModelConfig};
 use bulk_sdk_core::markets::{with_security_context, MktId};
-use bulk_sdk_core::models::margin::RiskCube;
+use bulk_sdk_core::models::margin::RiskMatrix;
 use bulk_sdk_core::models::signals::bulk_funding1::BulkFunding1;
 use bulk_sdk_core::models::signals::{WrappedBarFunction1D, WrappedTickFunctionMD};
 use bulk_sdk_core::securities::{Security, SecurityMap};
@@ -18,11 +18,11 @@ pub fn wire_mktid(market_id: MktId) -> WireMktId {
     WireMktId(market_id.uuid)
 }
 
-/// Builds a raw risk-cube action; calibration is performed by the executor.
+/// Builds a V12 risk-matrix action; calibration is performed by the executor.
 ///
 /// # Arguments
 /// * `coin` - Registered SDK security name.
-/// * `csv` - Path to raw observations with duration and cvar(99):start/end columns.
+/// * `csv` - Path to V12 observations with cvar(99), E[x], E[end], p, and liq columns.
 ///
 /// # Returns
 /// An error when the security is unknown, CSV is invalid, or serialization fails.
@@ -30,10 +30,10 @@ pub fn config_risk_action(coin: &str, csv: &str) -> eyre::Result<Action> {
     let securities = SecurityMap::from_configs().map_err(|error| eyre::eyre!("{error:#}"))?;
     let instrument = securities
         .mktid_for(coin)
-        .ok_or_else(|| eyre::eyre!("invalid risk-cube coin '{coin}'"))?;
-    let cube = RiskCube::from_csv(time_epoch_ns(), instrument, csv)
-        .map_err(|error| eyre::eyre!("invalid risk-cube CSV '{csv}': {error}"))?;
-    opaque_action(cube, Action::ConfigRisk, "risk cube")
+        .ok_or_else(|| eyre::eyre!("invalid risk-matrix coin '{coin}'"))?;
+    let cube = RiskMatrix::from_csv(time_epoch_ns(), instrument, csv)
+        .map_err(|error| eyre::eyre!("invalid risk-matrix CSV '{csv}': {error}"))?;
+    opaque_action(cube, Action::ConfigRisk, "risk matrix")
 }
 
 /// Builds security-configuration actions for one administrative proposal.
@@ -378,7 +378,7 @@ fn build_market_actions(plan: MarketPlan) -> eyre::Result<Vec<Action>> {
         )?);
         Ok(())
     })?;
-    let cube = RiskCube::from_csv(
+    let cube = RiskMatrix::from_csv(
         time_epoch_ns(),
         instrument,
         plan.risk_csv
@@ -386,7 +386,7 @@ fn build_market_actions(plan: MarketPlan) -> eyre::Result<Vec<Action>> {
             .ok_or_else(|| eyre::eyre!("risk path must be UTF-8"))?,
     )
     .map_err(|error| eyre::eyre!("{error:#}"))?;
-    actions.push(opaque_action(cube, Action::ConfigRisk, "risk cube")?);
+    actions.push(opaque_action(cube, Action::ConfigRisk, "risk matrix")?);
     let symbol = format!("{}-USD", plan.symbol);
     let funding = funding_config_for(&plan.executor_config, &symbol)?;
     let market_id = securities
@@ -478,12 +478,12 @@ where
 mod tests {
     use super::*;
 
-    const RAW_RISK_CSV: &str = "side,threshold,leverage,regime,duration,cvar(99):start,cvar(99):end,p,liq\nBuy,5,2,-1,60,-20,-30,0.9,0.1\nSell,5,2,-1,60,-25,-35,0.8,0.2\n";
+    const RAW_RISK_CSV: &str = "side,threshold,leverage,regime,cvar(99),E[x],E[end],p,liq\nBuy,5,2,-1,-45,-20,-30,0.9,0.1\nBuy,5,3,-1,-45,-20,-30,0.9,0.1\nBuy,10,2,-1,-45,-20,-30,0.9,0.1\nBuy,10,3,-1,-45,-20,-30,0.9,0.1\nSell,5,2,-1,-45,-25,-35,0.9,0.1\nSell,5,3,-1,-45,-25,-35,0.9,0.1\nSell,10,2,-1,-45,-25,-35,0.9,0.1\nSell,10,3,-1,-45,-25,-35,0.9,0.1\n";
 
     #[test]
     fn risk_upload_serializes_only_validated_raw_observations() {
         let root = std::env::temp_dir().join(format!(
-            "bulk-risk-cube-{}-{}",
+            "bulk-risk-matrix-{}-{}",
             std::process::id(),
             time_epoch_ns()
         ));
@@ -494,28 +494,27 @@ mod tests {
         else {
             panic!("risk action")
         };
-        let cube = RiskCube::from_bincode(&action.payload).unwrap();
+        let cube = bincode::deserialize::<RiskMatrix>(&action.payload).unwrap();
         let securities = SecurityMap::from_configs().unwrap();
-        assert_eq!(cube.instrument(), securities.mktid_for("BTC").unwrap());
-        assert_eq!(cube.duration_values(), &[60.0]);
-        assert_eq!(cube.lambda_values(), &[0.05]);
-        assert_eq!(cube.leverage_values(), &[2.0]);
-        assert_eq!(cube.regime_values(), &[-1]);
-        assert_eq!(cube.points(bulk_sdk_core::Side::Buy)[0].loss_start, -20.0);
-        assert_eq!(cube.points(bulk_sdk_core::Side::Sell)[0].loss_end, -35.0);
+        assert_eq!(cube.instrument, securities.mktid_for("BTC").unwrap());
+        assert_eq!(cube.lambda_values, &[0.05, 0.1]);
+        assert_eq!(cube.leverage_values, &[2.0, 3.0]);
+        assert_eq!(cube.regime_values, &[-1]);
+        assert_eq!(cube.long[0].eloss, -20.0);
+        assert_eq!(cube.short[0].eloss_end, -35.0);
         // Raw uploads require no local liquidation policy or calibration.
         assert_eq!(bincode::serialize(&cube).unwrap(), action.payload);
         assert!(config_risk_action("UNKNOWN_RISK_COIN", path.to_str().unwrap()).is_err());
-        std::fs::write(&path, RAW_RISK_CSV.replace("cvar(99)", "E[x]")).unwrap();
+        std::fs::write(&path, RAW_RISK_CSV.replace("E[x]", "invalid")).unwrap();
         assert!(config_risk_action("BTC", path.to_str().unwrap()).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn market_creation_uploads_a_raw_cube_before_adding_the_market() {
+    fn market_creation_uploads_a_v12_matrix_before_adding_the_market() {
         use bulk_sdk_core::config::ConfigAssets;
         let root = std::env::temp_dir().join(format!(
-            "bulk-market-risk-cube-{}-{}",
+            "bulk-market-risk-matrix-{}-{}",
             std::process::id(),
             time_epoch_ns()
         ));
@@ -548,8 +547,14 @@ mod tests {
         let Action::ConfigRisk(action) = &actions[position] else {
             unreachable!()
         };
-        let cube = RiskCube::from_bincode(&action.payload).unwrap();
-        assert_eq!(cube.duration_values(), &[60.0]);
+        let cube = bincode::deserialize::<RiskMatrix>(&action.payload).unwrap();
+        assert_eq!(
+            cube.instrument,
+            SecurityMap::from_configs()
+                .unwrap()
+                .mktid_for("BTC")
+                .unwrap()
+        );
         assert!(matches!(actions.last(), Some(Action::AddMarket(_))));
         assert!(position < actions.len() - 1);
         std::fs::remove_dir_all(root).unwrap();

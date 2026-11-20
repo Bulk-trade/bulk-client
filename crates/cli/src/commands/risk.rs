@@ -36,10 +36,11 @@ pub struct AccountPolicyArgs {
 #[derive(clap::Args, Debug)]
 #[command(group(
     clap::ArgGroup::new("account_limit")
-        .required(true)
+        .required(false)
         .multiple(false)
         .args(["maxorders", "use_global"])
 ))]
+#[command(group(clap::ArgGroup::new("user_update").required(true).multiple(true).args(["maxorders", "use_global", "global_maxorders"])))]
 pub struct UserAdminArgs {
     /// Logical account whose open-order override is updated.
     pub(crate) pubkey: solana_pubkey::Pubkey,

@@ -250,6 +250,8 @@ enum Command {
     /// Example: bulk risk-config risk.json
     #[command(name = "risk-config")]
     RiskConfig(RiskConfigArgs),
+    /// Submit one SDK V12 action as JSON/JSON5 or a filename.
+    ActionJson(RiskConfigArgs),
 
     /// Update one instrument's funding configuration (JSON or file path).
     ///
@@ -422,16 +424,18 @@ async fn main() -> eyre::Result<()> {
         return handle_config(args, &mut stored_config);
     }
 
-    if matches!(&cli.command, Command::Deposit(_) | Command::WithdrawIntent(_)) {
+    if matches!(
+        &cli.command,
+        Command::Deposit(_) | Command::WithdrawIntent(_)
+    ) {
         if cli.ledger {
             return Err(eyre::eyre!(
                 "deposit / withdraw-intent require --private-key (Ledger not supported for on-chain Solana txs yet)"
             ));
         }
-        let key = cli
-            .private_key
-            .as_deref()
-            .ok_or_else(|| eyre::eyre!("--private-key is required for deposit / withdraw-intent"))?;
+        let key = cli.private_key.as_deref().ok_or_else(|| {
+            eyre::eyre!("--private-key is required for deposit / withdraw-intent")
+        })?;
         let keypair = keypair_from_private_key(key)?;
         return match cli.command {
             Command::Deposit(args) => handle_deposit(&keypair, args, &submit).await,
@@ -501,6 +505,16 @@ async fn main() -> eyre::Result<()> {
         Command::MultisigCancel(args) => handle_multisig_cancel(&mut api, args, &submit).await,
         Command::MultisigExecute(args) => handle_multisig_execute(&mut api, args, &submit).await,
         Command::RiskConfig(args) => handle_risk_config(&mut api, args, &submit).await,
+        Command::ActionJson(args) => {
+            let raw = if std::path::Path::new(&args.json).is_file() {
+                std::fs::read_to_string(&args.json)?
+            } else {
+                args.json
+            };
+            let action: bulk_client::transaction::Action = json5::from_str(&raw)?;
+            crate::common::submit::submit_actions(&mut api, &submit, vec![action]).await
+        }
+
         Command::UpdateFunding(args) => handle_funding_config(&mut api, args, &submit).await,
         Command::AccountPolicy(args) => handle_account_policy(&mut api, args, &submit).await,
         Command::Rotate(args) => handle_rotate(&mut api, args, &submit).await,
@@ -538,6 +552,18 @@ fn keypair_from_private_key(key_b58: &str) -> eyre::Result<Keypair> {
 mod tests {
     use super::*;
     use solana_signer::Signer;
+
+    #[test]
+    fn user_admin_accepts_global_only_and_requires_an_update() {
+        let key = "11111111111111111111111111111111";
+        let parsed =
+            Cli::try_parse_from(["bulk", "user-admin", key, "--global-maxorders", "1000"]).unwrap();
+        assert!(
+            matches!(parsed.command, Command::UserAdmin(args) if args.global_maxorders == Some(1000))
+        );
+        assert!(Cli::try_parse_from(["bulk", "user-admin", key]).is_err());
+        assert!(Cli::try_parse_from(["bulk", "user-admin", key, "--disabled", "true"]).is_err());
+    }
 
     #[test]
     fn parse_rotate() {
@@ -864,15 +890,9 @@ mod tests {
     #[test]
     fn parse_withdraw_intent() {
         let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-        let cli = Cli::try_parse_from([
-            "bulk",
-            "withdraw-intent",
-            "--mint",
-            mint,
-            "--amount",
-            "500",
-        ])
-        .expect("should parse withdraw-intent");
+        let cli =
+            Cli::try_parse_from(["bulk", "withdraw-intent", "--mint", mint, "--amount", "500"])
+                .expect("should parse withdraw-intent");
 
         match cli.command {
             Command::WithdrawIntent(args) => {

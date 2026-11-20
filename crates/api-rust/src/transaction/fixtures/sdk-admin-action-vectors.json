@@ -2,8 +2,8 @@
   "account": "11111111111111111111111111111111",
   "domain": "devnet",
   "nonce": 42,
-  "risk_policy_sdk_revision": "f2eba9a9d334a68ce9b908f8301eb68d80f06ca4",
-  "sdk_revision": "eb161fdf18e113eb075dd985d4d0287e66363a52",
+  "risk_policy_sdk_revision": "e9b0257b3ea8d9319337801bba8717b1b6784317",
+  "sdk_revision": "e9b0257b3ea8d9319337801bba8717b1b6784317",
   "vectors": [
     {
       "actions": [

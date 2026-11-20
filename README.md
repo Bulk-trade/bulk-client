@@ -390,3 +390,13 @@ An empty `replace` clears the selected set; an empty `append` leaves it unchange
 The update takes effect when the approved proposal executes. The Rust library
 exposes `Rotate`, `RotateCategory`, and `RotateMode`, with `Action::Rotate` at SDK
 wire ordinal 70.
+
+## V12 SDK compatibility
+
+This branch targets SDK V12 `e9b0257b3ea8d9319337801bba8717b1b6784317`, with transaction wire version 12. All 71 action ordinals (0–70) match that release. Added typed startup (`onStart`), rebate allocation (`rebatePoolAllocation`), and controller rotation (`rotate`) actions, plus Rust/Python signing support and native SDK golden vectors. Risk configuration retains V12's loss-policy fields; the omitted `eloss_timescale` now defaults to √6, matching SDK V12.
+
+`bulk user-admin <PUBKEY>` supports `--maxorders N`, `--use-global`, and `--global-maxorders N`; at least one update is required. Omitting `--maxorders` clears the account override, so supply it when retaining a specific account limit. SDK V12 does not have account `disabled`, router rotation, external reports, or the `orderRequests` stream; those belong to V13.
+
+`bulk action-json '<ACTION_JSON>'` (or a JSON/JSON5 filename) submits any supported typed action through the existing administrative authorization flow. Startup is an internal maintenance action and remains subject to server authorization. The Python signer supports the direct V12 administration actions; nested multisig signing remains unsupported in Python. Native CLI SDK helpers are pinned to the audited V12 revision.
+
+V12 risk CSV uploads use the native `RiskMatrix` layout and `E[x]`/`E[end]` columns; duration-based V13 `RiskCube` payloads are not used.
