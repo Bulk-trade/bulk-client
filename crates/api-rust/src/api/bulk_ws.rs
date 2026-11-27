@@ -1417,7 +1417,7 @@ impl Actor {
                 let status = payload["status"].as_str().unwrap_or("");
 
                 if status != "ok" {
-                    error!("Request {request_id} failed: {status}");
+                    debug!("Request {request_id} failed: {status}");
                     if let Some((request, tx)) = pending {
                         let _ = tx.send(Err(eyre::eyre!(
                             "request failed; request: {}; response: {}",
