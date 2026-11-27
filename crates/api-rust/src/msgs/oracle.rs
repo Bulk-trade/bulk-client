@@ -10,6 +10,13 @@ pub struct Price {
     #[serde(rename = "px")]
     pub price: f64,
 
+    /// Buyer-initiated interval volume in base units (V13).
+    #[serde(rename = "bv")]
+    pub buy_volume: f64,
+    /// Seller-initiated interval volume in base units (V13).
+    #[serde(rename = "sv")]
+    pub sell_volume: f64,
+
     #[serde(skip)]
     pub meta: ActionMeta,
 }

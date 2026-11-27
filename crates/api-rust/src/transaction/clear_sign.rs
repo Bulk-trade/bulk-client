@@ -327,8 +327,8 @@ impl ClearSignMessage {
             action.mean_window,
         ),
         Action::Price(action) => format!(
-            "Price asset={} px={:.8} ts={}",
-            action.asset, action.price, action.timestamp
+            "Price asset={} px={:.8} ts={} buy_volume={} sell_volume={}",
+            action.asset, action.price, action.timestamp, action.buy_volume, action.sell_volume
         ),
         Action::PythOracle(action) => format!("PythOracle count={}", action.oracles.len()),
         Action::Corrs(action) => format!(

@@ -172,15 +172,15 @@ impl Transaction {
 
     /// Encodes the stable transaction payload for raw signing.
     ///
-    /// * Prefix the numeric V12 version and encode the fixed action schema.
+    /// * Prefix the numeric V13 version and encode the fixed action schema.
     /// * Serialize the actions and append the transaction context.
     ///
     /// # Arguments
-    /// * `version` - Explicit transaction schema (V12).
+    /// * `version` - Explicit transaction schema (V13).
     /// * `signature_domain` - Network domain appended to the payload.
     /// * `account` - Account bound to the signature.
     /// * `nonce` - Transaction nonce bound to the signature.
-    /// * `actions` - Actions encoded using the fixed V12 layout.
+    /// * `actions` - Actions encoded using the fixed V13 layout.
     ///
     /// # Returns
     /// The signable bytes, or an action encoding error.
@@ -206,6 +206,54 @@ impl Transaction {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn oracle_volumes_are_encoded_signed_and_clear_signed() {
+        let signer =
+            TransactionSigner::from_private_key("11111111111111111111111111111111").unwrap();
+        let mut tx = Transaction {
+            version: TransactionVersion::V13,
+            actions: vec![Action::Price(crate::msgs::Price {
+                timestamp: 42,
+                asset: "BTC".into(),
+                price: 100.0,
+                buy_volume: 12.5,
+                sell_volume: 7.25,
+                meta: Default::default(),
+            })],
+            nonce: 43,
+            account: signer.public_key(),
+            signer: Default::default(),
+            signature: Default::default(),
+        };
+        tx.sign(&signer, SignatureDomain::Devnet).unwrap();
+        assert!(tx.verify(SignatureDomain::Devnet).unwrap());
+        let json = serde_json::to_value(&tx).unwrap();
+        assert_eq!(json["version"], 13);
+        assert_eq!(json["actions"][0]["px"]["bv"], 12.5);
+        assert_eq!(json["actions"][0]["px"]["sv"], 7.25);
+        let text = crate::transaction::ClearSignMessage::canonical_message(
+            SignatureDomain::Devnet,
+            tx.account,
+            tx.nonce,
+            &tx.actions,
+        )
+        .unwrap();
+        assert!(text.contains("Version: 13"));
+        assert!(text.contains("buy_volume=12.5 sell_volume=7.25"));
+        for buy in [true, false] {
+            let mut changed = tx.clone();
+            let Action::Price(price) = &mut changed.actions[0] else {
+                unreachable!()
+            };
+            if buy {
+                price.buy_volume += 1.0;
+            } else {
+                price.sell_volume += 1.0;
+            }
+            assert!(!changed.verify(SignatureDomain::Devnet).unwrap());
+        }
+    }
+
     use super::*;
     use crate::common::tif::TimeInForce;
     use crate::msgs::conditional::StopOrTP;
@@ -226,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn leaf_conditionals_use_v12_with_or_without_builder_code() {
+    fn leaf_conditionals_use_v13_with_or_without_builder_code() {
         use serde_json::json;
 
         let account = Pubkey::new_from_array([1; 32]);
@@ -246,7 +294,7 @@ mod tests {
                 &[action],
             )
             .unwrap();
-            assert!(without_builder.starts_with(&12u32.to_le_bytes()));
+            assert!(without_builder.starts_with(&13u32.to_le_bytes()));
 
             let kind = value.as_object().unwrap().keys().next().unwrap().clone();
             value[&kind]["builderCode"] =
@@ -260,13 +308,13 @@ mod tests {
                 &[action],
             )
             .unwrap();
-            assert!(with_builder.starts_with(&12u32.to_le_bytes()));
+            assert!(with_builder.starts_with(&13u32.to_le_bytes()));
             assert_ne!(without_builder, with_builder);
         }
     }
 
     #[test]
-    fn v12_conditionals_preserve_multi_action_boundaries() {
+    fn v13_conditionals_preserve_multi_action_boundaries() {
         let account = Pubkey::new_from_array([1; 32]);
         let actions: Vec<Action> = serde_json::from_value(serde_json::json!([
             {"st":{"c":"BTC-USD","d":false,"sz":1.0,"tr":90.0,"lim":null,"i":false}},
@@ -275,7 +323,7 @@ mod tests {
         ]))
         .unwrap();
 
-        let mut expected = 12u32.to_le_bytes().to_vec();
+        let mut expected = 13u32.to_le_bytes().to_vec();
         bincode::serialize_into(&mut expected, &actions).unwrap();
         expected.extend_from_slice(&42_u64.to_le_bytes());
         expected.extend_from_slice(account.as_ref());
@@ -412,7 +460,7 @@ mod tests {
                 &actions,
             )
             .unwrap();
-            assert!(signable.starts_with(&12u32.to_le_bytes()));
+            assert!(signable.starts_with(&13u32.to_le_bytes()));
             assert_eq!(
                 bytes_hex(&signable),
                 vector["signable_hex"].as_str().unwrap()
@@ -511,7 +559,7 @@ mod tests {
                 )
                 .expect("serialize trigger")
             ),
-            "0c00000001000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "0d00000001000000000000000800000007000000000000004254432d5553440100a0724e1809000002000000000000000000000007000000000000004254432d555344014059730700000000000100000100000007000000000000004554482d55534400803424383a00000000c2eb0b00000000020000000100010000000000000000000000000000000000000000000000000000000000000000050700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 
@@ -551,7 +599,7 @@ mod tests {
                 )
                 .expect("serialize on-fill")
             ),
-            "0c00000001000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
+            "0d00000001000000000000000a0000000100000007000000000000004554482d55534400803424383a00000000c2eb0b000000000200000001000002000000000000000000000007000000000000004254432d555344014059730700000000000100000000000007000000000000004254432d555344014059730700000000000101000000000000000000000000000000000000000000000000000000000000000005000700000000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
     }
 
@@ -605,8 +653,8 @@ mod tests {
         )
         .expect("signable bytes");
 
-        assert!(signable.starts_with(&12u32.to_le_bytes()));
-        let ordinal_offset = 12u32.to_le_bytes().len() + 8;
+        assert!(signable.starts_with(&13u32.to_le_bytes()));
+        let ordinal_offset = 13u32.to_le_bytes().len() + 8;
         assert_eq!(
             u32::from_le_bytes(
                 signable[ordinal_offset..ordinal_offset + 4]
@@ -618,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn liquidator_updates_use_v12_at_any_depth_and_bind_apply_reserve() {
+    fn liquidator_updates_use_v13_at_any_depth_and_bind_apply_reserve() {
         let liquidator = Action::UpdateLiquidatorConfig(LiqConfig {
             instruments: vec![LiqConfigByInstrument {
                 symbol: "BTC-USD".to_string(),
@@ -637,7 +685,7 @@ mod tests {
             std::slice::from_ref(&liquidator),
         )
         .unwrap();
-        assert!(direct.starts_with(&12u32.to_le_bytes()));
+        assert!(direct.starts_with(&13u32.to_le_bytes()));
 
         let nested = Action::MultisigPropose(MultisigPropose {
             multisig: Pubkey::new_from_array([2; 32]),
@@ -710,7 +758,7 @@ mod tests {
 
         assert_eq!(
             transaction.signature.to_string(),
-            "5J6EVwoRi6unyEZ3Zf686wKv4KtB1b3X2etGiPKMQyNmB1h96ds6MuGy4HRTsBSpoNjtPmg6iWM8wRAWEaofeMVy"
+            "4uAGS4T8ytfoAMLpAgBdBMWaLW8GNntVDfzLsUM9WusY4ZsoP99tDdRrW9Jy5RcgkQNs8hit7UqWSitZfQjcVJzm"
         );
     }
 
@@ -974,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn market_order_without_slippage_uses_fixed_v12_fields() {
+    fn market_order_without_slippage_uses_fixed_v13_fields() {
         let (tx, _) = make_market_order_tx();
         let current = Transaction::raw_signable_bytes(
             TransactionVersion::CURRENT,
@@ -985,7 +1033,7 @@ mod tests {
         )
         .expect("serialize current market signing payload");
 
-        let mut legacy = 12u32.to_le_bytes().to_vec();
+        let mut legacy = 13u32.to_le_bytes().to_vec();
         legacy.extend_from_slice(&1u64.to_le_bytes());
         legacy.extend_from_slice(&0u32.to_le_bytes());
         legacy.extend_from_slice(&7u64.to_le_bytes());
